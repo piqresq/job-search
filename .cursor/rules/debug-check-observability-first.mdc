@@ -1,0 +1,26 @@
+---
+description: Check Cloudflare observability first when debugging or fixing runtime issues
+alwaysApply: true
+---
+
+# Debugging: check observability first
+
+When the task is to **debug**, **investigate**, or **fix** a bug / incident / regression that may involve deployed behavior, start by checking **Cloudflare Workers observability** for the production Worker **`job-search`**.
+
+## Do this early
+
+- Before guessing at root cause, query **`plugin-cloudflare-cloudflare-observability`** for recent logs around the reported time window.
+- If needed, first run **`accounts_list`** then **`set_active_account`** with **`activeAccountIdParam`**.
+- Prefer a **tight timeframe** first, then widen only if needed.
+- Use **`observability_keys`** / **`observability_values`** before guessing filter fields or values.
+
+## What to look for
+
+- Recent **errors**, **warnings**, slow requests, repeated retries, queue / Durable Object symptoms, and new custom troubleshooting logs.
+- Whether the problem is visible in **production logs** at all, or only local / code-level.
+- Whether the currently deployed Worker version matches the suspected behavior.
+
+## Scope
+
+- Use this rule for runtime issues, production incidents, queue / DO bugs, deploy regressions, API failures, or “what happened?” investigations.
+- It is **not required** for purely local/static work like formatting, type errors, or obvious compile-time fixes with no deployed/runtime angle.

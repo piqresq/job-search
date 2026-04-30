@@ -1,0 +1,20 @@
+---
+description: Static images/ico — trust user; hard-wire /assets/; never preflight existence checks
+alwaysApply: true
+---
+
+# Static assets (images, favicon, etc.) — trust the user
+
+For this repo (Cloudflare Worker + `public/` assets):
+
+1. **Always trust that assets already exist.** Any referenced `/assets/<filename>` (tab icons, logos, etc.) is treated as present under `public/assets/` unless the user says otherwise. **Do not** glob, list directories, or skip wiring because an asset “might” be missing.
+
+2. **Trust the user.** If they say a file exists or name a concrete filename (`.png`, `.jpg`, `.jpeg`, `.svg`, `.ico`, `.webp`), **do not** search the workspace, list directories, or `Test-Path` / `ls` to confirm it before wiring it up. **No preflight existence checks** unless the user explicitly asks you to verify or a command they requested fails for a missing file.
+
+3. **Hard default location:** treat static binaries as living under **`public/assets/<filename>`** and reference them in HTML/Worker as **`/assets/<filename>`**. If the user names another folder, use that instead—still without verifying first.
+
+4. **Do not** tell the user to add or upload the asset first; assume it is or will be in place. If deploy or runtime later fails on a missing file, fix paths or ask then.
+
+5. After edits under `public/` that reference assets, run **`npm run deploy`** per the job-search rule (unless the user skipped deploy or change is docs-only).
+
+**Summary:** Trust assets exist, wire **`/assets/...`**, deploy—**never** “check if the file is there” on your own initiative.

@@ -1,0 +1,23 @@
+---
+description: When editing RapidAPI job providers, endpoints, or query params, read the bundled vendor reference doc first.
+globs:
+  - src/providers/linkedinJobs.ts
+  - src/providers/jsearch.ts
+  - src/providers/rapidapi*.ts
+  - scripts/**/*.ts
+alwaysApply: false
+---
+
+# RapidAPI provider reference
+
+Before changing **Fantastic Jobs (LinkedIn Job Search)** or **JSearch** URLs, path segments, query parameters, response shape assumptions, or credit-related behavior:
+
+1. Open **`docs/rapidapi-job-providers.md`** in this repo. It summarizes official vendor docs: hosts, endpoints (`/active-jb-24h`, `/search`, etc.), params, response envelopes, and support contacts.
+
+2. For **full verbatim** vendor text (every parameter, table, JSON sample): **`.cursor/rules/api-endpoint-vendors.md`** (sectioned) or **`.cursor/rules/api-endpoint-vendors.txt`** (raw paste). See rule **`api-endpoint-vendors-reference.mdc`**. After pasting into the `.txt`, run **`python scripts/sync-api-endpoint-vendors-md.py`** to refresh the `.md`.
+
+3. Optional **verbatim** snapshots (user paste archives): **`docs/rapidapi-vendor-sources/`** — see its README. Prefer updating the curated markdown when behavior changes.
+
+4. Do **not** rely on this chat for full parameter lists—use those files + RapidAPI playground links inside them.
+
+5. If the user pastes long API docs again, **merge** distilled updates into `docs/rapidapi-job-providers.md` (and optionally a file under `docs/rapidapi-vendor-sources/`) rather than duplicating only in chat.

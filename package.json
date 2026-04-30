@@ -1,0 +1,41 @@
+{
+  "name": "job-search",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "cv:extract": "node scripts/extract-cv.mjs",
+    "dev": "node scripts/dev.mjs",
+    "dev:wrangler": "wrangler dev",
+    "dev:remote": "node scripts/dev-remote.mjs",
+    "d1:migrate:local": "wrangler d1 migrations apply job-search-db --local",
+    "deploy": "wrangler deploy",
+    "cf-typegen": "wrangler types",
+    "typecheck": "tsc --noEmit",
+    "verify:local": "node scripts/verify-local.mjs",
+    "test:hard-filters": "tsx scripts/run-hard-filter-test.ts",
+    "test:hard-filters:uk": "tsx scripts/run-hard-filter-test.ts --country=uk --query=support+manager --allow-onsite-search",
+    "test:linkedin-sample": "tsx scripts/test-linkedin-sample.ts",
+    "test:provider-regression": "tsx scripts/test-provider-regression.ts",
+    "test:provider-planner": "tsx scripts/test-provider-planner.ts",
+    "test:provider-rotation": "tsx scripts/test-provider-rotation.ts",
+    "test:salary-period": "tsx scripts/test-salary-period.ts",
+    "test:openai-transient-errors": "tsx scripts/test-openai-transient-errors.ts",
+    "test:rapidapi-quota": "tsx scripts/test-rapidapi-quota-classification.ts",
+    "test:jobs-api-merge": "tsx scripts/test-jobs-api-merge.ts",
+    "test:employment-type-canonical": "tsx scripts/test-employment-type-canonical.ts",
+    "test:title-query-health": "tsx scripts/test-title-query-health.ts"
+  },
+  "dependencies": {
+    "docx": "^9.6.1",
+    "franc-min": "^6.2.0",
+    "html-to-docx": "^1.8.0",
+    "mammoth": "^1.12.0"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20250404.0",
+    "@types/node": "^25.5.2",
+    "tsx": "^4.19.3",
+    "typescript": "^5.8.2",
+    "wrangler": "^4.80.0"
+  }
+}

@@ -1,0 +1,13 @@
+node_modules/
+.wrangler/
+dist/
+*.log
+jsearch-sample.json
+output/
+.dev.vars
+scripts/.linkedin_api_tester_state.json
+scripts/.rapidapi_tester_state.json
+assets/rapidapi.txt
+
+# Optional local Word file for `npm run cv:extract` only (production CV comes from dashboard upload → D1).
+/Oleg_Velikanov_CV.docx

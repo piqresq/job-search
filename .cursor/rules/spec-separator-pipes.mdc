@@ -1,0 +1,13 @@
+---
+description: User specs use | as logical separation — do not render literal pipe characters unless asked
+alwaysApply: true
+---
+
+# Pipe characters in requirements (`|`)
+
+When the user describes layouts, lists, or sequences using **vertical bar** characters (`|`) as separators (e.g. `icon | label | value` or `A | B | C`):
+
+- Treat `|` as **logical separation** between distinct pieces (columns, segments, or ordered parts).
+- **Do not** add literal `|` characters to UI, copy, HTML, or labels **unless** the user explicitly asks for those symbols to appear on screen.
+
+Use spacing, typography, flex/grid layout, dividers, or grouping instead—matching the product’s design system.

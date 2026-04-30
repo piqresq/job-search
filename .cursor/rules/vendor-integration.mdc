@@ -1,0 +1,89 @@
+---
+description: Checklist for adding a new RapidAPI job vendor to the pipeline and making the desktop Python tester work without manual form wiring.
+globs:
+  - src/types/job.ts
+  - src/providers/**/*.ts
+  - src/api/providerTester*.ts
+  - src/index.ts
+  - scripts/linkedin_api_tester.py
+  - wrangler.toml
+  - worker-configuration.d.ts
+alwaysApply: false
+---
+
+# New vendor integration (pipeline + Python tester)
+
+Adding a source means: **pipeline ingestion** (`JobSourceProvider`), **optional wrangler vars**, and **tester catalog** so `scripts/linkedin_api_tester.py` builds tabs/forms from the Worker and builds URLs via TypeScript only.
+
+## 1. Core pipeline
+
+1. **`src/types/job.ts`** — Add the new id to **`JobSourceId`** (string literal union).
+2. **New module under `src/providers/`** — Implement **`JobSourceProvider`** (`src/providers/types.ts`):
+   - `id` matches the new `JobSourceId`.
+   - `fetchChunk(env, params)` returns **`ProviderChunkResult`** (normalized jobs, `more` / `doneForCycle` / `nextEligibleAt` as appropriate).
+   - Reuse patterns from **`linkedinJobs.ts`** / **`jsearch.ts`**: `rapidApiFetch`, normalization to **`NormalizedJob`**, logging via `log`.
+3. **`src/providers/index.ts`** — Append the provider to the **`registry`** array and export if needed.
+4. **`wrangler.toml`** — Add **`ENABLED_JOB_SOURCES`** entry (comma-separated) and any **`[vars]`** the provider reads. Align **`worker-configuration.d.ts`** `Env` / `Env` interface with new vars.
+5. **D1 / state** — If the vendor needs rotation, offsets, or freeze windows, add migrations + DB helpers (see `linkedin_country_offset`, `jsearch_rotation`, `pipeline_state`). Skip if the new source is stateless per chunk.
+
+## 2. URL building (single source of truth)
+
+Export a **`build…Url`** (or equivalent) in the provider module that matches **exactly** what `fetchChunk` uses for RapidAPI. The desktop tester must not duplicate query rules in Python.
+
+## 3. RapidAPI tester API (automatic forms + URL build)
+
+The Python app calls:
+
+- **`GET /api/provider-tester`** — Full catalog: `providers[]` with `fields`, `defaults`, `rapidApiHost`, `extractor`, `jobsArrayPath`.
+- **`POST /api/provider-tester/build-url`** — `{ providerId, params }` → `{ ok, url, rapidApiHost }`.
+
+**Touch these files when adding a vendor:**
+
+| Step | File | What to do |
+|------|------|------------|
+| Defaults for forms (mirrors wrangler) | **`src/api/providerTesterDefaults.ts`** | Extend the return type and add a defaults object for the new provider (snake_case keys matching form field `key`s). |
+| Field list + tab metadata | **`src/api/providerTesterCatalog.ts`** | Add a `*_FIELDS` array (`kind`: `string` \| `multiline` \| `int` \| `bool` \| `enum`). Append one object to **`getProviderTesterCatalog`** `providers` with `id`, `label`, `requestSource`, `rapidApiHost`, **`extractor`**, **`jobsArrayPath`**, `fields`, `defaults`. Extend **`ProviderTesterProviderJson["extractor"]`** union if you add a new extractor name. |
+| Map params → URL | **`src/api/providerTesterBuilder.ts`** | Add `if (providerId === "<new_id>") { … return { ok: true, url, rapidApiHost }; }` using the same **`build…Url`** as the pipeline. |
+| Allow POST body | **`src/index.ts`** | Extend the **`POST /api/provider-tester/build-url`** `providerId` check so the new `JobSourceId` is accepted (keep validation tight). |
+
+After this, **Python does not need new form fields** — it renders whatever **`GET /api/provider-tester`** returns.
+
+## 4. Python tester (`scripts/linkedin_api_tester.py`)
+
+- **Tabs / inputs / defaults** — Loaded from the Worker; **no manual tkinter fields** per vendor.
+- **Extracted panel** — Still uses **`normalize_job_row`** / **`jobs_array_from_response`**:
+  - **`jobsArrayPath`**: today **`root`** (JSON array) or **`data`** (`{ "data": [...] }`). If the API uses another envelope, extend **`jobs_array_from_response`** and document the new path in the catalog type.
+  - **`extractor`**: add a branch in **`normalize_job_row`** and a **`normalize_<vendor>_job`** that mirrors the pipeline’s normalization for that source (same fields as `NormalizedJob` preview). If you omit this, the Raw panel still works; Extracted may be empty or wrong until implemented.
+
+HTTP calls to the Worker should keep **`_worker_http_headers()`** (Cloudflare may block default Python user-agents).
+
+## 5. Docs and vendor text
+
+- Update **`docs/rapidapi-job-providers.md`** with host, path, params, and notes for operators.
+- Optional: paste long vendor docs into **`.cursor/rules/api-endpoint-vendors.txt`** and run **`python scripts/sync-api-endpoint-vendors-md.py`** (see **`api-endpoint-vendors-reference.mdc`**).
+
+## 6. Verification
+
+- **`npm run typecheck`**
+- **`npm run deploy`** after Worker-relevant edits (per project rule).
+- Run **`python scripts/linkedin_api_tester.py`**: catalog loads, new tab appears, **Run** issues a GET whose URL matches the pipeline builder.
+
+## 7. Normalized job completeness
+
+Before a new vendor is considered done, verify the normalized payload covers the fields actually consumed downstream:
+
+- **Hard filters:** `title`, `description`, `location`, `employmentType`, `salaryRaw`, `salaryMin`, `salaryMax`, `salaryCurrency`
+- **AI scoring:** `title`, `company`, `location`, `isRemote`, one usable URL (`applyUrl` or `jobUrl`), `description`
+- **Dashboard metadata:** `country`, `employmentType`, `postedAtUnix`
+
+Do not persist placeholder rows with empty title/company/description/URLs just because a search endpoint returned an ID. Validate normalized rows before they enter the pipeline.
+
+## 8. RapidAPI errors and backoff
+
+- The Worker uses a **single** RapidAPI key (first from `RAPIDAPI_KEY` / `RAPIDAPI_KEYS`); there is no multi-key rotation.
+- When a provider hits vendor-level rate/credit errors (typically `429`, `402`, or quota-like `403`), surface them in logs with provider id and target; use existing planner/coordinator backoff rather than swapping keys globally.
+
+## Mental model
+
+- **TypeScript** owns: provider behavior, URL shape, tester catalog, **`POST /api/provider-tester/build-url`**.
+- **Python** owns: UI shell, persistence, calling the Worker, and **optional** pretty-print normalization for the Extracted column when you introduce a new **`extractor`** name.

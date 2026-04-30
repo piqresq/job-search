@@ -1,0 +1,222 @@
+Build a Cloudflare-based job search automation system for my profile.
+
+Goal:
+Create a system that regularly finds fully remote jobs, filters them against my criteria, scores the good matches, generates a tailored CV and short cover letter for each strong match, and emails me a review request where I can approve, reject, or edit before anything is submitted.
+
+Important source files:
+- In the project folder, there are both .docx and .pdf versions of my CV.
+- Use those files as the base source for my CV content and positioning.
+- Treat them as the source of truth for my experience, achievements, dates, skills, and education.
+- Do not invent facts, roles, dates, metrics, education, tools, or achievements beyond what is already supported by my CV.
+- You may rephrase, reorder, and tailor content, but do not fabricate anything.
+
+Environment / execution:
+- This project should use Cloudflare architecture.
+- You should run Wrangler commands yourself as needed during setup, development, and deployment.
+- Assume I will grant terminal access for Wrangler commands.
+- Do not ask me to manually run Wrangler commands unless absolutely necessary.
+
+Core concept:
+This is not a blind mass auto-apply bot.
+It is a high-quality search, filtering, tailoring, and approval system.
+
+Architecture note:
+- This system will use several job-search APIs over time, so the architecture must be designed from the start for multiple API integrations.
+- Create a modular provider/source layer so new job APIs can be added cleanly later without restructuring the whole application.
+- The first provider should be JSearch via RapidAPI:
+  https://rapidapi.com/letscrape-6bRBa3QguO5/api/jsearch/playground/endpoint_f2b4c6e5-2763-450a-a8b2-1e80961e880d
+
+Search requirements:
+- I am currently only interested in fully remote positions.
+- Use the API parameter that filters for work-from-home / remote positions.
+- Enforce remote-only both at API query level and in internal validation.
+- Role must be EU- or US-based.
+- Generic support roles are usually not preferred, but they can still be acceptable if compensation is strong enough.
+- So do not hard-reject all support roles. Treat generic support roles as lower-priority unless salary is strong and the overall match is good.
+
+Main flow:
+1. On a schedule, search for new job listings from configured API sources.
+2. Normalize and deduplicate jobs across sources.
+3. Filter out obvious bad matches using deterministic hard-filter rules.
+4. Send only the jobs that passed hard filters to OpenAI API for fit scoring.
+5. For strong matches, generate using OpenAI API:
+   - a tailored CV version
+   - a short tailored cover letter / application note
+6. Generate clean downloadable files for review.
+7. Send me an email with:
+   - job summary
+   - why it matched
+   - key risks or caveats
+   - actions / links to:
+     - approve
+     - reject
+     - edit
+8. If I reject, stop processing that job.
+9. If I approve, move it to the next application stage.
+10. If I choose edit, let me review and modify the generated CV / cover letter through a simple interface before approving.
+11. Only after approval should the system prepare an application or queue it for submission.
+12. Do not blindly auto-submit everywhere.
+
+My profile:
+- Based in Riga, Latvia
+- EU citizen
+- No university degree
+- Strongest target roles:
+  - Technical Customer Success Manager
+  - Technical Account Manager
+  - Senior Customer Success Manager
+  - Solutions Consultant
+  - Product Operations Manager
+  - Implementation Consultant / Implementation Manager
+
+My background themes:
+- telecom SaaS
+- customer success
+- key account management
+- product improvement
+- workflow automation
+- Python
+- Cloudflare Workers
+- Zendesk
+- technical troubleshooting
+- API / integration-heavy work
+
+Deterministic hard filters:
+Use hard-reject rules only for conditions that are explicit and reliably machine-detectable.
+
+Deterministic hard rejects:
+- roles requiring bachelor/master degree as a hard requirement
+- hybrid or on-site roles
+- low-salary roles if salary is specified and clearly below threshold
+  - below 3000 EUR net monthly
+  - or below 4288.93 EUR gross monthly
+- roles explicitly requiring US work authorization
+- roles explicitly requiring US residency
+- roles explicitly requiring local commuting radius
+- roles explicitly requiring local country presence that makes the role non-global / non-remote
+
+AI-based semantic scoring:
+Other exclusion logic should be handled by AI scoring rather than rigid rules, to reduce false positives and false negatives.
+
+These should be evaluated by AI scoring:
+- software engineer roles
+- frontend / backend developer roles
+- roles that are too sales-heavy
+- roles focused on customer-facing via phone and constant meetings
+- generic support roles that may still be acceptable if compensation and scope are strong
+- roles that imply local EU country presence in a vague or non-explicit way
+
+Nuance:
+- Generic support roles are not ideal, but they are not absolute rejects if salary is good and the role is otherwise acceptable.
+- The filtering and scoring logic should reflect that nuance.
+- The system should prefer avoiding false rejects over overly aggressive filtering when semantic interpretation is needed.
+
+System principles:
+- Quality over volume
+- No hallucinated CV edits
+- No invented qualifications
+- Human approval required before submission
+- Keep the review flow simple and efficient
+- Keep the architecture modular and extensible
+
+Cloudflare role:
+Use Cloudflare as the orchestration layer for:
+- scheduled job search
+- processing flow
+- storing jobs, decisions, and generated files
+- sending review emails
+- hosting a lightweight review / edit interface
+- moving approved jobs to the next stage
+
+Review UX:
+- The primary control flow should be:
+  - email notification
+  - approve / reject / edit actions
+  - simple web review page for edits
+- Do not make "reply to email with edited attachments" the main editing workflow.
+- Email should mainly be used for notification and action links.
+- Editing should happen in a lightweight review interface.
+
+OpenAI scoring stage:
+- Add an OpenAI scoring stage after hard filters.
+- Only jobs that pass deterministic hard filters should be sent to OpenAI for evaluation.
+- Do not waste LLM/API calls on jobs that are obviously disqualified.
+
+Purpose of OpenAI scoring:
+- evaluate true fit against my profile
+- identify why the role is a good or bad match
+- flag softer risks and caveats
+- rank jobs by priority
+- choose the most suitable CV variant
+- guide cover letter generation
+
+The scoring stage should return structured output such as:
+- fit_score (0-100)
+- recommendation (reject / low_priority_review / review / high_priority_review)
+- reasons_to_apply
+- risks
+- suggested_cv_variant
+- cover_letter_angle
+- notes
+
+Suggested thresholds:
+- 0-59 = reject
+- 60-74 = low-priority review
+- 75-84 = review
+- 85+ = high-priority review
+
+Important scoring rules:
+- Deterministic hard filters should run first.
+- OpenAI scoring should be used for nuanced judgment, not obvious reject logic.
+- Borderline semantic cases should not be auto-rejected too aggressively.
+- If uncertainty is high, prefer low_priority_review over reject.
+- Use OpenAI scoring to improve ranking quality and downstream CV / cover letter tailoring.
+
+CV / cover letter generation rules:
+- Use the CV files in the folder as the base.
+- Tailor to the job, but do not fabricate anything.
+- Prefer controlled tailoring over fully rewriting the CV each time.
+- Use OpenAI to:
+  - choose the best CV variant
+  - emphasize the most relevant bullets
+  - adapt summary language
+  - generate a short direct cover letter or application note
+- Do not alter core facts like dates, employers, education, numbers, or technologies unless those are already supported by my CV.
+
+What I want from you:
+1. Propose the project structure.
+2. Define the main flow and stages.
+3. Design the source/provider layer so multiple job APIs can be added later.
+4. Use my CV files in the folder as the base input.
+5. Scaffold the Cloudflare project.
+6. Run Wrangler commands yourself where needed.
+7. Build the project iteratively, starting from the simplest working version.
+
+Development priority:
+1. Search and collect jobs from JSearch RapidAPI
+2. Normalize and deduplicate them
+3. Apply deterministic hard filters
+4. Score remaining jobs with OpenAI API
+5. Generate tailored CV / cover letter drafts
+6. Send review emails
+7. Build approve / reject / edit flow
+8. Add later-stage application preparation
+9. Keep the source layer ready for more APIs later
+
+Important constraints:
+- Keep the design modular
+- Keep the architecture extensible
+- Optimize architecture for several API integrations from the start
+- Start with the core working flow first, then iterate
+
+Start by:
+- inspecting the CV files in the current folder
+- extracting the base profile from them
+- proposing the project structure and main Cloudflare flow
+- designing the provider abstraction for multiple API job sources
+- scaffolding the initial project
+- wiring the first provider using JSearch RapidAPI
+- enforcing full-remote-only search and validation
+- adding deterministic hard filters
+- adding the OpenAI scoring stage after hard filters
+- running the required Wrangler setup commands yourself

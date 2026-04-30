@@ -1,0 +1,9 @@
+---
+description: Pat92 Jobs API (jobs_api) — remote-first search params
+globs: src/providers/jobsApi.ts,src/api/providerTester*.ts,wrangler.toml
+---
+
+# Jobs API (Pat92) — workplace filter default
+
+- **`JOBS_API_WORKPLACE_TYPES`** defaults to **`remote`** when unset (see `workplaceTypesParam` in `src/providers/jobsApi.ts`). This matches the app’s **remote-first** job search; operators override only when they intentionally want hybrid/onsite in the vendor query.
+- **`mergeJobsApiPat92`** sets **`isRemote: true`** on normalized rows because the pipeline only ingests remote-filtered listings for this source; if the search filter is widened later, revisit normalization so dashboard and filters stay consistent.

@@ -1,0 +1,33 @@
+---
+description: Shared provider search source of truth
+globs: src/config/*.ts,src/providers/**/*.ts,src/db/appSettings.ts,public/dashboard.html
+---
+
+# Provider search source of truth
+
+- Shared runtime semantics live in D1 `app_settings`, read via `src/db/appSettings.ts`.
+- `src/config/searchPolicy.ts` and `src/config/searchCountries.ts` are bootstrap defaults / normalization helpers, not the primary runtime source.
+- All providers should derive their request params from the DB-backed source of truth, then adapt only the **format** to vendor requirements.
+
+## Global semantics
+
+- Roles come from D1 via `getSearchRoleTiers`.
+- Concatenated-role query strings are cached in D1 when the user saves role settings. Reuse the cached strings for vendors that support bundled queries; do not rebuild them ad hoc on every fetch unless the cache is missing.
+- Countries come from `getSearchCountries` and must provide both ISO and full-name forms for vendor adapters and dashboard output.
+- Global remote / employment / recency semantics come from `getSearchRuntimePolicy`.
+- Default semantics are remote `true`, employment `fulltime`, recency `last_24h`, unless product requirements change them in D1.
+- Recency is adapted per vendor:
+  - Fantastic Jobs LinkedIn: `/active-jb-24h`
+  - JSearch: `date_posted=today`
+  - Jobs API: `datePosted=day`
+
+## Current vendor-specific rules
+
+- `linkedin_jobs`: concatenated quoted role queries (e.g. `"Role A" OR "Role B"`), full country names, optional AI fields.
+- `jsearch`: single-role exhaustion; query format is `<role> in <full country name>` while the `country` param uses ISO code.
+- `jobs_api`: single-role exhaustion with `/v2/linkedin/search`, then `/v2/linkedin/get?id=...` for detail enrichment.
+
+## Output quality
+
+- Normalize dashboard-critical fields consistently: `country`, `employmentType`, salary currency, `postedAtUnix`, description, URLs.
+- Never emit placeholder rows missing title/company/description/location/usable URL.

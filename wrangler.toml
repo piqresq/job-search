@@ -1,0 +1,119 @@
+name = "job-search"
+main = "src/index.ts"
+compatibility_date = "2025-04-01"
+compatibility_flags = ["nodejs_compat"]
+
+[observability]
+enabled = true
+head_sampling_rate = 1
+
+[observability.logs]
+invocation_logs = true
+
+# API keys and tokens: set with `wrangler secret put <NAME>` (never commit values).
+[secrets]
+# At least one of RAPIDAPI_KEY or RAPIDAPI_KEYS for RapidAPI providers (only the first key is used).
+required = [
+  "OPENAI_API_KEY",
+  "REVIEW_TOKEN_SECRET",
+]
+# Optional: `wrangler secret put RESEND_API_KEY`, `wrangler secret put ADMIN_RUN_KEY`,
+# `wrangler secret put DASHBOARD_PASSWORD` (required for /dashboard login if not using .dev.vars).
+# Soft-disabled outbound review email (restore later). See `src/notify/email.ts`.
+# [[send_email]]
+# name = "SEND_EMAIL"
+# remote = true
+# allowed_sender_addresses = [ "job-search@teltel-providers.com" ]
+# allowed_destination_addresses = [ "piqresq@gmail.com" ]
+
+[assets]
+directory = "public"
+binding = "ASSETS"
+
+[[r2_buckets]]
+binding = "DOCS_BUCKET"
+bucket_name = "job-search-docs"
+
+[[durable_objects.bindings]]
+name = "PIPELINE_COORDINATOR"
+class_name = "PipelineCoordinator"
+
+[[queues.producers]]
+binding = "PIPELINE_QUEUE"
+queue = "job-search-pipeline"
+
+[[queues.consumers]]
+queue = "job-search-pipeline"
+
+[[migrations]]
+tag = "pipeline-coordinator-v1"
+new_sqlite_classes = ["PipelineCoordinator"]
+
+[triggers]
+# Daily 00:00 UTC: scheduled pipeline + retention. LinkedIn already uses a 24h freeze when the active-jb slice is exhausted;
+# turning API extraction on still triggers an immediate run (see dashboard PATCH). Raise LINKEDIN_MAX_* if one run should drain more before hitting Worker limits.
+crons = ["0 0 * * *"]
+
+[[d1_databases]]
+binding = "DB"
+database_name = "job-search-db"
+database_id = "c0f15e0f-2d39-48d9-ba27-a3fd5e343876"
+
+[vars]
+# Optional emergency kill: only the string "false" blocks all RapidAPI fetch regardless of the dashboard master switch.
+# Omit or set to "true" so Settings → API extraction controls fetch (recommended).
+PIPELINE_FETCH_ENABLED = "true"
+# CV + cover letter generation. Scoring still uses OPENAI_MODEL/defaults in code.
+OPENAI_DRAFT_MODEL = "gpt-5.5"
+OPENAI_DRAFT_REASONING_EFFORT = "high"
+# Pipeline vendor list at runtime: D1 `app_settings.enabled_job_sources` (dashboard Settings → Vendors). This var is not read by the Worker.
+# (Kept for documentation / local scripts only.) Example: "linkedin_jobs" or "linkedin_jobs,jsearch"
+ENABLED_JOB_SOURCES = "linkedin_jobs"
+# JSearch (enable in dashboard Vendors if using this source).
+# Runtime role search now comes from dashboard Settings → Job roles and the shared source-of-truth policy
+# (remote=true, FULLTIME, date_posted=today). `JSEARCH_QUERY` is kept for diagnostics / tester defaults only.
+JSEARCH_QUERY = "Technical Customer Success OR Technical Account Manager OR Solutions Consultant OR Implementation Manager OR Product Operations"
+JSEARCH_DATE_POSTED = "month"
+JSEARCH_EMPLOYMENT_TYPES = "FULLTIME"
+# Daily UTC budget for JSearch RapidAPI calls; omit or set 0 to disable.
+JSEARCH_MAX_API_CALLS_PER_RUN = "322"
+# Optional: JSEARCH_API_PATH = "/search"  (GET /api/provider-tester jsearch.defaults.api_path)
+# Jobs API (Pat92, jobs-api14.p.rapidapi.com): enable source `jobs_api` in dashboard Vendors / D1 `enabled_job_sources`.
+# Runtime role search now comes from dashboard Settings → Job roles and the shared source-of-truth policy
+# (`datePosted=day`, `workplaceTypes=remote`, `employmentTypes=fulltime`). `JOBS_API_QUERY` is a tester default only.
+# JOBS_API_QUERY = "Customer Care"
+# JOBS_API_DATE_POSTED = "month"
+# JOBS_API_WORKPLACE_TYPES = "remote"
+# JOBS_API_EMPLOYMENT_TYPES = "contractor;fulltime;parttime;intern;temporary"
+# JOBS_API_US_EVERY_N_RUNS = "5"
+# Daily UTC budget for Jobs API RapidAPI calls; omit or set 0 to disable.
+JOBS_API_MAX_API_CALLS_PER_RUN = "322"
+# JOBS_API_MAX_JOBS_PER_CHUNK = "15"
+# LinkedIn Job Search API (RapidAPI) — runtime uses shared source-of-truth policy:
+# `/active-jb-24h`, `remote=true`, `type_filter=FULL_TIME`.
+# Optional: LINKEDIN_JOBS_API_PATH = "/active-jb-7d"
+LINKEDIN_JOBS_LIMIT = "100"
+LINKEDIN_MAX_PAGES_PER_RUN = "15"
+LINKEDIN_MAX_SWEEPS_PER_RUN = "8"
+# Daily UTC budget for LinkedIn RapidAPI calls; omit or set 0 to disable.
+LINKEDIN_MAX_API_CALLS_PER_RUN = "250"
+# Operational hours (UTC, start inclusive / end exclusive). Outside this window the coordinator pauses new work.
+PIPELINE_OPERATIONAL_START_UTC_HOUR = "5"
+PIPELINE_OPERATIONAL_END_UTC_HOUR = "20"
+LINKEDIN_MS_BETWEEN_REQUESTS = "400"
+# Vendor bug (PostgREST): `/active-jb-24h` can return `column active_jb_jobs_24h.idc does not exist` with include_ai. Set "true" again when Fantastic Jobs fixes upstream.
+LINKEDIN_INCLUDE_AI = "false"
+LINKEDIN_US_JOBS_LIMIT = "25"
+LINKEDIN_US_EVERY_N_RUNS = "5"
+# Do not set API `order` (vendor: breaks PostgREST idc on /active-jb-24h). Default sort = newest first.
+LINKEDIN_JOBS_REMOTE = "true"
+LINKEDIN_JOBS_COMPANY_ONLY = "true"
+LINKEDIN_TYPE_FILTER = "FULL_TIME"
+# Also scripts/linkedin_api_tester.py DEFAULT_WORKER_BASE_URL (provider tester defaults fetch).
+PUBLIC_BASE_URL = "https://job-search.oleg-velikanov.workers.dev"
+# /dashboard basic auth username (password: `wrangler secret put DASHBOARD_PASSWORD`).
+DASHBOARD_USER = "piqresq"
+REVIEW_EMAIL_TO = "piqresq@gmail.com"
+REVIEW_EMAIL_FROM = "job-search@teltel-providers.com"
+# Set "true" locally (.dev.vars) to inject one synthetic low incident ("It's a dummy") for pipeline status / ops testing.
+DASHBOARD_DUMMY_LOW_INCIDENT = "false"

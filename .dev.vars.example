@@ -1,0 +1,20 @@
+# Copy to .dev.vars for local `wrangler dev`. Same names as Cloudflare Worker secrets.
+# Set production values with: wrangler secret put <NAME>
+
+RAPIDAPI_KEY=
+OPENAI_API_KEY=
+OPENAI_MODEL=gpt-5-mini
+# CV + cover letter generation (default gpt-5.5 with high reasoning if unset).
+OPENAI_DRAFT_MODEL=gpt-5.5
+OPENAI_DRAFT_REASONING_EFFORT=high
+REVIEW_TOKEN_SECRET=
+# /dashboard login (must match wrangler [vars] DASHBOARD_USER, default piqresq).
+DASHBOARD_PASSWORD=
+# Fallback only; email routing is soft-disabled in wrangler.toml.
+RESEND_API_KEY=
+REVIEW_EMAIL_TO=piqresq@gmail.com
+REVIEW_EMAIL_FROM=job-search@teltel-providers.com
+PUBLIC_BASE_URL=http://127.0.0.1:8787
+ADMIN_RUN_KEY=
+JSEARCH_DATE_POSTED=month
+JSEARCH_EMPLOYMENT_TYPES=FULLTIME

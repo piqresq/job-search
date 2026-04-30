@@ -1,0 +1,35 @@
+---
+description: Operational dashboard low-priority incidents — use log.low only for mild, non-flow-breaking issues
+alwaysApply: true
+---
+
+# Operational incidents and `log.low`
+
+The Operations tab **Low-priority anomalies** bucket is fed from D1 `app_logs` rows with `severity = 'low'` (see `listOperationalAppLogs` in `src/db/appLogs.ts` and grouping in `src/dashboard/api.ts` → `groupOperationalIncidents` / `isExcludedOperationalIncidentRow`).
+
+## Policy
+
+1. **Do not** use `log.low` for **normal operational notifications**: expected outcomes, routine progress, “skipped by design”, happy-path confirmations, or anything that is **not** a problem for an operator.
+
+2. **Use `log.low` only** for **mild errors or degradations** that:
+   - do **not** stop or corrupt **orchestration** (DO / queue / coordinator),
+   - do **not** break the **main pipeline flow** (claim → fetch → dedupe → `processFetchedJobs` → persist → score for normal jobs),
+   - and are safe to treat as **background noise** in the dashboard (optional paths, fallbacks, secondary features).
+
+3. **Prefer instead:**
+   - **`log.info` / `log.status`** (severity `none`) for narrative and expected state changes that should appear in Textbot but **not** in the incident buckets.
+   - **`log.moderate`** when something went wrong in vendor / AI / storage / statistics writes and the pipeline or data quality is meaningfully degraded.
+   - **`log.critical`** for orchestration or queue failures that can stop or break coordination.
+
+4. **When adding a new `log.low`:** if the message is **intentionally excluded** from the Operations UI (noise that still helps Textbot), add a clear **`event_type`** and extend **`isExcludedOperationalIncidentRow`** in `src/dashboard/api.ts` with a narrow condition (prefer `event_type` over fragile message substrings). If it is a **real** mild incident, leave it unexcluded so operators can see it.
+
+5. **Do not** widen exclusions to hide genuine problems just to quiet the dashboard.
+
+## Quick reference
+
+| Intent | Logger | Typical severity in `app_logs` |
+|--------|--------|--------------------------------|
+| Expected / informational | `log.info`, `log.status` | `none` |
+| Mild, non-blocking side issue | `log.low` | `low` (shows in Low anomalies unless excluded) |
+| Degraded pipeline/vendor/AI | `log.moderate` | `moderate` |
+| Orchestration / fatal-style | `log.critical` | `critical` |

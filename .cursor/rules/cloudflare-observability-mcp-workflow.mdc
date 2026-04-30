@@ -1,0 +1,141 @@
+---
+description: Exact Cloudflare Workers Observability MCP workflow (no guesswork; timeframe is the only variable)
+alwaysApply: true
+---
+
+# Cloudflare Observability MCP — agent workflow (canonical)
+
+Use this whenever you need **production Workers logs/metrics** via MCP. **Do not trial-and-error tool shapes.**
+
+## Server + tools (exact)
+
+- **MCP server id:** `plugin-cloudflare-cloudflare-observability`
+- **Account session (do first if needed):**
+  - `accounts_list`
+  - `set_active_account` with **`activeAccountIdParam`** (string). **Do not** use `accountId`.
+- **Discover fields/values (mandatory before “clever” filters):**
+  - `observability_keys`
+  - `observability_values`
+- **Pull log lines (primary):**
+  - `query_worker_observability`
+- **Optional sanity checks:**
+  - `workers_list`, `workers_get_worker`, `workers_get_worker_code`
+- **Docs-only (not logs):** `search_cloudflare_documentation`
+
+## Hard requirement: read the tool schema before querying
+
+Before calling `query_worker_observability`, open the tool descriptor JSON and follow it literally:
+
+- Prefer the project-local MCP mirror (path varies by machine, but usually exists):
+  - `**/mcps/plugin-cloudflare-cloudflare-observability/tools/query_worker_observability.json`
+- Also read sibling tool schemas when needed:
+  - `observability_keys.json`, `observability_values.json`
+
+If those files are not present in the environment, **stop** and treat Observability MCP as unavailable (do not guess `queryId`/payload shape).
+
+## `query_worker_observability` — the only valid top-level shape
+
+Top-level argument is **exactly**:
+
+```json
+{ "query": { /* required fields */ } }
+```
+
+Inside `query`, you must include all of:
+
+- `queryId` (string)
+- `view` (`"events" | "calculations" | "invocations"`)
+- `parameters` (object)
+- `timeframe` (object)
+
+### Timeframe (ONLY thing you should not hardcode)
+
+**Never** embed a fixed `from`/`to` in rules or “default prod windows”.
+
+Choose `timeframe` per task using one of these patterns:
+
+- **Absolute window** (preferred when the user gives times): `{ "from": "<ISO8601 Z>", "to": "<ISO8601 Z>" }`
+- **Relative window** (preferred for “latest”): `{ "reference": "<ISO8601 Z>", "offset": "<-$Nd-$h-$m>" }`  
+  Example structure only: `offset` like `-30m`, `-2h`, `-6h`, `-1d` (still **not** a hardcoded constant—pick based on “how noisy / how urgent”).
+
+### `parameters` baseline (events / log lines)
+
+Use this structure unless the tool schema contradicts it:
+
+- `datasets`: `["cloudflare-workers"]` (unless schema/docs say otherwise for your queryId)
+- `filters`: array of `{ key, operation, type, value? }`
+- `calculations`: `[]`
+- `groupBys`: `[]`
+- `havings`: `[]`
+
+### Events query defaults (job-search production)
+
+For **log lines**, use:
+
+- `view`: `"events"`
+- `queryId`: `"workers-logs-events"`
+- `dry`: `false` when you need actual rows
+- `limit`: start with **25–50** for interactive triage; raise only if needed (max allowed by schema)
+
+### Worker scoping filter (fast path)
+
+When investigating **`job-search`**, include:
+
+- `{"key":"$metadata.service","operation":"eq","type":"string","value":"job-search"}`
+
+## Filter operations: do not invent operators; watch the `in` trap
+
+Allowed operations are exactly those enumerated in `query_worker_observability.json` (`includes`, `eq`, `regex`, …).
+
+**Critical:** for `operation: "in"`, the schema’s `value` is a **string/number/boolean**, **not** a JSON array.  
+If you need “error OR warn”, prefer one of:
+
+- Run **two queries** (one per level/message), or
+- Use `regex` (RE2) on `$metadata.message`, or
+- Use `includes` on a common substring you *verified* exists, or
+- Use `filterCombination: "OR"` **only if** you confirm it’s appropriate for your filters (don’t guess semantics—validate via `dry` + small limit)
+
+## Severity vs “log line level” reality check
+
+Do not assume `$metadata.level` alone matches app log severity.
+
+Many useful lines are `debug`/`info` **events** while the *message text* still contains `[verbose]`, `[info]`, `[error]`, etc.
+
+Practical triage order:
+
+1. Latest **unscoped** events for `$metadata.service = job-search` (small limit)
+2. Then narrow using **verified** keys from `observability_keys`
+3. Prefer filtering on **`$metadata.message`** (`includes` / `regex`) once you’ve seen an example line
+
+## Mandatory preflight sequence (no guessing keys/values)
+
+1. `set_active_account` (if not already set for this server)
+2. `observability_keys` with:
+   - your chosen **`timeframe`**
+   - `datasets: ["cloudflare-workers"]`
+   - `filters` including `$metadata.service = job-search` (when applicable)
+   - `limit: 1000+` (schema allows large limits for comprehensive keys)
+3. If you need exact enum-like values for a key, run `observability_values` for that key (same timeframe + service filter)
+
+## Pagination (when `limit` isn’t enough)
+
+Use the schema’s pagination fields:
+
+- `query.offset`: use **`$metadata.id`** from the last row
+- `query.offsetDirection`: `"next"` / `"prev"` as supported
+
+## “Latest logs” recipe (repeatable)
+
+1. `query_worker_observability` events (`workers-logs-events`) + service filter + **your timeframe** + `limit: 50`
+2. If empty: widen timeframe **once** (e.g., multiply window), then repeat
+3. If noisy: add **one** additional filter at a time (never stack multiple guesses at once)
+4. For incidents: add **one** `includes`/`regex` filter for a **known** token (`orchestrationError`, provider id, `/report`, `/claim`, etc.) only after you’ve seen it in an actual row
+
+## Safety / hygiene
+
+- Treat logs as sensitive: **do not paste** cookies, auth headers, secrets, tokens, or private request payloads into chat.
+- Prefer summarizing: timeframe, worker/scriptVersion id if present, trigger/origin, requestId, and the **message template** / high-signal fields.
+
+## Cross-rule note
+
+This rule is the **operational MCP cookbook**. The separate rule **“Debugging: check observability first”** is the **when**; this file is the **how**.

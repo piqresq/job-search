@@ -1,0 +1,24 @@
+---
+description: Full RapidAPI vendor paste archive — read when endpoint/query/response details are missing from context or curated docs.
+globs:
+  - src/providers/**/*.ts
+  - scripts/**/*.ts
+  - scripts/**/*.py
+  - docs/rapidapi-job-providers.md
+alwaysApply: false
+---
+
+# API endpoint vendors (verbatim archive)
+
+When you need **hosts, paths, query parameters, enums, credits, response field names, error text, or JSON examples** for a RapidAPI job provider and you do **not** already have that detail in context:
+
+1. **Read** `.cursor/rules/api-endpoint-vendors.md` first — it is the formatted merge of vendor pastes (`## Vendor 1:` … `## Vendor N:`). Use in-editor search on parameter names or URL fragments.
+2. If something is only in the raw file, open **`.cursor/rules/api-endpoint-vendors.txt`** (paste archive; may be one vendor or many). The `.txt` is the user’s paste target when adding vendors.
+3. After the user **updates** **`api-endpoint-vendors.txt`**, run **`python scripts/sync-api-endpoint-vendors-md.py`** from the repo root. The script **merges** into **`api-endpoint-vendors.md`**: existing vendors stay unless the same RapidAPI listing URL (`…/owner/api/slug`) is seen again (then that section is replaced). **New** vendors are appended as **`## Vendor N:`**. Nothing is omitted.
+
+**Relationship to other docs**
+
+- **`docs/rapidapi-job-providers.md`** — curated summary for humans and agents; keep it aligned with behavior, but treat **`.cursor/rules/api-endpoint-vendors.md`** as the **full verbatim** reference when details conflict or are missing.
+- Rule **`rapidapi-providers-reference.mdc`** — still applies; use both the curated doc and this archive as needed.
+
+Do **not** guess parameter names, defaults, or response shapes for these APIs when this file can be searched.

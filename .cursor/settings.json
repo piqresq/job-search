@@ -1,0 +1,13 @@
+{
+  "plugins": {
+    "cloudflare": {
+      "enabled": true
+    },
+    "browse": {
+      "enabled": true
+    },
+    "functions": {
+      "enabled": true
+    }
+  }
+}

@@ -1,0 +1,38 @@
+---
+description: Always-on — deploy to Cloudflare after any shipped-code change (Worker, dashboard, migrations)
+alwaysApply: true
+---
+
+# Deploy after changes (strict, always on)
+
+This rule applies **every** session (`alwaysApply: true`). Agents must treat it as non-optional project policy.
+
+When you **change anything that ships** to Cloudflare (affects the Worker, dashboard static assets, or D1 schema the Worker expects), you **must** finish the task by running a successful deploy — **unless** the user explicitly asked you **not** to deploy, or a deploy attempt failed for an environment reason you reported (e.g. missing `wrangler` auth) after a genuine retry.
+
+## In scope (always deploy before you stop)
+
+- `src/**`
+- `public/**` (including `public/dashboard.html` and `public/assets/**`)
+- `wrangler.toml`, `wrangler.*.toml`
+- `migrations/*.sql` (apply remote migrations per project docs/skill, then deploy)
+- `package.json` / lockfile when they change **build or deploy** behavior
+
+## Out of scope (no deploy required)
+
+- **Docs only:** `*.md` under `docs/`, root `README`, comments-only edits, **or** this rule file / other `.cursor/**` **if** nothing under “In scope” was modified in the same task.
+
+## Command
+
+From repo root:
+
+```bash
+npm run typecheck
+npm run deploy
+```
+
+If you added a new D1 migration in the same task, apply it to **remote** per `AGENTS.md` / `.cursor/skills/job-search/SKILL.md`, then deploy.
+
+## Do not
+
+- End a task that touched “In scope” paths with only “you can run deploy” — **you** run deploy unless an exclusion applies.
+- Skip deploy because the diff was “small”; size does not matter for shipped code.

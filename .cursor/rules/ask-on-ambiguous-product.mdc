@@ -1,0 +1,16 @@
+---
+description: Ask when product/design/UX is unclear; use senior defaults only for technical best practices
+alwaysApply: true
+---
+
+# Clarify before guessing (design & behavior)
+
+When the user gives an **approximate** or **high-level** request and implementation would require choosing **exact** design, UX, or product behavior:
+
+1. **Do not silently pick** among reasonable alternatives. **Stop and ask** with a short, concrete question (options or examples help).
+2. **Assume the user is not a strong programmer.** Explain choices in plain language; avoid jargon unless it matters for the decision.
+3. **Always ask** when the gap is something a **designer, front-end developer, or junior programmer** would recognize as underspecified—for example: layout, copy, visual hierarchy, interaction (clicks, empty states), edge-case behavior, or “what should happen when…?”
+4. **You may proceed without asking** when the decision is **standard engineering** that a mid/senior developer would apply the same way: security (no secrets in repo), safe defaults for errors, accessibility basics, consistent patterns with existing code, type safety, and minimal scoped changes. In those cases, follow **best practices** and match the project’s existing patterns.
+5. If you are **unsure** whether something is “product” vs “engineering,” **briefly state your default** and **ask only if it affects user-visible behavior or maintainability** in a non-obvious way.
+
+Goal: **no surprise product or UI decisions**; **no unnecessary blocks** on clear technical work.

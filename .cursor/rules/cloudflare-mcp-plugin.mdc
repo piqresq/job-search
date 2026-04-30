@@ -1,0 +1,46 @@
+---
+description: When and how to use the Cursor Cloudflare MCP plugins in job-search
+alwaysApply: true
+---
+
+# Cloudflare MCP plugins (this repo)
+
+Three plugin groups talk to your Cloudflare account: **`plugin-cloudflare-cloudflare-bindings`**, **`plugin-cloudflare-cloudflare-builds`**, **`plugin-cloudflare-cloudflare-observability`**. **`plugin-cloudflare-cloudflare-docs`** is documentation search only (no account).
+
+## Account session
+
+- If tools return **no active `accountId`**, run **`accounts_list`** then **`set_active_account`** on the server you are using.
+- Parameter name is **`activeAccountIdParam`** (string), not `accountId`.
+- Set the active account on **Bindings** (always), and on **Builds** / **Observability** too if you will call those tools in the same session.
+
+## Bindings — primary uses for job-search
+
+- **D1 (`d1_database_*`, `d1_database_query`):** Remote DB is **`job-search-db`** (binding **`DB`** in `wrangler.toml`). Prefer **read-only** `SELECT` / introspection unless the user explicitly asked to **mutate production data**. Never run destructive SQL “just to verify.”
+- **Workers (`workers_list`, `workers_get_worker`, `workers_get_worker_code`):** Production Worker name is **`job-search`** (`wrangler.toml` `name`). Use to compare **deployed** script/metadata to the repo or to confirm routing/bindings after deploy.
+- **R2 (`r2_bucket_*`):** Docs bucket **`job-search-docs`** (`DOCS_BUCKET`). Use for bucket inventory/metadata; avoid deletes unless requested.
+- **KV / Hyperdrive:** Use only when the task touches those bindings; prefer **`wrangler.toml`** and code for expected names.
+
+## Builds
+
+- Use **`workers_builds_list_builds`**, **`workers_builds_get_build`**, **`workers_builds_get_build_logs`** when **`npm run deploy`** / CI failed remotely or you need the **cloud build** truth vs local `wrangler deploy` output.
+- Set the **active worker** for builds if the tool requires it (plugin-specific “set active worker” flow).
+
+## Observability
+
+- Use **`query_worker_observability`** (and related key/value helpers) for **production** errors, spikes, or “what did the Worker do?” when dashboard/D1 are not enough. Keep queries scoped and time-bounded.
+
+## Docs plugin
+
+- Use **`search_cloudflare_documentation`** (Bindings or Docs server) for **Wrangler / Workers / D1 / R2** API questions when implementing or debugging platform behavior.
+
+## Boundaries vs repo workflows
+
+- **Ship code and schema:** still use the repo — **`npm run typecheck`**, **`npm run deploy`**, D1 **`migrations/`** + `wrangler d1 migrations apply` as documented in **`AGENTS.md`** / **`.cursor/rules/job-search.mdc`**. The MCP does **not** replace intentional deploys or migration files.
+- **Secrets:** never paste tokens from API responses into chat; do not use the plugin to “dump” `wrangler secret` values (they are not exposed there anyway).
+
+## When to reach for the plugin
+
+- Inspect **remote** D1 rows or schema sanity checks on **`job-search-db`**.
+- Inspect **deployed** Worker code/metadata or **build logs** after deploy issues.
+- **Observability** investigations on **`job-search`** in production.
+- **Doc-backed** Cloudflare platform answers during implementation.

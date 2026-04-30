@@ -1,0 +1,1117 @@
+Jobs API (https://rapidapi.com/Pat92/api/jobs-api14)
+
+API endpoint https://rapidapi.com/Pat92/api/jobs-api14/playground/apiendpoint_bded5d4e-0eea-48dd-8562-d749fea97c42
+
+Query Params
+datePosted
+(optional)
+String
+
+Optional
+
+The maximum age of when a result was added to LinkedIn, will return everything by default.
+
+Allowed values
+
+month, week or day
+workplaceTypes
+(optional)
+String
+
+Optional
+
+Filter by workplace-types, like remote, hybrid, etc. Multiple values are possible and need to be separated by semicolon (;). Will return everything by default.
+
+Allowed values
+
+remote, hybrid or onSite separated by a semicolon (;)
+organizationIds
+(optional)
+String
+
+Optional
+
+ID of organizations like companies and schools the job-postings should be from, use the Search and list organization IDs endpoint for valid IDs. Will return everything by default.
+
+Allowed format
+
+^\d+(;\d+)*;?$
+query
+(optional)
+String
+
+Optional
+
+Keywords, job-title, company-name, position or any other relevant search-query.
+experienceLevels
+(optional)
+String
+
+Optional
+
+Filter by experience-levels, like intern, director, etc. Multiple values are possible and need to be separated by semicolon (;). Will return everything by default.
+
+Allowed values
+
+intern, entry, associate, midSenior or director separated by a semicolon (;)
+location
+(optional)
+String
+
+Optional
+
+Location of the job offer, like country or city. Will be Worldwide if empty.
+token
+(optional)
+String
+
+Optional
+
+Pagination token from previous response as the meta.nextToken to get the next batch of results.
+employmentTypes
+(optional)
+String
+
+Optional
+
+Filter by job-types, like fulltime, contractor, etc. Multiple values are possible and need to be separated by semicolon (;). Will return everything by default.
+
+Allowed values
+
+contractor, fulltime, parttime, intern or
+
+
+Sample request
+
+curl --request GET \
+	--url 'https://jobs-api14.p.rapidapi.com/v2/linkedin/search?datePosted=month&workplaceTypes=remote%3Bhybrid%3BonSite&organizationIds=1441&query=java&experienceLevels=intern%3Bentry%3Bassociate%3BmidSenior%3Bdirector&location=Worldwide&employmentTypes=contractor%3Bfulltime%3Bparttime%3Bintern%3Btemporary' \
+	--header 'Content-Type: application/json' \
+	--header 'x-rapidapi-host: jobs-api14.p.rapidapi.com' \
+	--header 'x-rapidapi-key: '
+
+
+Sample json
+
+
+{
+  "_links": {
+    "next": "/v2/linkedin/search?token=dD0xMDtxPXJlYW...",
+    "self": "/v2/linkedin/search?query=react"
+  },
+  "data": [
+    {
+      "companyName": "Netflix",
+      "datePosted": "2025-12-18",
+      "id": "4344905017",
+      "linkedinCompanyName": "netflix",
+      "linkedinUrl": "https://www.linkedin.com/jobs/view/hr-coordinator-netflix-animation-studios-at-netflix-4344905017",
+      "location": "Burbank, CA",
+      "postedTimeAgo": "2 weeks ago",
+      "title": "HR Coordinator - Netflix Animation Studios"
+    },
+    {
+      "companyName": "Prospect Equities®",
+      "datePosted": "2025-12-10",
+      "id": "4342895176",
+      "linkedinCompanyName": "prospect-equities-",
+      "linkedinUrl": "https://www.linkedin.com/jobs/view/front-end-developer-intern-at-prospect-equities%C2%AE-4342895176",
+      "location": "Chicago, IL",
+      "postedTimeAgo": "3 weeks ago",
+      "title": "Front-End Developer Intern"
+    },
+    {
+      "companyName": "LinkedIn",
+      "datePosted": "2025-12-17",
+      "id": "4344456572",
+      "linkedinCompanyName": "linkedin",
+      "linkedinUrl": "https://www.linkedin.com/jobs/view/software-engineer-frontend-at-linkedin-4344456572",
+      "location": "Mountain View, CA",
+      "postedTimeAgo": "2 weeks ago",
+      "title": "Software Engineer - Frontend"
+    },
+    {
+      "companyName": "Notion",
+      "datePosted": "2025-12-19",
+      "id": "4334367155",
+      "linkedinCompanyName": "notionhq",
+      "linkedinUrl": "https://www.linkedin.com/jobs/view/software-engineer-fullstack-early-career-at-notion-4334367155",
+      "location": "New York, NY",
+      "postedTimeAgo": "2 weeks ago",
+      "title": "Software Engineer, Fullstack, Early Career"
+    }
+  ],
+  "errors": [],
+  "hasError": false,
+  "hasWarning": false,
+  "meta": {
+    "count": 10,
+    "nextToken": "dD0xMDtxPXJlYW...",
+    "position": 0
+  },
+  "warnings": []
+}
+
+
+endpoint https://rapidapi.com/Pat92/api/jobs-api14/playground/apiendpoint_1f412852-3344-45c4-a777-e1a4f22c2f09
+
+Query Params
+id
+*
+String
+
+Required
+
+ID of the job, to get allowed values, use the search endpoint.
+
+Allowed format
+
+^\d+$
+
+example request
+
+curl --request GET \
+	--url https://jobs-api14.p.rapidapi.com/v2/linkedin/get \
+	--header 'Content-Type: application/json' \
+	--header 'x-rapidapi-host: jobs-api14.p.rapidapi.com' \
+	--header 'x-rapidapi-key: '
+
+Example response
+
+{
+  "_links": {
+    "self": "/v2/linkedin/get?id=4344905017"
+  },
+  "data": {
+    "acceptingApplications": true,
+    "applicants": 200,
+    "companyName": "Netflix",
+    "description": "Netflix Animation Studios is on a mission...",
+    "employmentType": "Full-time",
+    "id": "4344905017",
+    "industries": "Entertainment Providers",
+    "jobFunction": "Other",
+    "linkedinCompanyName": "netflix",
+    "linkedinUrl": "https://www.linkedin.com/jobs/view/hr-coordinator-netflix-animation-studios-at-netflix-4344905017",
+    "location": "Burbank, CA",
+    "postedTimeAgo": "2 weeks ago",
+    "seniorityLevel": "Not Applicable",
+    "title": "HR Coordinator - Netflix Animation Studios"
+  },
+  "errors": [],
+  "hasError": false,
+  "hasWarning": false,
+  "warnings": []
+}
+
+Additional info
+
+API Overview
+Introduction
+
+The Jobs API provides a unified way to search, discover, and access job postings from multiple leading platforms. Instead of manually integrating different job boards, this API brings them together under one consistent structure, making it easier for developers, recruiters, and data-driven applications to find and analyze employment opportunities.
+
+Currently, the API supports job listings from LinkedIn, Bing Jobs, and Xing (with more providers to follow). Each job board offers:
+
+    A search endpoint to query jobs by keywords, location, filters, and other parameters.
+    A get endpoint to retrieve detailed information about a specific job posting using its ID.
+
+This design allows you to quickly find relevant jobs and then fetch complete details, such as job descriptions, company information, salary ranges, and application links.
+Why This API Is Useful
+
+The Jobs API is built to serve a wide range of use cases:
+
+    Recruiters & HR Platforms – Aggregate jobs from multiple sources into a single feed to discover talent opportunities faster.
+    AI & ML Companies – Train models on real job market data to analyze trends, skill demand, or generate personalized job recommendations.
+    Job Aggregators & Career Portals – Quickly expand offerings by pulling listings from multiple providers without building and maintaining custom scrapers.
+    Market Researchers & Analysts – Track hiring activity, salary benchmarks, and demand for specific roles or skills across different regions.
+    Personal Career Assistants – Power chatbots or personal apps that deliver tailored job suggestions based on a user’s profile.
+
+Benefits
+
+    Unified structure – Standardized responses across different job boards.
+    Global reach – Combine international sources like LinkedIn and Bing with regional platforms like Xing (focused on the German-speaking market).
+    Detailed filtering – Search by location, job type, career level, salary range, or workplace type (remote, hybrid, on-site).
+    Scalable – Pagination and structured endpoints make it suitable for production use in large-scale applications.
+
+With more job boards being added over time, the Jobs API continues to grow into a comprehensive hub for job discovery and employment data.
+
+The **Jobs API** makes it easy to find job postings from multiple platforms in one place. Instead of integrating LinkedIn, Bing Jobs, and Xing separately, you can access them all through a single, unified API. With simple search and detail endpoints, you can quickly discover relevant jobs and retrieve full descriptions, salaries, company info, and application links. Perfect for recruiters, job boards, AI apps, and career tools, the Jobs API helps you: - Aggregate jobs across major platforms - Power personalized job recommendations - Analyze hiring trends and skill demand - Build smarter recruitment and career solutions
+
+Open in Postman
+
+Use the Open in Postman button above to access the collection.
+
+To load the collection in Postman:
+
+    Open Postman and click Import.
+    Either:
+        Paste the collection URL directly, or
+        Open the link in your browser, right-click the page, and save the content as a JSON file, then import that file into Postman.
+
+After importing, open the collection’s Variables tab and replace the x-rapidapi-key with your own credentials.
+Jobs API
+
+This API allows you to discover employment opportunities from various providers, as well as income information.
+Table of contents
+
+    1 Job search Bing
+        1.1 Search and list jobs
+        1.2 Get job details
+    2 Job search Indeed
+        2.1 Search and list jobs
+    3 Job search LinkedIn
+        3.1 Search and list jobs
+        3.2 Get job details
+        3.3 Search and list organization IDs
+    4 Job search Xing
+        4.1 Search and list jobs
+        4.2 Get job details
+    5 Salary range
+        5.1 Get job titles
+        5.2 Get job salaries
+    6 Errors and warnings
+        6.1 Errors
+        6.2 Warnings
+
+1 Job search Bing
+1.1 Search and list jobs
+
+Get a list of jobs, use the /v2/bing/get for more information on a specific job.
+
+URL: /v2/bing/search
+Request parameters
+key	type	allowedValues	description	isRequired	example
+query	string	-	Optional
+Keywords, job-title, company-name, position or any other relevant search-query.	false	Java
+location	string	-	Required if token is not set
+Location of the job offer, like country or city in any combination.	true	Switzerland
+datePosted	string	week, day or empty	Optional
+The maximum age of when a result was added to Bing, will return everything by default.
+Allowed values
+week, day or empty	false	week
+employmentTypes	string	contractor, fulltime, parttime or temporary	Optional
+Filter by job-types, like fulltime, contractor, etc. Multiple values are possible and need to be separated by semicolon (;). Will return everything if not set.
+Allowed values
+contractor, fulltime, parttime or temporary separated by a semicolon (;)	false	contractor;fulltime;parttime;temporary
+remoteOnly	boolean	true or false	Optional
+Boolean to get only remote-jobs, will default to false if not set.
+Allowed values
+true or false	false	false
+token	string	-	Optional
+Pagination token from previous response as the meta.nextToken to get the next batch of results.	false	
+Request example
+
+/v2/bing/search?location=zurich&query=java&datePosted=day
+
+Example response
+
+{
+  "data": [
+    {
+      "company": "ETHjuniors",
+      "employmentType": "Full-time",
+      "id": "LTg3NDcyOTQ2Mi5SZXRybw==",
+      "image": "https://th.bing.com/th/id/OJA.-1678676695NS?w=24&h=24&o=6&pid=JobAns",
+      "jobProvider": "Jobrapido",
+      "location": "Zug, ZG",
+      "postedTimeAgo": "6 November",
+      "title": "Flutter Developer"
+    },
+    {
+      "company": "ETHjuniors",
+      "employmentType": "",
+      "id": "LTE0OTkxMjc1MDUuUmV0cm8=",
+      "image": "https://th.bing.com/th/id/OJA.-1678676695NS?w=24&h=24&o=6&pid=JobAns",
+      "jobProvider": "Bebee::Jobrapido",
+      "location": "Zug, ZG",
+      "postedTimeAgo": "6 November",
+      "title": "Flutter Developer"
+    },
+    {
+      "company": "Circleup",
+      "employmentType": "Full-time",
+      "id": "NzMzOTA3MzkyLlJldHJv",
+      "image": "",
+      "jobProvider": "Jobrapido",
+      "location": "Bern, BE",
+      "postedTimeAgo": "17 October",
+      "title": "Lead Full-Stack SW Engineer & Partner (Base Salary & Equity) - (Django & Flutter/React)"
+    },
+    {
+      "company": "Pixel Plus AG",
+      "employmentType": "",
+      "id": "NjY1NTMzMDQzLlJldHJv",
+      "image": "https://th.bing.com/th/id/OJA.1654796514NS?w=24&h=24&o=6&pid=JobAns",
+      "jobProvider": "Bebee",
+      "location": "ZH",
+      "postedTimeAgo": "1 day ago",
+      "title": "Flutter Developer For Finance App"
+    }
+  ],
+  "meta": {
+    "position": 0,
+    "count": 18,
+    "nextToken": "dD0yNDhDMkM1OTc.."
+  },
+  "_links": {
+    "self": "/v2/bing/search?location=switzerland&query=flutter",
+    "next": "/v2/bing/search?token=dD0yNDhDMkM1OTc.."
+  },
+  "errors": [],
+  "warnings": [],
+  "hasError": false,
+  "hasWarning": false
+}
+
+Pagination
+
+To get the next batch of results the meta.nextToken from the response can be used. For how the request should look, the _links.next gives an example.
+
+Generally the other URL-parameters can be left out if the token is set, but it will work even when the other parameters are present.
+nextToken example from response:
+
+{
+  "data": [],
+  "meta": {
+    "nextToken": "dG9rZW49ODY5ODU..."
+  },
+  "_links": {
+    "next": "/v2/bing/search?token=dG9rZW49ODY5ODU..."
+  },
+  "errors": [],
+  "warnings": [],
+  "hasError": false,
+  "hasWarning": false
+}
+
+token example request:
+
+/v2/bing/search?token=dG9rZW49ODY5ODU...
+1.2 Get job details
+
+Get job details by its ID, use the /v2/bing/search endpoint to search for jobs and get valid IDs.
+
+URL: /v2/bing/get
+Request parameters
+key	type	allowedValues	description	isRequired	example
+id	string	-	Required
+ID of the job, to get allowed values, use the /v2/bing/search endpoint.	true	
+Request example
+
+/v2/bing/get?id=MTEyNDYwODI1Mi5SZXRybw==
+
+Example response
+
+{
+  "data": {
+    "applyUrl": "https://ch.linkedin.com/jobs/view/senior-mobile-software-engineer-–-fokus-flutter-und-android-at-ti-m-4268105808?trk=bingjobs",
+    "companyName": "ti&m",
+    "description": "Job description Werde Teil unserer Organisation...",
+    "descriptionHtml": "<div><h3>Job description</h3></div><div><em>Werde Teil unserer Organisation...",
+    "employmentType": "Part-time",
+    "id": "LTE0OTY4MTM0NDIuUmV0cm8=",
+    "location": "Zürich, ZH",
+    "postedTimeAgo": "15 July",
+    "title": "Senior Mobile Software Engineer – Fokus Flutter Und Android"
+  },
+  "_links": { "self": "/v2/bing/get?id=LTE0OTY4MTM0NDIuUmV0cm8=" },
+  "errors": [],
+  "warnings": [],
+  "hasError": false,
+  "hasWarning": false
+}
+
+2 Job search Indeed
+2.1 Search and list jobs
+
+Get a list of job from Indeed.
+
+URL: /v2/indeed/search
+Request parameters
+key	type	allowedValues	description	isRequired	example
+query	string	-	Optional
+Keywords, job-title, company-name, position or any other relevant search-query.	false	Java
+location	string	-	Optional
+Location of the job offer, like city, towns or provinces.	false	Zurich
+countryCode	string	-	Required if token is not set
+Parameter to get the titles for the required county.
+Allowed format
+^[A-Za-z]{2}$	true	ch
+sortType	string	relevance or date	Optional
+Sorting of the results, can either be by relevance or by date, will be set to relevance by default.
+Allowed values
+relevance or date	false	relevance
+radius	integer	-	Optional
+Distance of the job offers from the location.
+Allowed format
+^[0-9]+$	false	20
+radiusType	string	km or miles	Optional
+Type of the distance, can either be km or miles, will be set to km by default.
+Allowed values
+km or miles	false	km
+token	string	-	Optional
+Pagination token from previous response as the meta.nextToken to get the next batch of results.	false	
+Request example
+
+/v2/indeed/search?location=zurich&query=java&countryCode=ch
+
+Example response
+
+{
+  "data": [
+    {
+      "applyUrl": "https://click.appcast.io/t/Jo4WXZskvtPZ9WgFwqnpCUVCv-vN0fkkJ6ip_S65XSY=",
+      "company": {
+        "addresses": ["Bethesda, MD"],
+        "image": "https://d2q79iu7y748jz.cloudfront.net/s/_squarelogo/256x256/debbff68624041821d0c56fbccbcc330",
+        "name": "Lockheed Martin"
+      },
+      "dateOnIndeedTimestamp": -2023594907,
+      "datePublishedTimestamp": -749158656,
+      "description": "Job ID: 691465BR\nDate posted: Nov. 30, 2025...",
+      "id": "56a1b7550fa78bba",
+      "location": {
+        "country": "United States",
+        "countryCode": "US",
+        "location": "King of Prussia, PA"
+      },
+      "title": "Java Software Engineer III"
+    },
+    {
+      "applyUrl": "https://click.appcast.io/t/q7vuN9iOmz3dRG2xAe7KoxP7I6Z7SQdG-wpiMdJf9nw=",
+      "company": {
+        "addresses": ["Bethesda, MD"],
+        "image": "https://d2q79iu7y748jz.cloudfront.net/s/_squarelogo/256x256/debbff68624041821d0c56fbccbcc330",
+        "name": "Lockheed Martin"
+      },
+      "dateOnIndeedTimestamp": -2023595367,
+      "datePublishedTimestamp": -749158656,
+      "description": "Job ID: 698997BR\nDate posted: Nov. 30, 2025...",
+      "id": "6c588ac5af1876cc",
+      "location": {
+        "country": "United States",
+        "countryCode": "US",
+        "location": "King of Prussia, PA"
+      },
+      "title": "Java Software Engineer III- Space Mission Applications"
+    },
+    {
+      "applyUrl": "https://click.appcast.io/t/TgmDjYI9cOSltDS4D0tQ4RxKivariwQLFIXeX5CIrPk=",
+      "company": { "addresses": [], "image": "", "name": "GEICO" },
+      "dateOnIndeedTimestamp": -2023807598,
+      "datePublishedTimestamp": -2106525952,
+      "description": "At GEICO, we offer a rewarding career...",
+      "id": "5f9b5f874e6ab3a5",
+      "location": {
+        "country": "United States",
+        "countryCode": "US",
+        "location": "Chevy Chase, MD"
+      },
+      "title": "Staff Engineer - Applied AI"
+    },
+    {
+      "applyUrl": "https://click.appcast.io/t/oP7qQFlODRAEfszK6tVzUXyMH5xMSoExd3UgIeLXVRQ=",
+      "company": { "addresses": [], "image": "", "name": "GEICO" },
+      "dateOnIndeedTimestamp": -2023808358,
+      "datePublishedTimestamp": -2106525952,
+      "description": "At GEICO, we offer a rewarding career...",
+      "id": "2bcbfe330ed5c52f",
+      "location": {
+        "country": "United States",
+        "countryCode": "US",
+        "location": "New York, NY"
+      },
+      "title": "Senior Staff ML Engineer, Fraud Risk Modeling"
+    }
+  ],
+  "meta": {
+    "position": 0,
+    "count": 20,
+    "nextToken": "dD1BQlFBQVFBVUFBQUFBQ..."
+  },
+  "_links": {
+    "self": "/v2/indeed/search?countryCode=us&query=java",
+    "next": "/v2/indeed/search?token=dD1BQlFBQVFBVUFBQUFBQ..."
+  },
+  "errors": [],
+  "warnings": [],
+  "hasError": false,
+  "hasWarning": false
+}
+
+Pagination
+
+To get the next batch of results the meta.nextToken from the response can be used. For how the request should look, the _links.next gives an example.
+
+Generally the other URL-parameters can be left out if the token is set, but it will work even when the other parameters are present.
+nextToken example from response:
+
+{
+  "data": [],
+  "meta": {
+    "nextToken": "dG9rZW49ODY5ODU..."
+  },
+  "_links": {
+    "next": "/v2/indeed/search?token=dG9rZW49ODY5ODU..."
+  },
+  "errors": [],
+  "warnings": [],
+  "hasError": false,
+  "hasWarning": false
+}
+
+token example request:
+
+/v2/indeed/search?token=dG9rZW49ODY5ODU...
+3 Job search LinkedIn
+3.1 Search and list jobs
+
+Get a list of jobs, use the /v2/linkedin/get for full details on a specific job.
+
+URL: /v2/linkedin/search
+Request parameters
+key	type	allowedValues	description	isRequired	example
+query	string	-	Optional
+Keywords, job-title, company-name, position or any other relevant search-query.	false	java
+organizationIds	string	-	Optional
+ID of organizations like companies and schools the job-postings should be from, use the Search and list organization IDs endpoint for valid IDs. Will return everything by default.
+Allowed format
+^\d+(;\d+)*;?$	false	1441
+location	string	-	Optional
+Location of the job offer, like country or city. Will be Worldwide if empty.	false	Worldwide
+datePosted	string	month, week or day	Optional
+The maximum age of when a result was added to LinkedIn, will return everything by default.
+Allowed values
+month, week or day	false	month
+employmentTypes	string	contractor, fulltime, parttime, intern or temporary	Optional
+Filter by job-types, like fulltime, contractor, etc. Multiple values are possible and need to be separated by semicolon (;). Will return everything by default.
+Allowed values
+contractor, fulltime, parttime, intern or temporary separated by a semicolon (;)	false	contractor;fulltime;parttime;intern;temporary
+experienceLevels	string	intern, entry, associate, midSenior or director	Optional
+Filter by experience-levels, like intern, director, etc. Multiple values are possible and need to be separated by semicolon (;). Will return everything by default.
+Allowed values
+intern, entry, associate, midSenior or director separated by a semicolon (;)	false	intern;entry;associate;midSenior;director
+workplaceTypes	string	remote, hybrid or onSite	Optional
+Filter by workplace-types, like remote, hybrid, etc. Multiple values are possible and need to be separated by semicolon (;). Will return everything by default.
+Allowed values
+remote, hybrid or onSite separated by a semicolon (;)	false	remote;hybrid;onSite
+token	string	-	Optional
+Pagination token from previous response as the meta.nextToken to get the next batch of results.	false	
+Request example
+
+/v2/linkedin/search?query=web&location=Switzerland&datePosted=month&jobTypes=contractor;fulltime;parttime;intern;temporary&experienceLevels=intern;entry;associate;midSenior;director&workplaceTypes=remote;hybrid;onSite
+
+Example response
+
+{
+  "data": [
+    {
+      "companyName": "Netflix",
+      "datePosted": "2025-12-18",
+      "id": "4344905017",
+      "linkedinCompanyName": "netflix",
+      "linkedinUrl": "https://www.linkedin.com/jobs/view/hr-coordinator-netflix-animation-studios-at-netflix-4344905017",
+      "location": "Burbank, CA",
+      "postedTimeAgo": "2 weeks ago",
+      "title": "HR Coordinator - Netflix Animation Studios"
+    },
+    {
+      "companyName": "Prospect Equities®",
+      "datePosted": "2025-12-10",
+      "id": "4342895176",
+      "linkedinCompanyName": "prospect-equities-",
+      "linkedinUrl": "https://www.linkedin.com/jobs/view/front-end-developer-intern-at-prospect-equities%C2%AE-4342895176",
+      "location": "Chicago, IL",
+      "postedTimeAgo": "3 weeks ago",
+      "title": "Front-End Developer Intern"
+    },
+    {
+      "companyName": "LinkedIn",
+      "datePosted": "2025-12-17",
+      "id": "4344456572",
+      "linkedinCompanyName": "linkedin",
+      "linkedinUrl": "https://www.linkedin.com/jobs/view/software-engineer-frontend-at-linkedin-4344456572",
+      "location": "Mountain View, CA",
+      "postedTimeAgo": "2 weeks ago",
+      "title": "Software Engineer - Frontend"
+    },
+    {
+      "companyName": "Notion",
+      "datePosted": "2025-12-19",
+      "id": "4334367155",
+      "linkedinCompanyName": "notionhq",
+      "linkedinUrl": "https://www.linkedin.com/jobs/view/software-engineer-fullstack-early-career-at-notion-4334367155",
+      "location": "New York, NY",
+      "postedTimeAgo": "2 weeks ago",
+      "title": "Software Engineer, Fullstack, Early Career"
+    }
+  ],
+  "meta": {
+    "position": 0,
+    "count": 10,
+    "nextToken": "dD0xMDtxPXJlYW..."
+  },
+  "_links": {
+    "self": "/v2/linkedin/search?query=react",
+    "next": "/v2/linkedin/search?token=dD0xMDtxPXJlYW..."
+  },
+  "errors": [],
+  "warnings": [],
+  "hasError": false,
+  "hasWarning": false
+}
+
+Pagination
+
+To get the next batch of results the meta.nextToken from the response can be used. For how the request should look, the _links.next gives an example.
+
+Generally the other URL-parameters can be left out if the token is set, but it will work even when the other parameters are present.
+nextToken example from response:
+
+{
+  "data": [],
+  "meta": {
+    "nextToken": "dG9rZW49ODY5ODU..."
+  },
+  "_links": {
+    "next": "/v2/linkedin/search?token=dG9rZW49ODY5ODU..."
+  },
+  "errors": [],
+  "warnings": [],
+  "hasError": false,
+  "hasWarning": false
+}
+
+token example request:
+
+/v2/linkedin/search?token=dG9rZW49ODY5ODU...
+3.2 Get job details
+
+Get job details by its ID, use the /v2/linkedin/search endpoint to search for jobs.
+
+URL: /v2/linkedin/get
+Request parameters
+key	type	allowedValues	description	isRequired	example
+id	string	-	Required
+ID of the job, to get allowed values, use the search endpoint.
+Allowed format
+^\d+$	true	
+Request example
+
+/v2/linkedin/get?id=4175032607
+
+Example response
+
+{
+  "data": {
+    "acceptingApplications": true,
+    "applicants": 200,
+    "companyName": "Netflix",
+    "description": "Netflix Animation Studios is on a mission...",
+    "employmentType": "Full-time",
+    "id": "4344905017",
+    "industries": "Entertainment Providers",
+    "jobFunction": "Other",
+    "linkedinCompanyName": "netflix",
+    "linkedinUrl": "https://www.linkedin.com/jobs/view/hr-coordinator-netflix-animation-studios-at-netflix-4344905017",
+    "location": "Burbank, CA",
+    "postedTimeAgo": "2 weeks ago",
+    "seniorityLevel": "Not Applicable",
+    "title": "HR Coordinator - Netflix Animation Studios"
+  },
+  "_links": { "self": "/v2/linkedin/get?id=4344905017" },
+  "errors": [],
+  "warnings": [],
+  "hasError": false,
+  "hasWarning": false
+}
+
+3.3 Search and list organization IDs
+
+Get a list of organization IDs, use the IDs in the organizationIds in /v2/linkedin/search to filter by companies or schools.
+
+URL: /v2/linkedin/organizations
+Request parameters
+key	type	allowedValues	description	isRequired	example
+query	string	-	Required
+Organization name or query, can be companies or schools, etc.	true	google
+Request example
+
+/v2/linkedin/organizations?query=google
+
+Example response
+
+{
+  "data": [
+    { "displayName": "Google", "id": 1441 },
+    { "displayName": "Google DeepMind", "id": 1594050 },
+    { "displayName": "Google Operations Center", "id": 14547137 },
+    { "displayName": "Google Fiber", "id": 2171947 },
+    { "displayName": "Google for Startups", "id": 18336369 },
+    { "displayName": "Google Developers Group", "id": 11162656 },
+    { "displayName": "Mandiant (part of Google Cloud)", "id": 28103 },
+    { "displayName": "Google Cloud Security", "id": 18451491 },
+    { "displayName": "Google Summer of Code", "id": 19184331 },
+    { "displayName": "Google Cloud Skills Boost", "id": 98808973 }
+  ],
+  "meta": { "count": 10 },
+  "_links": { "self": "/v2/linkedin/organizations?query=google" },
+  "errors": [],
+  "warnings": [],
+  "hasError": false,
+  "hasWarning": false
+}
+
+4 Job search Xing
+4.1 Search and list jobs
+
+Get a list of jobs, use the /v2/xing/get for more information on a specific job.
+
+URL: /v2/xing/search
+Request parameters
+key	type	allowedValues	description	isRequired	example
+query	string	-	Required if token is not set
+Keywords, job-title, company-name, position or any other relevant search-query.	true	Java
+location	string	-	Optional
+Location of the job offer, like country or city in any combination - locations should be written in german, as Xing is a german speaking job-market.	false	Schweiz
+datePosted	string	week, day, month or empty	Optional
+The maximum age of when a result was added to Xing, will return everything by default.
+Allowed values
+week, day, month or empty	false	week
+employmentTypes	string	contractor, fulltime, intern, parttime, seasonal, temporary or voluntary	Optional
+Filter by job-types, like fulltime, contractor, etc. Multiple values are possible and need to be separated by semicolon (;). Will return everything by default.
+Allowed values
+contractor, fulltime, intern, parttime, seasonal, temporary or voluntary separated by a semicolon (;)	false	contractor;fulltime;intern;parttime;seasonal;temporary;voluntary
+careerLevels	string	student, entry, professional, manager, executive or seniorExecutive	Optional
+Filter by career-levels, like intern, manager, etc. Multiple values are possible and need to be separated by semicolon (;). Will return everything by default.
+Allowed values
+student, entry, professional, manager, executive or seniorExecutive separated by a semicolon (;)	false	student;entry;professional;manager;executive;seniorExecutive
+remoteOptions	string	remote, hybrid or onSite	Optional
+Workplace type, like remote, hybrid or on-site. Multiple values are possible and need to be separated by semicolon (;). Will return everything by default.
+Allowed values
+remote, hybrid or onSite separated by a semicolon (;)	false	remote;hybrid;onSite
+minimumSalary	integer	-	Optional
+Minimum yearly salary for the posted jobs. Will return everything by default.
+Allowed format
+^[0-9]+$	false	1000
+token	string	-	Optional
+Pagination token from previous response as the meta.nextToken to get the next batch of results.	false	
+Request example
+
+/v2/xing/search?location=zurich&query=java&datePosted=day
+
+Example response
+
+{
+  "data": [
+    {
+      "company": "Amadeus Fire AG",
+      "dateUpdated": "2026-01-03T12:05:52Z",
+      "employmentType": "Full-time",
+      "id": "a2Fpc2Vyc2xhdXRlcm4...",
+      "image": "https://www.xing.com/imagecache/public/...",
+      "location": "Kaiserslautern",
+      "salary": { "currency": "EUR", "maximum": 70000, "minimum": 60000 },
+      "title": "Java/Kotlin Full-Stack Entwickler (m/w/d)"
+    },
+    {
+      "company": "Finanz Informatik GmbH & Co. KG",
+      "dateUpdated": "2026-01-03T09:19:07Z",
+      "employmentType": "Full-time",
+      "id": "bXVlbnN0ZXItc29mdHdhcmV...",
+      "image": "https://www.xing.com/imagecache/public/...",
+      "location": "Münster",
+      "salary": { "currency": "EUR", "maximum": 73500, "minimum": 49500 },
+      "title": "Softwareentwickler (m/w/d) im Umfeld Nachwuchskunden"
+    },
+    {
+      "company": "Finanz Informatik GmbH & Co. KG",
+      "dateUpdated": "2026-01-03T09:19:06Z",
+      "employmentType": "Full-time",
+      "id": "bXVlbnN0ZXItamF2YS1zb2...",
+      "image": "https://www.xing.com/imagecache/public/...",
+      "location": "Münster",
+      "salary": { "currency": "EUR", "maximum": 77500, "minimum": 49000 },
+      "title": "Java Softwareentwickler (m/w/d)"
+    },
+    {
+      "company": "Coperitus GmbH",
+      "dateUpdated": "2026-01-03T09:25:04Z",
+      "employmentType": "Full-time",
+      "id": "Y29idXJnLXNvZnR3YXJlZW50d2lja2xlci1...",
+      "image": "https://www.xing.com/assets/companies/img/default-logo_96x96.png",
+      "location": "Coburg",
+      "salary": { "currency": "EUR", "maximum": 65500, "minimum": 49500 },
+      "title": "Softwareentwickler Java / Full-Stack Softwareentwickler Java / Softwarearchitekt (m/w/d)"
+    }
+  ],
+  "meta": {
+    "position": 0,
+    "count": 4,
+    "nextToken": "dD0xO3E9a290bGluO2w9O2RwPWRheTtldD07Y2w9O3JvPTttcz0w"
+  },
+  "_links": {
+    "self": "/v2/xing/search?query=kotlin&datePosted=day",
+    "next": "/v2/xing/search?token=dD0xO3E9a290bGluO2w9O2RwPWRheTtldD07Y2w9O3JvPTttcz0w"
+  },
+  "errors": [],
+  "warnings": [],
+  "hasError": false,
+  "hasWarning": false
+}
+
+Pagination
+
+To get the next batch of results the meta.nextToken from the response can be used. For how the request should look, the _links.next gives an example.
+
+Generally the other URL-parameters can be left out if the token is set, but it will work even when the other parameters are present.
+nextToken example from response:
+
+{
+  "data": [],
+  "meta": {
+    "nextToken": "dG9rZW49ODY5ODU..."
+  },
+  "_links": {
+    "next": "/v2/xing/search?token=dG9rZW49ODY5ODU..."
+  },
+  "errors": [],
+  "warnings": [],
+  "hasError": false,
+  "hasWarning": false
+}
+
+token example request:
+
+/v2/xing/search?token=dG9rZW49ODY5ODU...
+4.2 Get job details
+
+Get job details by its ID, use the /v2/xing/search endpoint to search for jobs and get valid IDs.
+
+URL: /v2/xing/get
+Request parameters
+key	type	allowedValues	description	isRequired	example
+id	string	-	Required
+ID of the job, to get allowed values, use the /v2/xing/search endpoint.	true	
+Request example
+
+/v2/xing/get?id=MTEyNDYwODI1Mi5SZXRybw==
+
+Example response
+
+{
+  "data": {
+    "applyUrl": "https://www.it-jobs.de/_sde-72645/...",
+    "benefits": "",
+    "company": "Coperitus GmbH",
+    "country": "Germany",
+    "countryCode": "DE",
+    "dateUpdated": "2026-01-03T09:25:04Z",
+    "description": "Coperitus - Unternehmen, Team und Karrieremöglichkeiten...",
+    "employmentType": "EmploymentType:FULL_TIME.ef2fe9",
+    "id": "Y29idXJnLXNvZnR3YXJ...",
+    "location": "Coburg",
+    "remoteOptions": ["PARTLY_REMOTE"],
+    "responsibility": "",
+    "salary": { "currency": "EUR", "maximum": 65500, "minimum": 49500 },
+    "skills": "",
+    "title": "Softwareentwickler Java / Full-Stack Softwareentwickler Java / Softwarearchitekt (m/w/d)"
+  },
+  "_links": {
+    "self": "/v2/xing/get?id=Y29idXJnLXNvZnR3YXJ..."
+  },
+  "errors": [],
+  "warnings": [],
+  "hasError": false,
+  "hasWarning": false
+}
+
+5 Salary range
+5.1 Get job titles
+
+Find job titles from your query to use in /v2/salary/range.
+
+URL: /v2/salary/titles
+Request parameters
+key	type	allowedValues	description	isRequired	example
+query	string	-	Required
+Search query for valid job titles.	true	programming
+countryCode	string	-	Required
+Parameter to get the titles for the required county.
+Allowed format
+^[A-Za-z]{2}$	true	de
+Request example
+
+/v2/salary/range?query=programming&countryCode=de
+
+Example response
+
+{
+  "data": {
+    "jobTitles": [
+      { "count": 31, "jobTitle": "software engineer" },
+      { "count": 19, "jobTitle": "full stack developer" },
+      { "count": 15, "jobTitle": "machine learning engineer" },
+      { "count": 14, "jobTitle": "senior software engineer" },
+      { "count": 13, "jobTitle": "data scientist" },
+      { "count": 9, "jobTitle": "data engineer" },
+      { "count": 9, "jobTitle": "r&d engineer" },
+      { "count": 8, "jobTitle": "back end developer" },
+      { "count": 8, "jobTitle": "senior engineer" },
+      { "count": 7, "jobTitle": "ai developer" },
+      { "count": 6, "jobTitle": "automation engineer" },
+      { "count": 5, "jobTitle": "application developer" },
+      { "count": 5, "jobTitle": "computer vision engineer" },
+      { "count": 5, "jobTitle": "model" },
+      { "count": 5, "jobTitle": "physicist" },
+      { "count": 5, "jobTitle": "quantitative analyst" },
+      { "count": 5, "jobTitle": "research engineer" },
+      { "count": 5, "jobTitle": "research intern" },
+      { "count": 5, "jobTitle": "senior java developer" },
+      { "count": 5, "jobTitle": "student researcher" },
+      { "count": 4, "jobTitle": "devops engineer" },
+      { "count": 4, "jobTitle": "electronics engineer" },
+      { "count": 4, "jobTitle": "engineer" },
+      { "count": 4, "jobTitle": "infrastructure engineer" },
+      { "count": 4, "jobTitle": "senior research engineer" }
+    ]
+  },
+  "meta": { "count": 25 },
+  "_links": { "self": "/v2/salary/titles?query=programming&countryCode=ch" },
+  "errors": [],
+  "warnings": [],
+  "hasError": false,
+  "hasWarning": false
+}
+
+5.2 Get job salaries
+
+Get salary ranges for jobs, use /v2/salary/titles to get a list of valid job titles.
+
+URL: /v2/salary/range
+Request parameters
+key	type	allowedValues	description	isRequired	example
+query	string	-	Required
+Search query for valid job titles.	true	developer
+countryCode	string	-	Required
+Parameter to get the titles for the required county.
+Allowed format
+^[A-Za-z]{2}$	true	de
+Request example
+
+/v2/salary/range?query=developer&countryCode=de
+
+Example response
+
+{
+  "data": {
+    "country": "Switzerland",
+    "countryCode": "CH",
+    "currency": "CHF",
+    "dailySalary": {
+      "max": 1006.060859127188,
+      "mean": 849.55082984955,
+      "median": 841.320182765177,
+      "min": 703.555499159465
+    },
+    "hourlySalary": {
+      "max": 81.7029013044972,
+      "mean": 68.9926130955627,
+      "median": 68.3241965278114,
+      "min": 57.1362308637385
+    },
+    "lastUpdatedTimestamp": 1761956344,
+    "monthlySalary": {
+      "max": 9668.88383959108,
+      "mean": 8164.72305340431,
+      "median": 8085.62130736033,
+      "min": 6761.61519888569
+    },
+    "weeklySalary": {
+      "max": 2498.644050376289,
+      "mean": 2109.937094995819,
+      "median": 2089.495531067015,
+      "min": 1747.344354107386
+    },
+    "yearlySalary": {
+      "max": 136562.9666689806,
+      "mean": 115318.253968254,
+      "median": 114201.0237597132,
+      "min": 95500.8092302153
+    }
+  },
+  "_links": {
+    "self": "/v2/salary/range?query=full%20stack%20developer&countryCode=ch"
+  },
+  "errors": [],
+  "warnings": [],
+  "hasError": false,
+  "hasWarning": false
+}
+
+6 Errors and warnings
+
+There are two types of possible issues, either you have an error, then nothing will be returned, except the error, or you have warnings then the result will be returned, but also some warnings will be set.
+
+The fields hasError and hasWarning in the response indicate whether the response contains errors or warnings:
+
+    hasError: This field is true if the response contains any errors. If set to false, the response has no errors.
+    hasWarning: This field is true if the response contains any warnings. If set to false, the response has no warnings.
+
+6.1 Errors
+Common error Codes
+code	error	message	description
+400	MISSING_PARAMETER	400: Required parameter '...' is missing.	A mandatory URL-parameter is missing.
+400	MISSING_OR_PARAMETER	400: Either parameter '...' or parameter '...' must to be set.	One of two URL-parameters must be set, but both are missing.
+400	INVALID_PARAMETER	400: Parameter '...' contains an invalid value, valid values are ...	An invalid value has been set for an URL-parameter.
+400	INVALID_PARAMETER_FORMAT	400: The value of parameter '...' does not match the expected format: ...	The format of the URL-parameter is not valid, or has the wrong type.
+504	PROXY_TIMEOUT	504: Proxy timed out, please try again.	The proxy service timed-out, this usually works again after a retry.
+500	UNEXPECTED_EXCEPTION	500: An unexpected error occurred.	Something happened that was not planned for.
+Error response example
+
+{
+  "data": [],
+  "meta": {},
+  "_links": {},
+  "errors": [
+    {
+      "code": 400,
+      "error": "MISSING_OR_PARAMETER",
+      "message": "400: Either parameter 'countryCode' or parameter 'token' must to be set.",
+      "field": "countryCode OR token"
+    },
+    {
+      "code": 400,
+      "error": "MISSING_OR_PARAMETER",
+      "message": "400: Either parameter 'query' or parameter 'token' must to be set.",
+      "field": "query OR token"
+    }
+  ],
+  "warnings": [],
+  "hasError": true,
+  "hasWarning": false
+}
+
+6.2 Warnings
+Common warning Codes
+code	error	message	description
+200	UNKNOWN_PARAMETER	200: Parameter '...' is unknown and was ignored.	A unknown URL-parameter has been set, it will be ignored and the endpoint will return the result as expected.
+200	NOT_RECOMMENDED_PARAMETER	200: Parameter '...' is not recommended.	A not recommended URL-parameter has been set, this message will also include a better approach.
+Warning response example
+
+{
+  "data": [],
+  "meta": {},
+  "_links": {},
+  "errors": [],
+  "warnings": [
+    {
+      "code": 200,
+      "error": "UNKNOWN_PARAMETER",
+      "message": "200: Parameter 'invalidParam' is unknown and was ignored.",
+      "field": "invalidParam"
+    }
+  ],
+  "hasError": false,
+  "hasWarning": true
+}
