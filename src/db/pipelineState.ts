@@ -23,91 +23,117 @@ function providerUtcDayRequestCountKey(providerId: JobSourceId, ymdUtc: string):
 
 export async function getProviderUtcDayRequestCount(
   db: D1Database,
+  userId: string,
   providerId: JobSourceId,
   ymdUtc: string,
 ): Promise<number> {
-  return getPipelineStateInt(db, providerUtcDayRequestCountKey(providerId, ymdUtc), 0);
+  return getPipelineStateInt(db, userId, providerUtcDayRequestCountKey(providerId, ymdUtc), 0);
 }
 
 export async function bumpProviderUtcDayRequestCount(
   db: D1Database,
+  userId: string,
   providerId: JobSourceId,
   nowSec: number,
 ): Promise<void> {
   const ymd = utcYmdFromUnix(nowSec);
   await db
     .prepare(
-      `INSERT INTO pipeline_state (k, v, updated_at) VALUES (?, '1', ?)
-       ON CONFLICT(k) DO UPDATE SET
+      `INSERT INTO pipeline_state (user_id, k, v, updated_at) VALUES (?, ?, '1', ?)
+       ON CONFLICT(user_id, k) DO UPDATE SET
          v = CAST(COALESCE(NULLIF(pipeline_state.v, ''), '0') AS INTEGER) + 1,
          updated_at = excluded.updated_at`,
     )
-    .bind(providerUtcDayRequestCountKey(providerId, ymd), nowSec)
+    .bind(userId, providerUtcDayRequestCountKey(providerId, ymd), nowSec)
     .run();
 }
 
-/** Removes all per-vendor UTC-day RapidAPI counters for the given UTC calendar date (dashboard “refresh limits”). */
 export async function clearAllProviderUtcDayRequestCountsForUtcDate(
   db: D1Database,
+  userId: string,
   ymdUtc: string,
 ): Promise<{ deletedRows: number }> {
   const safeYmd = ymdUtc.replace(/[^0-9-]/g, "").slice(0, 10) || "unknown";
   const globPattern = `${K_PROVIDER_UTC_DAY_REQUEST_COUNT}:*:${safeYmd}`;
   const countRow = await db
-    .prepare(`SELECT COUNT(1) AS c FROM pipeline_state WHERE k GLOB ?`)
-    .bind(globPattern)
+    .prepare(`SELECT COUNT(1) AS c FROM pipeline_state WHERE user_id = ? AND k GLOB ?`)
+    .bind(userId, globPattern)
     .first<{ c: number }>();
   const deletedRows = Number(countRow?.c ?? 0);
   if (deletedRows > 0) {
-    await db.prepare(`DELETE FROM pipeline_state WHERE k GLOB ?`).bind(globPattern).run();
+    await db
+      .prepare(`DELETE FROM pipeline_state WHERE user_id = ? AND k GLOB ?`)
+      .bind(userId, globPattern)
+      .run();
   }
   return { deletedRows };
 }
 
 export async function getPipelineStateInt(
   db: D1Database,
+  userId: string,
   key: string,
   defaultVal: number,
 ): Promise<number> {
   const row = await db
-    .prepare("SELECT v FROM pipeline_state WHERE k = ?")
-    .bind(key)
+    .prepare("SELECT v FROM pipeline_state WHERE user_id = ? AND k = ?")
+    .bind(userId, key)
     .first<{ v: string }>();
   if (!row?.v) return defaultVal;
   const n = parseInt(row.v, 10);
   return Number.isFinite(n) ? n : defaultVal;
 }
 
-export async function setPipelineStateInt(db: D1Database, key: string, value: number, now: number): Promise<void> {
+export async function setPipelineStateInt(
+  db: D1Database,
+  userId: string,
+  key: string,
+  value: number,
+  now: number,
+): Promise<void> {
   await db
     .prepare(
-      `INSERT INTO pipeline_state (k, v, updated_at) VALUES (?, ?, ?)
-       ON CONFLICT(k) DO UPDATE SET v = excluded.v, updated_at = excluded.updated_at`,
+      `INSERT INTO pipeline_state (user_id, k, v, updated_at) VALUES (?, ?, ?, ?)
+       ON CONFLICT(user_id, k) DO UPDATE SET v = excluded.v, updated_at = excluded.updated_at`,
     )
-    .bind(key, String(value), now)
+    .bind(userId, key, String(value), now)
     .run();
 }
 
-export async function getLinkedinFreezeUntil(db: D1Database): Promise<number> {
-  return getPipelineStateInt(db, K_LINKEDIN_FREEZE_UNTIL, 0);
+export async function getLinkedinFreezeUntil(db: D1Database, userId: string): Promise<number> {
+  return getPipelineStateInt(db, userId, K_LINKEDIN_FREEZE_UNTIL, 0);
 }
 
-export async function setLinkedinFreezeUntil(db: D1Database, until: number, now: number): Promise<void> {
-  await setPipelineStateInt(db, K_LINKEDIN_FREEZE_UNTIL, until, now);
+export async function setLinkedinFreezeUntil(
+  db: D1Database,
+  userId: string,
+  until: number,
+  now: number,
+): Promise<void> {
+  await setPipelineStateInt(db, userId, K_LINKEDIN_FREEZE_UNTIL, until, now);
 }
 
-export async function getLinkedinRrStart(db: D1Database): Promise<number> {
-  return getPipelineStateInt(db, K_LINKEDIN_RR_START, 0);
+export async function getLinkedinRrStart(db: D1Database, userId: string): Promise<number> {
+  return getPipelineStateInt(db, userId, K_LINKEDIN_RR_START, 0);
 }
 
-export async function setLinkedinRrStart(db: D1Database, start: number, now: number): Promise<void> {
-  await setPipelineStateInt(db, K_LINKEDIN_RR_START, start, now);
+export async function setLinkedinRrStart(
+  db: D1Database,
+  userId: string,
+  start: number,
+  now: number,
+): Promise<void> {
+  await setPipelineStateInt(db, userId, K_LINKEDIN_RR_START, start, now);
 }
 
-export async function bumpLinkedinSweepId(db: D1Database, now: number): Promise<number> {
-  const cur = await getPipelineStateInt(db, K_LINKEDIN_SWEEP_ID, 0);
+export async function bumpLinkedinSweepId(
+  db: D1Database,
+  userId: string,
+  now: number,
+): Promise<number> {
+  const cur = await getPipelineStateInt(db, userId, K_LINKEDIN_SWEEP_ID, 0);
   const next = cur + 1;
-  await setPipelineStateInt(db, K_LINKEDIN_SWEEP_ID, next, now);
+  await setPipelineStateInt(db, userId, K_LINKEDIN_SWEEP_ID, next, now);
   return next;
 }
 
@@ -119,33 +145,35 @@ function providerCycleRequestCountKey(providerId: JobSourceId, cycleId: string):
 
 export async function getProviderCycleRequestCount(
   db: D1Database,
+  userId: string,
   providerId: JobSourceId,
   cycleId: string,
 ): Promise<number> {
-  return getPipelineStateInt(db, providerCycleRequestCountKey(providerId, cycleId), 0);
+  return getPipelineStateInt(db, userId, providerCycleRequestCountKey(providerId, cycleId), 0);
 }
 
 export async function bumpProviderCycleRequestCount(
   db: D1Database,
+  userId: string,
   providerId: JobSourceId,
   cycleId: string,
   now: number,
 ): Promise<number> {
   const row = await db
     .prepare(
-      `INSERT INTO pipeline_state (k, v, updated_at) VALUES (?, '1', ?)
-       ON CONFLICT(k) DO UPDATE SET
+      `INSERT INTO pipeline_state (user_id, k, v, updated_at) VALUES (?, ?, '1', ?)
+       ON CONFLICT(user_id, k) DO UPDATE SET
          v = CAST(COALESCE(NULLIF(pipeline_state.v, ''), '0') AS INTEGER) + 1,
          updated_at = excluded.updated_at
        RETURNING v`,
     )
-    .bind(providerCycleRequestCountKey(providerId, cycleId), now)
+    .bind(userId, providerCycleRequestCountKey(providerId, cycleId), now)
     .first<{ v: string | number }>();
   const raw = row?.v;
   const n = typeof raw === "number" ? raw : parseInt(String(raw ?? ""), 10);
   if (!Number.isFinite(n)) {
     throw new Error(`pipeline_state: failed to bump provider request count for ${providerId}/${cycleId}`);
   }
-  await bumpProviderUtcDayRequestCount(db, providerId, now);
+  await bumpProviderUtcDayRequestCount(db, userId, providerId, now);
   return n;
 }

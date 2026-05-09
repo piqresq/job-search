@@ -38,6 +38,10 @@ bucket_name = "job-search-docs"
 name = "PIPELINE_COORDINATOR"
 class_name = "PipelineCoordinator"
 
+[[durable_objects.bindings]]
+name = "PIPELINE_DISPATCHER"
+class_name = "PipelineDispatcher"
+
 [[queues.producers]]
 binding = "PIPELINE_QUEUE"
 queue = "job-search-pipeline"
@@ -48,6 +52,10 @@ queue = "job-search-pipeline"
 [[migrations]]
 tag = "pipeline-coordinator-v1"
 new_sqlite_classes = ["PipelineCoordinator"]
+
+[[migrations]]
+tag = "pipeline-dispatcher-v1"
+new_sqlite_classes = ["PipelineDispatcher"]
 
 [triggers]
 # Daily 00:00 UTC: scheduled pipeline + retention. LinkedIn already uses a 24h freeze when the active-jb slice is exhausted;

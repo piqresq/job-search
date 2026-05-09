@@ -50,7 +50,7 @@ function statisticsVariantFromJob(job: NormalizedJob): StatisticsVariantDimensio
   if (!searchQuery) return null;
   return {
     searchQuery,
-    tier: job.searchTier,
+    tier: 1,
     countryKey: job.searchCountryKey,
     countryLabel: job.searchCountryLabel ?? job.country,
   };
@@ -144,6 +144,7 @@ async function retryPipelineStateWrite<T>(
 
 async function markVisibleProcessingFailure(
   env: Env,
+  userId: string,
   id: string,
   providerId: NormalizedJob["source"],
   reason: string,
@@ -156,7 +157,7 @@ async function markVisibleProcessingFailure(
       providerId,
       phase: "processFetchedJobs",
       action: "markDashboardProcessingFailure",
-      run: () => markDashboardProcessingFailure(env.DB, id, reason, now),
+      run: () => markDashboardProcessingFailure(env.DB, userId, id, reason, now),
     });
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
@@ -202,6 +203,7 @@ export type ProcessFetchedJobsOptions = {
 
 export async function processFetchedJobs(
   env: Env,
+  userId: string,
   jobs: NormalizedJob[],
   opts?: ProcessFetchedJobsOptions,
 ): Promise<ProcessFetchedJobsSummary> {
@@ -224,7 +226,7 @@ export async function processFetchedJobs(
     let existing: Awaited<ReturnType<typeof getJob>>;
     try {
       id = await stableJobId(job.source, job.externalId);
-      existing = await getJob(env.DB, id);
+      existing = await getJob(env.DB, userId, id);
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       errors.push(`job_lookup ${job.source}:${job.externalId}: ${msg}`);
@@ -317,7 +319,7 @@ export async function processFetchedJobs(
         providerId: job.source,
         phase: "processFetchedJobs",
         action: "upsertNormalizedJob",
-        run: () => upsertNormalizedJob(env.DB, id, jobWithFetchMeta, now, contentDedupeHash, fx),
+        run: () => upsertNormalizedJob(env.DB, userId, id, jobWithFetchMeta, now, contentDedupeHash, fx),
       });
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
@@ -342,8 +344,9 @@ export async function processFetchedJobs(
       );
       if (existing) {
         await markVisibleProcessingFailure(
-          env,
-          id,
+      env,
+      userId,
+      id,
           job.source,
           `Pipeline failed while refreshing the stored job row before scoring: ${msg.slice(0, 500)}`,
           now,
@@ -356,7 +359,7 @@ export async function processFetchedJobs(
     if (contentDedupeHash) {
       let dupOf: string | null = null;
       try {
-        dupOf = await findOtherJobIdWithContentDedupeHash(env.DB, contentDedupeHash, id);
+        dupOf = await findOtherJobIdWithContentDedupeHash(env.DB, userId, contentDedupeHash, id);
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
         errors.push(`content_dedupe_lookup ${id}: ${msg}`);
@@ -402,7 +405,7 @@ export async function processFetchedJobs(
             phase: "content_hash_dedupe",
             action: "markHardRejectedDuplicate",
             run: () =>
-              markHardRejected(env.DB, id, [
+              markHardRejected(env.DB, userId, id, [
                 `Duplicate listing (content-hash dedupe; fingerprint ${contentDedupeHash.slice(0, 8)}… matches an earlier saved job)`,
               ], now),
           });
@@ -429,8 +432,9 @@ export async function processFetchedJobs(
             },
           );
           await markVisibleProcessingFailure(
-            env,
-            id,
+      env,
+      userId,
+      id,
             job.source,
             `Pipeline failed while saving the duplicate-listing filter result: ${msg.slice(0, 500)}`,
             now,
@@ -439,6 +443,7 @@ export async function processFetchedJobs(
           continue;
         }
         statisticsDeltas.push({
+          userId,
           providerId: job.source,
           atUnix: jobWithFetchMeta.apiFetchedAtUnix ?? now,
           jobsProcessed: 1,
@@ -478,7 +483,7 @@ export async function processFetchedJobs(
           providerId: job.source,
           phase: "hard_filters",
           action: "markHardRejected",
-          run: () => markHardRejected(env.DB, id, hf.reasons, now),
+          run: () => markHardRejected(env.DB, userId, id, hf.reasons, now),
         });
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
@@ -502,8 +507,9 @@ export async function processFetchedJobs(
           },
         );
         await markVisibleProcessingFailure(
-          env,
-          id,
+      env,
+      userId,
+      id,
           job.source,
           `Pipeline failed while saving the hard-filter result: ${msg.slice(0, 500)}`,
           now,
@@ -512,6 +518,7 @@ export async function processFetchedJobs(
         continue;
       }
       statisticsDeltas.push({
+        userId,
         providerId: job.source,
         atUnix: jobWithFetchMeta.apiFetchedAtUnix ?? now,
         jobsProcessed: 1,
@@ -547,7 +554,7 @@ export async function processFetchedJobs(
         providerId: job.source,
         phase: "hard_filters",
         action: "markHardPassed",
-        run: () => markHardPassed(env.DB, id, now),
+        run: () => markHardPassed(env.DB, userId, id, now),
       });
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
@@ -571,8 +578,9 @@ export async function processFetchedJobs(
         },
       );
       await markVisibleProcessingFailure(
-        env,
-        id,
+      env,
+      userId,
+      id,
         job.source,
         `Pipeline failed while recording that hard filters passed: ${msg.slice(0, 500)}`,
         now,
@@ -583,8 +591,8 @@ export async function processFetchedJobs(
 
     let scoring: ScoringResult | null;
     try {
-      scoring = await scoreJobWithOpenAI(env.DB, env, jobWithFetchMeta);
-      await resetOpenAiNetworkFailureStreak(env.DB);
+      scoring = await scoreJobWithOpenAI(env.DB, env, userId, jobWithFetchMeta);
+      await resetOpenAiNetworkFailureStreak(env.DB, userId);
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       errors.push(`openai ${id}: ${msg}`);
@@ -621,9 +629,9 @@ export async function processFetchedJobs(
         },
       );
       if (isOpenAiNetworkOutageStyleFailure(e)) {
-        const streak = await incrementOpenAiNetworkFailureStreak(env.DB);
+        const streak = await incrementOpenAiNetworkFailureStreak(env.DB, userId);
         if (streak > 3) {
-          await setApiExtractionEnabled(env.DB, false);
+          await setApiExtractionEnabled(env.DB, userId, false);
           await log.critical(
             env,
             "openai",
@@ -644,13 +652,13 @@ export async function processFetchedJobs(
               fingerprint: "openai_network_circuit_open",
             },
           );
-          await resetOpenAiNetworkFailureStreak(env.DB);
+          await resetOpenAiNetworkFailureStreak(env.DB, userId);
         }
       } else {
         // Any non-network OpenAI failure breaks the consecutive outage streak.
-        await resetOpenAiNetworkFailureStreak(env.DB);
+        await resetOpenAiNetworkFailureStreak(env.DB, userId);
         if (isOpenAiQuotaExhaustedError(e)) {
-          await setApiExtractionEnabled(env.DB, false);
+          await setApiExtractionEnabled(env.DB, userId, false);
           await log.critical(
             env,
             "openai",
@@ -671,7 +679,7 @@ export async function processFetchedJobs(
             },
           );
         } else if (isOpenAiSystemicConfigurationError(e)) {
-          await setApiExtractionEnabled(env.DB, false);
+          await setApiExtractionEnabled(env.DB, userId, false);
           await log.critical(
             env,
             "openai",
@@ -694,8 +702,9 @@ export async function processFetchedJobs(
         }
       }
       await markVisibleProcessingFailure(
-        env,
-        id,
+      env,
+      userId,
+      id,
         job.source,
         `OpenAI scoring failed before a final recommendation was stored: ${msg.slice(0, 500)}`,
         now,
@@ -722,8 +731,9 @@ export async function processFetchedJobs(
         },
       );
       await markVisibleProcessingFailure(
-        env,
-        id,
+      env,
+      userId,
+      id,
         job.source,
         "OpenAI scoring is not configured, so no final recommendation was stored.",
         now,
@@ -753,7 +763,7 @@ export async function processFetchedJobs(
           providerId: job.source,
           phase: "merge_ai_salary",
           action: "updateNormalizedJobSalary",
-          run: () => updateNormalizedJobSalary(env.DB, id, mergedJob, now, fx),
+          run: () => updateNormalizedJobSalary(env.DB, userId, id, mergedJob, now, fx),
         });
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
@@ -784,7 +794,7 @@ export async function processFetchedJobs(
           providerId: job.source,
           phase: "merge_ai_workplace",
           action: "updateNormalizedJobNormalizedJson",
-          run: () => updateNormalizedJobNormalizedJson(env.DB, id, mergedJob, now),
+          run: () => updateNormalizedJobNormalizedJson(env.DB, userId, id, mergedJob, now),
         });
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
@@ -831,7 +841,7 @@ export async function processFetchedJobs(
         providerId: job.source,
         phase: "saveScoring",
         action: "saveScoring",
-        run: () => saveScoring(env.DB, id, finalScoring, now),
+        run: () => saveScoring(env.DB, userId, id, finalScoring, now),
       });
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
@@ -855,8 +865,9 @@ export async function processFetchedJobs(
         },
       );
       await markVisibleProcessingFailure(
-        env,
-        id,
+      env,
+      userId,
+      id,
         job.source,
         `Pipeline failed while saving the AI recommendation: ${msg.slice(0, 500)}`,
         now,
@@ -865,6 +876,7 @@ export async function processFetchedJobs(
       continue;
     }
     statisticsDeltas.push({
+      userId,
       providerId: job.source,
       atUnix: jobWithFetchMeta.apiFetchedAtUnix ?? now,
       ...statisticsOutcomeDeltaForFinalScoring(finalScoring),
@@ -924,20 +936,20 @@ export async function processFetchedJobs(
   return { fetched: jobs.length, processed, skipped, errors };
 }
 
-export async function runSearchPipeline(env: Env, _requestUrl?: string): Promise<{
+export async function runSearchPipeline(env: Env, userId: string, _requestUrl?: string): Promise<{
   fetched: number;
   processed: number;
   skipped: number;
   errors: string[];
 }> {
   const errors: string[] = [];
-  const gate = await getPipelineFetchAllowed(env);
+  const gate = await getPipelineFetchAllowed(env, userId);
   if (!gate.allowed) {
     await log.info(env, "pipeline", `Fetch skipped: ${gate.reason}`);
     return { fetched: 0, processed: 0, skipped: 0, errors: [gate.reason] };
   }
 
-  const providers = await getEnabledProviders(env);
+  const providers = await getEnabledProviders(env, userId);
   const cycleId = `manual-${Date.now()}`;
 
   await log.info(env, "pipeline", "Fetch started", {
@@ -946,7 +958,7 @@ export async function runSearchPipeline(env: Env, _requestUrl?: string): Promise
 
   const collected: NormalizedJob[] = [];
   for (const p of providers) {
-    if (!(await isExtractionActive(env))) {
+    if (!(await isExtractionActive(env, userId))) {
       errors.push(`${p.id}: skipped (extraction paused)`);
       await log.info(env, "pipeline", "Extraction paused before provider; remaining sources skipped", {
         skipped: p.id,
@@ -954,7 +966,7 @@ export async function runSearchPipeline(env: Env, _requestUrl?: string): Promise
       break;
     }
     try {
-      const chunk = await p.fetchChunk(env, { page: 1, pageSize: 15, cycleId });
+      const chunk = await p.fetchChunk(env, { userId, page: 1, pageSize: 15, cycleId });
       collected.push(...chunk.jobs);
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
@@ -980,7 +992,7 @@ export async function runSearchPipeline(env: Env, _requestUrl?: string): Promise
     }
   }
 
-  const processedSummary = await processFetchedJobs(env, collected);
+  const processedSummary = await processFetchedJobs(env, userId, collected);
   const summary = {
     fetched: processedSummary.fetched,
     processed: processedSummary.processed,
@@ -990,3 +1002,5 @@ export async function runSearchPipeline(env: Env, _requestUrl?: string): Promise
   await log.info(env, "pipeline", "Fetch finished", summary);
   return summary;
 }
+
+

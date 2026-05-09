@@ -40,6 +40,7 @@ export type StatisticsVariantDimension = {
 };
 
 export type StatisticsDelta = StatisticsCounterDelta & {
+  userId: string;
   providerId: JobSourceId;
   atUnix: number;
   variant?: StatisticsVariantDimension | null;
@@ -47,7 +48,7 @@ export type StatisticsDelta = StatisticsCounterDelta & {
 
 type NormalizedStatisticsVariantDimension = {
   searchQuery: string;
-  tier: 0 | 1 | 2;
+  tier: 1;
   countryKey: string;
   countryLabel: string;
 };
@@ -185,13 +186,12 @@ function normalizeVariantDimension(
 ): NormalizedStatisticsVariantDimension | null {
   const searchQuery = typeof variant?.searchQuery === "string" ? variant.searchQuery.replace(/\s+/g, " ").trim() : "";
   if (!searchQuery) return null;
-  const tier = variant?.tier === 1 || variant?.tier === 2 ? variant.tier : 0;
   const countryKeyRaw =
     typeof variant?.countryKey === "string" ? variant.countryKey.trim().toLowerCase() : "";
   const countryLabel = typeof variant?.countryLabel === "string" ? variant.countryLabel.trim() : "";
   return {
     searchQuery,
-    tier,
+    tier: 1,
     countryKey: countryKeyRaw,
     countryLabel,
   };
@@ -238,12 +238,12 @@ function providerDeltaStatement(db: D1Database, delta: StatisticsDelta): D1Prepa
   return db
     .prepare(
       `INSERT INTO statistics_daily_provider (
-        day_utc, provider_id,
+        user_id, day_utc, provider_id,
         request_count, jobs_received, jobs_kept, jobs_processed,
         jobs_high, jobs_medium, jobs_low, jobs_filtered,
         jobs_hard_rejected, jobs_ai_rejected, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      ON CONFLICT(day_utc, provider_id) DO UPDATE SET
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(user_id, day_utc, provider_id) DO UPDATE SET
         request_count = statistics_daily_provider.request_count + excluded.request_count,
         jobs_received = statistics_daily_provider.jobs_received + excluded.jobs_received,
         jobs_kept = statistics_daily_provider.jobs_kept + excluded.jobs_kept,
@@ -257,6 +257,7 @@ function providerDeltaStatement(db: D1Database, delta: StatisticsDelta): D1Prepa
         updated_at = excluded.updated_at`,
     )
     .bind(
+      delta.userId,
       dayUtc,
       delta.providerId,
       clampDeltaCount(delta.requestCount),
@@ -282,12 +283,12 @@ function variantDeltaStatement(
   return db
     .prepare(
       `INSERT INTO statistics_daily_variant (
-        day_utc, provider_id, search_query, tier, country_key, country_label,
+        user_id, day_utc, provider_id, search_query, tier, country_key, country_label,
         request_count, jobs_received, jobs_kept, jobs_processed,
         jobs_high, jobs_medium, jobs_low, jobs_filtered,
         jobs_hard_rejected, jobs_ai_rejected, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      ON CONFLICT(day_utc, provider_id, search_query, tier, country_key) DO UPDATE SET
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(user_id, day_utc, provider_id, search_query, tier, country_key) DO UPDATE SET
         country_label = CASE
           WHEN excluded.country_label <> '' THEN excluded.country_label
           ELSE statistics_daily_variant.country_label
@@ -305,6 +306,7 @@ function variantDeltaStatement(
         updated_at = excluded.updated_at`,
     )
     .bind(
+      delta.userId,
       dayUtc,
       delta.providerId,
       variant.searchQuery,
@@ -402,23 +404,23 @@ function countryKeyFromLabel(label: string): string {
     .replace(/^_+|_+$/g, "");
 }
 
-async function getBackfillDoneAt(db: D1Database): Promise<number | null> {
+async function getBackfillDoneAt(db: D1Database, userId: string): Promise<number | null> {
   const row = await db
-    .prepare("SELECT value FROM app_settings WHERE key = ?")
-    .bind(BACKFILL_DONE_KEY)
+    .prepare("SELECT value FROM app_settings WHERE user_id = ? AND key = ?")
+    .bind(userId, BACKFILL_DONE_KEY)
     .first<{ value: string }>();
   if (!row?.value) return null;
   const n = parseInt(row.value, 10);
   return Number.isFinite(n) && n > 0 ? n : null;
 }
 
-async function setBackfillDoneAt(db: D1Database, nowSec: number): Promise<void> {
+async function setBackfillDoneAt(db: D1Database, userId: string, nowSec: number): Promise<void> {
   await db
     .prepare(
-      `INSERT INTO app_settings (key, value) VALUES (?, ?)
-       ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
+      `INSERT INTO app_settings (user_id, key, value) VALUES (?, ?, ?)
+       ON CONFLICT(user_id, key) DO UPDATE SET value = excluded.value`,
     )
-    .bind(BACKFILL_DONE_KEY, String(nowSec))
+    .bind(userId, BACKFILL_DONE_KEY, String(nowSec))
     .run();
 }
 
@@ -455,12 +457,13 @@ function getOrCreateVariantBackfillRow(
 
 async function loadBackfillProviderRequests(
   db: D1Database,
+  userId: string,
   todayUtc: string,
   providerMap: Map<string, MutableProviderRow>,
 ): Promise<void> {
   const res = await db
-    .prepare("SELECT k, v, updated_at FROM pipeline_state WHERE k LIKE ?")
-    .bind(`${PROVIDER_REQUEST_PREFIX}%`)
+    .prepare("SELECT k, v, updated_at FROM pipeline_state WHERE user_id = ? AND k LIKE ?")
+    .bind(userId, `${PROVIDER_REQUEST_PREFIX}%`)
     .all<{ k: string; v: string; updated_at: number }>();
   for (const row of res.results ?? []) {
     const parsed = parseProviderRequestStateKey(row.k);
@@ -480,6 +483,7 @@ async function loadBackfillProviderRequests(
 
 async function loadBackfillChunkLogs(
   db: D1Database,
+  userId: string,
   todayStartUnix: number,
   providerMap: Map<string, MutableProviderRow>,
   variantMap: Map<string, MutableVariantRow>,
@@ -488,10 +492,11 @@ async function loadBackfillChunkLogs(
     .prepare(
       `SELECT ts, provider_id, meta
        FROM app_logs
-       WHERE event_type = 'provider_chunk_finished'
+       WHERE user_id = ?
+         AND event_type = 'provider_chunk_finished'
          AND ts < ?`,
     )
-    .bind(todayStartUnix)
+    .bind(userId, todayStartUnix)
     .all<BackfillChunkLogRow>();
   for (const row of res.results ?? []) {
     const meta = safeJsonParse(row.meta);
@@ -544,6 +549,7 @@ async function loadBackfillChunkLogs(
 
 async function loadBackfillFinalOutcomes(
   db: D1Database,
+  userId: string,
   todayStartUnix: number,
   providerMap: Map<string, MutableProviderRow>,
   variantMap: Map<string, MutableVariantRow>,
@@ -563,9 +569,10 @@ async function loadBackfillFinalOutcomes(
           json_extract(normalized_json, '$.searchCountryLabel') AS search_country_label,
           json_extract(normalized_json, '$.country') AS country_name
        FROM jobs
-       WHERE COALESCE(CAST(json_extract(normalized_json, '$.apiFetchedAtUnix') AS INTEGER), created_at) < ?`,
+       WHERE user_id = ?
+         AND COALESCE(CAST(json_extract(normalized_json, '$.apiFetchedAtUnix') AS INTEGER), created_at) < ?`,
     )
-    .bind(todayStartUnix)
+    .bind(userId, todayStartUnix)
     .all<BackfillJobRow>();
   for (const row of res.results ?? []) {
     const delta = providerOutcomeDelta(row);
@@ -597,16 +604,20 @@ async function loadBackfillFinalOutcomes(
   }
 }
 
-function providerBackfillStatement(db: D1Database, row: MutableProviderRow): D1PreparedStatement {
+function providerBackfillStatement(
+  db: D1Database,
+  userId: string,
+  row: MutableProviderRow,
+): D1PreparedStatement {
   return db
     .prepare(
       `INSERT INTO statistics_daily_provider (
-        day_utc, provider_id,
+        user_id, day_utc, provider_id,
         request_count, jobs_received, jobs_kept, jobs_processed,
         jobs_high, jobs_medium, jobs_low, jobs_filtered,
         jobs_hard_rejected, jobs_ai_rejected, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      ON CONFLICT(day_utc, provider_id) DO UPDATE SET
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(user_id, day_utc, provider_id) DO UPDATE SET
         request_count = excluded.request_count,
         jobs_received = excluded.jobs_received,
         jobs_kept = excluded.jobs_kept,
@@ -620,6 +631,7 @@ function providerBackfillStatement(db: D1Database, row: MutableProviderRow): D1P
         updated_at = excluded.updated_at`,
     )
     .bind(
+      userId,
       row.dayUtc,
       row.providerId,
       row.requestCount,
@@ -636,16 +648,20 @@ function providerBackfillStatement(db: D1Database, row: MutableProviderRow): D1P
     );
 }
 
-function variantBackfillStatement(db: D1Database, row: MutableVariantRow): D1PreparedStatement {
+function variantBackfillStatement(
+  db: D1Database,
+  userId: string,
+  row: MutableVariantRow,
+): D1PreparedStatement {
   return db
     .prepare(
       `INSERT INTO statistics_daily_variant (
-        day_utc, provider_id, search_query, tier, country_key, country_label,
+        user_id, day_utc, provider_id, search_query, tier, country_key, country_label,
         request_count, jobs_received, jobs_kept, jobs_processed,
         jobs_high, jobs_medium, jobs_low, jobs_filtered,
         jobs_hard_rejected, jobs_ai_rejected, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      ON CONFLICT(day_utc, provider_id, search_query, tier, country_key) DO UPDATE SET
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(user_id, day_utc, provider_id, search_query, tier, country_key) DO UPDATE SET
         country_label = excluded.country_label,
         request_count = excluded.request_count,
         jobs_received = excluded.jobs_received,
@@ -660,6 +676,7 @@ function variantBackfillStatement(db: D1Database, row: MutableVariantRow): D1Pre
         updated_at = excluded.updated_at`,
     )
     .bind(
+      userId,
       row.dayUtc,
       row.providerId,
       row.searchQuery,
@@ -680,34 +697,46 @@ function variantBackfillStatement(db: D1Database, row: MutableVariantRow): D1Pre
     );
 }
 
-export async function ensureStatisticsBackfilled(db: D1Database, nowSec: number): Promise<boolean> {
-  const doneAt = await getBackfillDoneAt(db);
+export async function ensureStatisticsBackfilled(
+  db: D1Database,
+  userId: string,
+  nowSec: number,
+): Promise<boolean> {
+  const doneAt = await getBackfillDoneAt(db, userId);
   if (doneAt) return false;
 
   const todayUtc = utcYmdFromUnix(nowSec);
-  const todayStartUnix = Math.floor(Date.UTC(
-    new Date(nowSec * 1000).getUTCFullYear(),
-    new Date(nowSec * 1000).getUTCMonth(),
-    new Date(nowSec * 1000).getUTCDate(),
-  ) / 1000);
+  const todayStartUnix = Math.floor(
+    Date.UTC(
+      new Date(nowSec * 1000).getUTCFullYear(),
+      new Date(nowSec * 1000).getUTCMonth(),
+      new Date(nowSec * 1000).getUTCDate(),
+    ) / 1000,
+  );
   const providerMap = new Map<string, MutableProviderRow>();
   const variantMap = new Map<string, MutableVariantRow>();
 
-  await loadBackfillProviderRequests(db, todayUtc, providerMap);
-  await loadBackfillChunkLogs(db, todayStartUnix, providerMap, variantMap);
-  await loadBackfillFinalOutcomes(db, todayStartUnix, providerMap, variantMap);
+  await loadBackfillProviderRequests(db, userId, todayUtc, providerMap);
+  await loadBackfillChunkLogs(db, userId, todayStartUnix, providerMap, variantMap);
+  await loadBackfillFinalOutcomes(db, userId, todayStartUnix, providerMap, variantMap);
 
   const statements: D1PreparedStatement[] = [
-    db.prepare("DELETE FROM statistics_daily_provider WHERE day_utc < ?").bind(todayUtc),
-    db.prepare("DELETE FROM statistics_daily_variant WHERE day_utc < ?").bind(todayUtc),
+    db
+      .prepare("DELETE FROM statistics_daily_provider WHERE user_id = ? AND day_utc < ?")
+      .bind(userId, todayUtc),
+    db
+      .prepare("DELETE FROM statistics_daily_variant WHERE user_id = ? AND day_utc < ?")
+      .bind(userId, todayUtc),
   ];
-  for (const row of providerMap.values()) statements.push(providerBackfillStatement(db, row));
-  for (const row of variantMap.values()) statements.push(variantBackfillStatement(db, row));
+  for (const row of providerMap.values())
+    statements.push(providerBackfillStatement(db, userId, row));
+  for (const row of variantMap.values())
+    statements.push(variantBackfillStatement(db, userId, row));
 
   for (const chunk of chunkStatements(statements)) {
     if (chunk.length > 0) await db.batch(chunk);
   }
-  await setBackfillDoneAt(db, nowSec);
+  await setBackfillDoneAt(db, userId, nowSec);
   return true;
 }
 
@@ -778,6 +807,7 @@ export function statisticsSingleDayWindow(dayYmd: string): { fromYmd: string; to
 
 export async function listStatisticsDailyProviderRows(
   db: D1Database,
+  userId: string,
   fromYmd: string,
   toYmd: string,
 ): Promise<StatisticsDailyProviderRow[]> {
@@ -786,16 +816,17 @@ export async function listStatisticsDailyProviderRows(
       `SELECT day_utc, provider_id, request_count, jobs_received, jobs_kept, jobs_processed,
               jobs_high, jobs_medium, jobs_low, jobs_filtered, jobs_hard_rejected, jobs_ai_rejected
        FROM statistics_daily_provider
-       WHERE day_utc >= ? AND day_utc <= ?
+       WHERE user_id = ? AND day_utc >= ? AND day_utc <= ?
        ORDER BY day_utc ASC, provider_id ASC`,
     )
-    .bind(fromYmd, toYmd)
+    .bind(userId, fromYmd, toYmd)
     .all<StatisticsDailyProviderRow>();
   return res.results ?? [];
 }
 
 export async function listStatisticsProviderAggregates(
   db: D1Database,
+  userId: string,
   fromYmd: string,
   toYmd: string,
 ): Promise<StatisticsProviderAggregateRow[]> {
@@ -814,17 +845,18 @@ export async function listStatisticsProviderAggregates(
               SUM(jobs_ai_rejected) AS jobs_ai_rejected,
               MIN(day_utc) AS day_utc
        FROM statistics_daily_provider
-       WHERE day_utc >= ? AND day_utc <= ?
+       WHERE user_id = ? AND day_utc >= ? AND day_utc <= ?
        GROUP BY provider_id
        ORDER BY jobs_received DESC, provider_id ASC`,
     )
-    .bind(fromYmd, toYmd)
+    .bind(userId, fromYmd, toYmd)
     .all<StatisticsProviderAggregateRow>();
   return res.results ?? [];
 }
 
 export async function listStatisticsVariantAggregates(
   db: D1Database,
+  userId: string,
   fromYmd: string,
   toYmd: string,
   top: number,
@@ -833,7 +865,7 @@ export async function listStatisticsVariantAggregates(
   const res = await db
     .prepare(
       `SELECT search_query,
-              tier,
+              1 AS tier,
               GROUP_CONCAT(DISTINCT provider_id) AS providers_csv,
               SUM(request_count) AS request_count,
               SUM(jobs_received) AS jobs_received,
@@ -846,34 +878,35 @@ export async function listStatisticsVariantAggregates(
               SUM(jobs_hard_rejected) AS jobs_hard_rejected,
               SUM(jobs_ai_rejected) AS jobs_ai_rejected
        FROM statistics_daily_variant
-       WHERE day_utc >= ? AND day_utc <= ?
-       GROUP BY search_query, tier
+       WHERE user_id = ? AND day_utc >= ? AND day_utc <= ?
+       GROUP BY search_query
        ORDER BY (SUM(jobs_high) * 3 + SUM(jobs_medium) * 2 + SUM(jobs_low)) DESC,
                 SUM(jobs_received) DESC,
                 search_query ASC
        LIMIT ?`,
     )
-    .bind(fromYmd, toYmd, limit)
+    .bind(userId, fromYmd, toYmd, limit)
     .all<StatisticsVariantAggregateRow>();
   return res.results ?? [];
 }
 
 export async function listStatisticsVariantProviderRequestBreakdown(
   db: D1Database,
+  userId: string,
   fromYmd: string,
   toYmd: string,
 ): Promise<StatisticsVariantProviderRequestRow[]> {
   const res = await db
     .prepare(
       `SELECT search_query,
-              tier,
+              1 AS tier,
               provider_id,
               SUM(request_count) AS request_count
        FROM statistics_daily_variant
-       WHERE day_utc >= ? AND day_utc <= ?
-       GROUP BY search_query, tier, provider_id`,
+       WHERE user_id = ? AND day_utc >= ? AND day_utc <= ?
+       GROUP BY search_query, provider_id`,
     )
-    .bind(fromYmd, toYmd)
+    .bind(userId, fromYmd, toYmd)
     .all<StatisticsVariantProviderRequestRow>();
   return res.results ?? [];
 }

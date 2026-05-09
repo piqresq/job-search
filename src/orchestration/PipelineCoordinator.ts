@@ -1,6 +1,7 @@
 import { DurableObject } from "cloudflare:workers";
 import { getPipelineFetchAllowed, getResolvedProviderDailyRequestCap } from "../db/appSettings";
 import { clearProviderExhaustionState, rolloverProviderCycleState } from "../db/providerScheduler";
+import { BOOTSTRAP_ADMIN_ID } from "../db/users";
 import {
   getProviderUtcDayRequestCount,
   setLinkedinFreezeUntil,
@@ -156,6 +157,11 @@ function isDurableObjectDeployResetError(e: unknown): boolean {
 }
 
 export class PipelineCoordinator extends DurableObject<Env> {
+  /** User that owns this DO instance. Derived from the DO name set via idFromName(userId). */
+  private get userId(): string {
+    return this.ctx.id.name ?? BOOTSTRAP_ADMIN_ID;
+  }
+
   private async loadState(): Promise<CoordinatorState> {
     const now = Math.floor(Date.now() / 1000);
     const raw = await this.ctx.storage.get<CoordinatorState>(STATE_KEY);
@@ -248,7 +254,7 @@ export class PipelineCoordinator extends DurableObject<Env> {
   }
 
   private async enabledProviderIds(): Promise<JobSourceId[]> {
-    const providers = await getEnabledProviders(this.env);
+    const providers = await getEnabledProviders(this.env, this.userId);
     return providers.map((p) => p.id);
   }
 
@@ -323,7 +329,7 @@ export class PipelineCoordinator extends DurableObject<Env> {
     const previousCycleId = state.cycleId;
     state = this.resetForNewCycle(state, now, enabled);
     for (const providerId of enabled) {
-      await rolloverProviderCycleState(this.env.DB, providerId, state.cycleId!, now);
+      await rolloverProviderCycleState(this.env.DB, this.userId, providerId, state.cycleId!, now);
     }
     await log.status(
       this.env,
@@ -442,7 +448,7 @@ export class PipelineCoordinator extends DurableObject<Env> {
       await this.recordOrchestrationError(state, "Coordinator has no active cycle id", "enqueueNextChunk");
       return false;
     }
-    const msg = makeProviderChunkMessage(state.cycleId, state.nextSeq, providerId, now);
+    const msg = makeProviderChunkMessage(this.userId, state.cycleId, state.nextSeq, providerId, now);
     const result = await this.sendChunkMessageWithRetry(msg);
 
     if ("error" in result) {
@@ -536,8 +542,8 @@ export class PipelineCoordinator extends DurableObject<Env> {
     return Promise.all(
       enabled.map(async (providerId) => {
         const [cap, consumed] = await Promise.all([
-          getResolvedProviderDailyRequestCap(this.env.DB, this.env, providerId),
-          getProviderUtcDayRequestCount(this.env.DB, providerId, ymd),
+          getResolvedProviderDailyRequestCap(this.env.DB, this.env, this.userId, providerId),
+          getProviderUtcDayRequestCount(this.env.DB, this.userId, providerId, ymd),
         ]);
         return { providerId, cap, consumed };
       }),
@@ -572,7 +578,7 @@ export class PipelineCoordinator extends DurableObject<Env> {
 
       let gate: Awaited<ReturnType<typeof getPipelineFetchAllowed>>;
       try {
-        gate = await getPipelineFetchAllowed(this.env);
+        gate = await getPipelineFetchAllowed(this.env, this.userId);
       } catch (e) {
         await this.recordOrchestrationErrorFromCatch(state, e, "pump_gate");
         await this.saveState(state);
@@ -933,7 +939,7 @@ export class PipelineCoordinator extends DurableObject<Env> {
   private async handleClearExhaustPause(): Promise<Response> {
     try {
       const now = Math.floor(Date.now() / 1000);
-      await setLinkedinFreezeUntil(this.env.DB, 0, now);
+      await setLinkedinFreezeUntil(this.env.DB, this.userId, 0, now);
 
       let state = await this.loadState();
       const enabled = await this.enabledProviderIds();
@@ -945,7 +951,7 @@ export class PipelineCoordinator extends DurableObject<Env> {
         if (!ps.doneForCycle) continue;
         if (ps.lastPauseKind === "request_cap") continue;
         if (ps.lastPauseKind === "sources_exhausted") {
-          await clearProviderExhaustionState(this.env.DB, providerId, now);
+          await clearProviderExhaustionState(this.env.DB, this.userId, providerId, now);
           plannerResetProviders.push(providerId);
         }
         state.providerStates[providerId] = {
@@ -1171,7 +1177,7 @@ export class PipelineCoordinator extends DurableObject<Env> {
       const now = Math.floor(Date.now() / 1000);
       let gate: Awaited<ReturnType<typeof getPipelineFetchAllowed>>;
       try {
-        gate = await getPipelineFetchAllowed(this.env);
+        gate = await getPipelineFetchAllowed(this.env, this.userId);
       } catch (e) {
         await this.recordOrchestrationErrorFromCatch(state, e, "handleClaim_gate");
         await this.saveState(state);

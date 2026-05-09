@@ -21,16 +21,17 @@ function providerIdFromScope(scope: string): JobSourceId | null {
 async function ensureProviderDailyRequestCapNotReached(
   db: D1Database,
   env: Env,
+  userId: string,
   scope: string,
 ): Promise<void> {
   const providerId = providerIdFromScope(scope);
   if (!providerId) return;
-  const cap = await getResolvedProviderDailyRequestCap(db, env, providerId);
+  const cap = await getResolvedProviderDailyRequestCap(db, env, userId, providerId);
   if (cap <= 0) return;
 
   const now = Math.floor(Date.now() / 1000);
   const ymdUtc = utcYmdFromUnix(now);
-  const current = await getProviderUtcDayRequestCount(db, providerId, ymdUtc);
+  const current = await getProviderUtcDayRequestCount(db, userId, providerId, ymdUtc);
   if (current >= cap) {
     const nextEligibleAt = nextUtcMidnightUnix(now);
     // Expected throttling — not a structured operational incident (avoids ops / header noise).
@@ -56,6 +57,7 @@ async function ensureProviderDailyRequestCapNotReached(
 export async function rapidApiFetch(
   db: D1Database,
   env: Env,
+  userId: string,
   url: string,
   host: string,
   scope = host,
@@ -111,7 +113,7 @@ export async function rapidApiFetch(
     },
   );
 
-  await ensureProviderDailyRequestCapNotReached(db, env, scope);
+  await ensureProviderDailyRequestCapNotReached(db, env, userId, scope);
 
   let res: Response;
   const controller = new AbortController();
@@ -187,10 +189,11 @@ export async function rapidApiFetch(
   );
   if (providerId) {
     const requestAt = Math.floor(Date.now() / 1000);
-    await bumpProviderUtcDayRequestCount(db, providerId, requestAt);
+    await bumpProviderUtcDayRequestCount(db, userId, providerId, requestAt);
     try {
       await applyStatisticsDeltas(db, [
         {
+          userId,
           providerId,
           atUnix: requestAt,
           requestCount: 1,

@@ -98,10 +98,10 @@ export function jsearchSliceFromSequences(
 }
 
 /** Random non-US/US shared-country slice for /test-jsearch only (does not advance D1 counters). */
-export async function sampleJsearchSearchSlice(env: Env): Promise<JsearchSearchSlice> {
+export async function sampleJsearchSearchSlice(env: Env, userId: string): Promise<JsearchSearchSlice> {
   const [countries, policy] = await Promise.all([
-    getSearchCountries(env.DB),
-    getSearchRuntimePolicy(env.DB),
+    getSearchCountries(env.DB, userId),
+    getSearchRuntimePolicy(env.DB, userId),
   ]);
   const country = Math.random() < 0.8 ? pickEuCountryFromCountries(countries) : "us";
   return { country, employment_types: jsearchEmploymentTypesForPolicy(policy) };
@@ -135,6 +135,7 @@ export function buildJsearchUrl(opts: {
 /** Raw JSearch /search call for debugging. Random slice unless overrides set (does not bump rotation). */
 export async function fetchJsearchDiagnostics(
   env: Env,
+  userId: string,
   query: string,
   page = 1,
   overrides?: JsearchDiagnosticsOverrides,
@@ -160,7 +161,7 @@ export async function fetchJsearchDiagnostics(
         country: overrides.country.trim(),
         employment_types: parseEmploymentOverride(overrides.employment_types, env),
       }
-    : await sampleJsearchSearchSlice(env);
+    : await sampleJsearchSearchSlice(env, userId);
 
   const datePosted = overrides?.date_posted ?? "month";
 
@@ -296,6 +297,7 @@ function normalizeOne(
 
 async function fetchJsearchSingle(
   env: Env,
+  userId: string,
   opts: {
     query: string;
     searchQueryVariant: string;
@@ -320,6 +322,7 @@ async function fetchJsearchSingle(
   const body = (await rapidApiJsonRequest(
     env.DB,
     env,
+    userId,
     requestUrl.toString(),
     HOST,
     "jsearch",
@@ -341,18 +344,19 @@ export const jsearchProvider: JobSourceProvider = {
     if (!parseRapidApiKeys(env).length) {
       throw new Error("Missing RapidAPI keys: set RAPIDAPI_KEYS or RAPIDAPI_KEY for JSearch");
     }
-    if (!(await isExtractionActive(env))) {
+    const userId = params.userId;
+    if (!(await isExtractionActive(env, userId))) {
       return { jobs: [], more: false, doneForCycle: false };
     }
-
     const [searchCountries, searchPolicy] = await Promise.all([
-      getSearchCountries(env.DB),
-      getSearchRuntimePolicy(env.DB),
+      getSearchCountries(env.DB, userId),
+      getSearchRuntimePolicy(env.DB, userId),
     ]);
     const datePosted = jsearchDatePostedForPolicy(searchPolicy);
     const employment_types = jsearchEmploymentTypesForPolicy(searchPolicy);
     return runPlannedSearchProvider<Record<string, unknown>, null>({
       env,
+      userId,
       providerId: "jsearch",
       cycleId: params.cycleId ?? `manual-${Date.now()}`,
       countries: [...searchCountries],
@@ -361,7 +365,7 @@ export const jsearchProvider: JobSourceProvider = {
       defaultIsRemote: searchPolicy.remoteOnly,
       search: async (ctx) => {
         const page = Math.max(1, parseInt(ctx.cursor ?? "1", 10) || 1);
-        const { body, requestUrl } = await fetchJsearchSingle(env, {
+        const { body, requestUrl } = await fetchJsearchSingle(env, userId, {
           query: `${ctx.queryUnit.queryValue} in ${ctx.country.fullName}`,
           searchQueryVariant: ctx.queryUnit.queryValue,
           searchTier: ctx.queryUnit.tier,

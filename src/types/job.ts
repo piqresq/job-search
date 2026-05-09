@@ -36,7 +36,7 @@ export type NormalizedJob = {
   /** Deterministic 0..10 from title↔query health at ingest (vendor statistics). */
   titleQueryHealthScore?: number;
   titleQueryHealthBand?: TitleQueryHealthBand;
-  /** Search planner tier for the query that produced this row (1, 2, or undefined for legacy/manual paths). */
+  /** Search planner tier for the query that produced this row; new ingests are always tier 1. */
   searchTier?: 1 | 2;
   /** Stable scheduler country key for analytics / future revision comparison. */
   searchCountryKey?: string;

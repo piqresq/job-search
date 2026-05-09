@@ -3,6 +3,7 @@ import type { ProviderPauseKind } from "./providerPauseKind";
 
 export type PipelineQueueMessage = {
   kind: "provider_chunk";
+  userId: string;
   cycleId: string;
   seq: number;
   providerId: JobSourceId;

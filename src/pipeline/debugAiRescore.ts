@@ -36,8 +36,8 @@ const MAX_EXTERNAL_ID_LEN = 3500;
  * parent, then runs {@link processFetchedJobs} like an API ingest with synthetic bypass (no hard-filter reject,
  * no content-hash duplicate reject). Parent row is unchanged.
  */
-export async function rescoreJobBypassingHardFilters(env: Env, parentJobId: string): Promise<DebugAiRescoreResult> {
-  const job = await loadNormalizedJob(env.DB, parentJobId);
+export async function rescoreJobBypassingHardFilters(env: Env, userId: string, parentJobId: string): Promise<DebugAiRescoreResult> {
+  const job = await loadNormalizedJob(env.DB, userId, parentJobId);
   if (!job) {
     return { ok: false, error: "Job not found or missing normalized_json", code: "not_found" };
   }
@@ -67,11 +67,11 @@ export async function rescoreJobBypassingHardFilters(env: Env, parentJobId: stri
     externalIdSuffix: tail,
   });
 
-  const summary = await processFetchedJobs(env, [cloned], {
+  const summary = await processFetchedJobs(env, userId, [cloned], {
     debugSyntheticIngestJobIds: new Set([newJobId]),
   });
 
-  const row = await getJob(env.DB, newJobId);
+  const row = await getJob(env.DB, userId, newJobId);
   if (row?.status === "hard_rejected") {
     return {
       ok: false,
@@ -98,7 +98,7 @@ export async function rescoreJobBypassingHardFilters(env: Env, parentJobId: stri
     };
   }
 
-  const scoring = await loadScoringResult(env.DB, newJobId);
+  const scoring = await loadScoringResult(env.DB, userId, newJobId);
   if (!scoring) {
     return {
       ok: false,
@@ -121,8 +121,8 @@ export async function rescoreJobBypassingHardFilters(env: Env, parentJobId: stri
  * partial ingest. Success moves the row to its normal bucket; another failure leaves it as `failed`
  * in the Filtered tab with an updated explanation.
  */
-export async function retryFailedJobProcessing(env: Env, jobId: string): Promise<RetryFailedJobResult> {
-  const before = await getJob(env.DB, jobId);
+export async function retryFailedJobProcessing(env: Env, userId: string, jobId: string): Promise<RetryFailedJobResult> {
+  const before = await getJob(env.DB, userId, jobId);
   if (!before) {
     return { ok: false, error: "Job not found.", code: "not_found" };
   }
@@ -130,7 +130,7 @@ export async function retryFailedJobProcessing(env: Env, jobId: string): Promise
     return { ok: false, error: "Only failed rows can be retried.", code: "not_failed" };
   }
 
-  const job = await loadNormalizedJob(env.DB, jobId);
+  const job = await loadNormalizedJob(env.DB, userId, jobId);
   if (!job) {
     return { ok: false, error: "Job not found or missing normalized_json.", code: "not_found" };
   }
@@ -142,8 +142,8 @@ export async function retryFailedJobProcessing(env: Env, jobId: string): Promise
     company: job.company,
   });
 
-  const summary = await processFetchedJobs(env, [job]);
-  const after = await getJob(env.DB, jobId);
+  const summary = await processFetchedJobs(env, userId, [job]);
+  const after = await getJob(env.DB, userId, jobId);
   if (!after) {
     return { ok: false, error: "Job disappeared during retry.", code: "not_found" };
   }

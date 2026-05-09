@@ -355,29 +355,6 @@ export function includeUnitedStatesInLinkedinRun(runId: number, usEveryNRuns: nu
   return runId % every === 0;
 }
 
-async function allNonUsCountriesDrained(db: D1Database): Promise<boolean> {
-  for (const c of LINKEDIN_NON_US_COUNTRIES) {
-    if (!(await getLinkedinCountryDrained(db, c))) return false;
-  }
-  return true;
-}
-
-async function hasAnyLinkedinWorkRemaining(db: D1Database): Promise<boolean> {
-  for (const c of [...LINKEDIN_NON_US_COUNTRIES, LINKEDIN_COUNTRY_UNITED_STATES]) {
-    if (!(await getLinkedinCountryDrained(db, c))) return true;
-  }
-  return false;
-}
-
-async function freezeLinkedinPoolAfterNonUsExhaustion(db: D1Database, now: number): Promise<boolean> {
-  if (!(await allNonUsCountriesDrained(db))) return false;
-  // Avoid burning credits on US-only results after the rest of the daily pool is already drained.
-  await setLinkedinCountryDrained(db, LINKEDIN_COUNTRY_UNITED_STATES, true, now);
-  await setLinkedinFreezeUntil(db, nextUtcMidnightUnix(now), now);
-  await resetLinkedinCountryCycle(db, now);
-  return true;
-}
-
 function nextLinkedinEligibleAt(now: number, env: Env): number {
   const delayMs = parseMsBetweenRequests(env);
   if (delayMs <= 0) return now;
@@ -391,14 +368,14 @@ export const linkedinJobsProvider: JobSourceProvider = {
     if (!parseRapidApiKeys(env).length) {
       throw new Error("Missing RapidAPI keys: set RAPIDAPI_KEYS or RAPIDAPI_KEY");
     }
-    if (!(await isExtractionActive(env))) {
+    const userId = params.userId;
+    if (!(await isExtractionActive(env, userId))) {
       await log.info(env, "linkedin_jobs", "Extraction paused; no LinkedIn chunk scheduled");
       return { jobs: [], more: false, doneForCycle: false };
     }
-
     const [searchPolicy, searchCountries] = await Promise.all([
-      getSearchRuntimePolicy(env.DB),
-      getSearchCountries(env.DB),
+      getSearchRuntimePolicy(env.DB, userId),
+      getSearchCountries(env.DB, userId),
     ]);
     const typeFilter = linkedinTypeFilterForPolicy(searchPolicy);
     const descType = env.LINKEDIN_JOBS_DESCRIPTION_TYPE?.trim().toLowerCase();
@@ -406,7 +383,7 @@ export const linkedinJobsProvider: JobSourceProvider = {
       descType === "html" ? "html" : descType === "none" ? "" : "text";
     const fixedLoc = env.LINKEDIN_LOCATION_FILTER?.trim();
     const cycleId = params.cycleId ?? `manual-${Date.now()}`;
-    const queryCache = await getSearchRoleQueryCache(env.DB);
+    const queryCache = await getSearchRoleQueryCache(env.DB, userId);
     const includeUsThisCycle = includeEveryNCycles(cycleId, parseUsEveryNRuns(env));
     const usCountry =
       searchCountries.find((country) => country.iso2 === "us") ??
@@ -429,12 +406,12 @@ export const linkedinJobsProvider: JobSourceProvider = {
 
     return runPlannedSearchProvider<Record<string, unknown>, null>({
       env,
+      userId,
       providerId: "linkedin_jobs",
       cycleId,
       countries,
       queryUnits: [
         { id: "tier1:bundle", tier: 1 as const, queryValue: queryCache.quotedOr.tier1 || DEFAULT_LINKEDIN_TITLE_FILTER },
-        { id: "tier2:bundle", tier: 2 as const, queryValue: queryCache.quotedOr.tier2 || DEFAULT_LINKEDIN_TITLE_FILTER },
       ].filter((unit) => unit.queryValue.trim().length > 0),
       maxSearchAttemptsPerChunk: 3,
       maxDetailFetches: Math.max(parseLimitDefault(env), parseUsLimit(env)),
@@ -458,6 +435,7 @@ export const linkedinJobsProvider: JobSourceProvider = {
         const json = await rapidApiJsonRequest(
           env.DB,
           env,
+          userId,
           listUrl.toString(),
           HOST,
           "linkedin_jobs",
@@ -497,121 +475,3 @@ export const linkedinJobsProvider: JobSourceProvider = {
   },
 };
 
-async function fetchLinkedinSingleCountryChunk(
-  env: Env,
-  params: FetchJobsParams,
-  titleFilter: string,
-  locationFilter: string,
-  descriptionType: "" | "text" | "html",
-): Promise<ProviderChunkResult> {
-  const db = env.DB;
-  if (!parseRapidApiKeys(env).length) throw new Error("Missing RapidAPI keys");
-  if (!(await isExtractionActive(env))) return { jobs: [], more: false, doneForCycle: false };
-
-  const [searchCountries, searchPolicy] = await Promise.all([
-    getSearchCountries(db),
-    getSearchRuntimePolicy(db),
-  ]);
-  const typeFilter = linkedinTypeFilterForPolicy(searchPolicy);
-  const now = Math.floor(Date.now() / 1000);
-  const freezeUntil = await getLinkedinFreezeUntil(db);
-  if (freezeUntil > now) {
-    return {
-      jobs: [],
-      more: false,
-      doneForCycle: true,
-      nextEligibleAt: freezeUntil,
-      meta: { reason: "linkedin_freeze_wait" },
-    };
-  }
-  if (freezeUntil > 0 && freezeUntil <= now) {
-    await setLinkedinFreezeUntil(db, 0, now);
-  }
-  const apiPath = parseApiPath(searchPolicy);
-  const dateFilterOpt = env.LINKEDIN_DATE_FILTER?.trim();
-  const includeAi = parseIncludeAi(env);
-
-  const limit = parseLimitDefault(env);
-  let offset = await getLinkedinCountryOffset(db, locationFilter);
-
-  const baseOpts = {
-    apiPath,
-    limit,
-    titleFilter: titleFilter || params.query?.trim() || undefined,
-    locationFilter,
-    descriptionType,
-    dateFilter: dateFilterOpt || undefined,
-    remote: parseRemote(searchPolicy),
-    typeFilter: typeFilter || undefined,
-    agency: parseCompanyOnlyAgency(env),
-    includeAi,
-  };
-
-  const url = buildLinkedinJobsUrl({ ...baseOpts, offset });
-  const listIngestion = flatHttpGetRequestRecord(url, { host: HOST });
-  const res = await rapidApiFetch(db, env, url.toString(), HOST, HOST, undefined, {
-    searchQuery: titleFilter || params.query?.trim() || undefined,
-    countryKey: locationFilter.trim().toLowerCase(),
-    countryLabel: locationFilter,
-  });
-  if (!res.ok) {
-    const t = await res.text();
-    throw new Error(`LinkedIn jobs HTTP ${res.status}: ${t.slice(0, 500)}`);
-  }
-  const body = (await res.json()) as unknown;
-  if (!Array.isArray(body)) {
-    await log.moderate(
-      env,
-      "linkedin_jobs",
-      "LinkedIn API returned non-array JSON (single-country mode)",
-      {
-        locationFilter,
-        preview:
-          typeof body === "object" && body !== null
-            ? JSON.stringify(body).slice(0, 500)
-            : String(body).slice(0, 200),
-      },
-      {
-        category: "vendor",
-        eventType: "malformed_response",
-        providerId: "linkedin_jobs",
-        phase: "fetchChunk",
-        statusKind: "degraded",
-      },
-    );
-    throw new Error("LinkedIn jobs: expected JSON array response");
-  }
-
-  const searchQueryForRows = (baseOpts.titleFilter ?? params.query?.trim() ?? "").trim();
-  const out: NormalizedJob[] = [];
-  for (const item of body) {
-    if (!item || typeof item !== "object") continue;
-    const row = item as Record<string, unknown>;
-    const n = normalizeLinkedinActiveJbJob(row, searchCountries);
-    if (!n) continue;
-    const withQuery = searchQueryForRows ? { ...n, searchQuery: searchQueryForRows } : n;
-    out.push(assignWorkplaceTypeToJob({ ...withQuery, ingestionRequestParams: listIngestion }));
-  }
-
-  if (body.length < limit) {
-    await setLinkedinCountryOffset(db, locationFilter, 0, now);
-    const resumeAt = nextUtcMidnightUnix(now);
-    await setLinkedinFreezeUntil(db, resumeAt, now);
-    return {
-      jobs: out,
-      more: false,
-      doneForCycle: true,
-      nextEligibleAt: resumeAt,
-      meta: { reason: "linkedin_listings_exhausted", locationFilter, offset, limit },
-    };
-  }
-
-  await setLinkedinCountryOffset(db, locationFilter, offset + limit, now);
-  return {
-    jobs: out,
-    more: true,
-    doneForCycle: false,
-    nextEligibleAt: nextLinkedinEligibleAt(now, env),
-    meta: { locationFilter, offset, limit },
-  };
-}

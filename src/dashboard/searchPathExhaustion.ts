@@ -60,15 +60,15 @@ export type SearchPathExhaustionPayload =
  * Current-cycle search path exhaustion for planned-search providers (D1 `provider_*_state` rows),
  * aligned with {@link CoordinatorState.cycleId} from the pipeline coordinator.
  */
-export async function buildSearchPathExhaustionPayload(env: Env): Promise<SearchPathExhaustionPayload> {
-  const coord = await getCoordinatorStatus(env);
+export async function buildSearchPathExhaustionPayload(env: Env, userId: string): Promise<SearchPathExhaustionPayload> {
+  const coord = await getCoordinatorStatus(env, userId);
   if (!coord || coord.ok !== true) {
     return { ok: false, error: "coordinator_unavailable" };
   }
 
   const cycleId = coord.cycleId;
-  const enabled = await getEnabledJobSourceIdsFromDb(env.DB, getRegisteredProviderIds());
-  const searchCountries = await getSearchCountries(env.DB);
+  const enabled = await getEnabledJobSourceIdsFromDb(env.DB, userId, getRegisteredProviderIds());
+  const searchCountries = await getSearchCountries(env.DB, userId);
   const labelByKey = new Map(searchCountries.map((c) => [c.key, c.fullName]));
 
   const vendors: SearchPathExhaustionVendorJson[] = [];
@@ -83,15 +83,15 @@ export async function buildSearchPathExhaustionPayload(env: Env): Promise<Search
      */
     const forceExhaustedFromCoordinator = orchestrationDoneForCycle;
 
-    const scheduler = await loadProviderSchedulerState(env.DB, providerId);
+    const scheduler = await loadProviderSchedulerState(env.DB, userId, providerId);
     const schedulerCycleId = scheduler?.cycle_id ?? null;
     const cycleMismatch = Boolean(
       cycleId && schedulerCycleId && schedulerCycleId !== cycleId,
     );
 
     const [countryRows, unitRows] = await Promise.all([
-      listProviderCountryStates(env.DB, providerId),
-      listProviderQueryUnitStates(env.DB, providerId),
+      listProviderCountryStates(env.DB, userId, providerId),
+      listProviderQueryUnitStates(env.DB, userId, providerId),
     ]);
 
     const countriesForCycle = cycleId

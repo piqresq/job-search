@@ -269,6 +269,7 @@ async function scoreJobWithOpenAiSingleAttempt(
 export async function scoreJobWithOpenAI(
   db: D1Database,
   env: Env,
+  userId: string,
   job: NormalizedJob,
 ): Promise<ScoringResult | null> {
   const key = env.OPENAI_API_KEY;
@@ -281,8 +282,8 @@ export async function scoreJobWithOpenAI(
     model: env.OPENAI_MODEL?.trim() || DEFAULT_SCORING_MODEL,
   });
 
-  const scoringInstruction = await loadScoringInstructionForPrompt(db);
-  const cvText = await getCvTextForAiScoring(db);
+  const scoringInstruction = await loadScoringInstructionForPrompt(db, userId);
+  const cvText = await getCvTextForAiScoring(db, userId);
 
   for (let attempt = 0; attempt < SCORING_MAX_ATTEMPTS; attempt++) {
     try {

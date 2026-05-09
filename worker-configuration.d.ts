@@ -2,6 +2,8 @@ interface Env {
   DB: D1Database;
   /** Durable coordinator for long-running pipeline orchestration. */
   PIPELINE_COORDINATOR: DurableObjectNamespace;
+  /** Singleton dispatcher DO that fans out the cron poke to all active user coordinators. */
+  PIPELINE_DISPATCHER: DurableObjectNamespace;
   /** Queue that executes one provider chunk at a time. */
   PIPELINE_QUEUE: Queue<import("./src/orchestration/types").PipelineQueueMessage>;
   /** Static files (`public/`) — dashboard UI and `/assets/*`. */

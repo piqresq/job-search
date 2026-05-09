@@ -65,7 +65,7 @@ import {
   setSearchCountries,
   setSearchRoleTiers,
   setStoredOpenAiDraftInstruction,
-  setStoredOpenAiScoringInstruction,
+  setStoredOpenAiScoringPolicyInstruction,
   setVerboseLoggingEnabled,
 } from "../db/appSettings";
 import {
@@ -121,12 +121,31 @@ import {
 } from "../orchestration/client";
 import { getOperationalHoursState } from "../orchestration/operationalHours";
 import {
+  authenticateUser,
   clearSessionCookie,
   createSessionCookie,
-  dashboardUserMatches,
   requireDashboardSession,
-  verifyDashboardPassword,
 } from "./session";
+import {
+  createUser,
+  getUserById,
+  getUserProviderCaps,
+  listUsers,
+  normalizeUsername,
+  setUserProviderCaps,
+  setUserRole,
+  setUserStatus,
+  syncNewUserTemplateFromAdmin,
+  updatePassword,
+  USER_SETTINGS_TEMPLATE_KEYS,
+} from "../db/users";
+import {
+  getGlobalNewUserTemplate,
+  getGlobalScoringContract,
+  setGlobalNewUserTemplate,
+  setGlobalScoringContract,
+} from "../db/globalSettings";
+import { OPENAI_SCORING_CONTRACT_INSTRUCTION } from "../pipeline/aiInstructionDefaults";
 
 function json(data: unknown, status = 200): Response {
   return new Response(JSON.stringify(data), {
@@ -352,6 +371,7 @@ function scheduleSalaryCacheBackfillNudge(env: Env, ctx: ExecutionContext | unde
 
 async function buildDashboardJobListResponse(
   env: Env,
+  userId: string,
   query: { tab: DashboardJobListTab; cursor: DashboardJobListCursor | null; limit: number; prefs: DashboardJobListPrefs },
   ctx?: ExecutionContext,
 ): Promise<Response> {
@@ -360,11 +380,11 @@ async function buildDashboardJobListResponse(
   // FX is now gone from the list path entirely — salary display/sort use `jobs.salary_monthly_eur`
   // and `jobs.salary_display_eur` populated at ingest time / via the backfill cron.
   const [page, favSet, showPipelineParams, showApiRaw, aiDebugRescore] = await Promise.all([
-    queryDashboardJobListPage(env.DB, query.tab, query.prefs, query.cursor, query.limit),
-    getFavoriteJobIdsSet(env.DB),
-    getDashboardShowJobPipelineParams(env.DB),
-    getDashboardShowJobApiRaw(env.DB),
-    getDashboardAiDebugRescoreEnabled(env.DB),
+    queryDashboardJobListPage(env.DB, userId, query.tab, query.prefs, query.cursor, query.limit),
+    getFavoriteJobIdsSet(env.DB, userId),
+    getDashboardShowJobPipelineParams(env.DB, userId),
+    getDashboardShowJobApiRaw(env.DB, userId),
+    getDashboardAiDebugRescoreEnabled(env.DB, userId),
   ]);
   const jobs = page.rows.map((r) => {
     const jobUrl = r.job_url ?? "";
@@ -393,7 +413,7 @@ async function buildDashboardJobListResponse(
       employmentType: r.employment_type ?? "",
       workplaceType: workplaceTypeForDashboardList(r.workplace_type, r.normalized_json),
       searchQuery: r.search_query ?? "",
-      searchTier: r.search_tier === 1 || r.search_tier === 2 ? (r.search_tier as 1 | 2) : null,
+      searchTier: r.search_tier === 1 || r.search_tier === 2 ? 1 : null,
       apiRequestDateYmd,
       postedDateYmd: apiRequestDateYmd,
       dateHoverTitle,
@@ -443,11 +463,12 @@ const VENDOR_LABELS: Record<JobSourceId, string> = {
   jobs_api: "Jobs API (Pat92)",
 };
 
-async function buildVendorsPayload(env: Env): Promise<
-  { id: JobSourceId; label: string; enabled: boolean }[]
-> {
+async function buildVendorsPayload(
+  env: Env,
+  userId: string,
+): Promise<{ id: JobSourceId; label: string; enabled: boolean }[]> {
   const ids = getRegisteredProviderIds();
-  const enabledIds = await getEnabledJobSourceIdsFromDb(env.DB, ids);
+  const enabledIds = await getEnabledJobSourceIdsFromDb(env.DB, userId, ids);
   const enabledSet = new Set(enabledIds);
   return ids.map((id) => ({
     id,
@@ -516,12 +537,15 @@ type OperationalIncidentGroup = {
   meta: unknown;
 };
 
-async function buildRequestCapsPayload(env: Env): Promise<{
+async function buildRequestCapsPayload(
+  env: Env,
+  userId: string,
+): Promise<{
   requestCapsPerDay: Record<JobSourceId, number | null>;
   requestCapsDetail: Record<JobSourceId, RequestCapDetail>;
 }> {
   const envOnly = requestCapsPerDayFromEnv(env);
-  const overrides = await getProviderRequestCapOverrides(env.DB);
+  const overrides = await getProviderRequestCapOverrides(env.DB, userId);
   const ids = getRegisteredProviderIds();
   const requestCapsPerDay = {} as Record<JobSourceId, number | null>;
   const requestCapsDetail = {} as Record<JobSourceId, RequestCapDetail>;
@@ -547,12 +571,13 @@ async function buildRequestCapsPayload(env: Env): Promise<{
 
 async function buildOperationalVendorStates(
   env: Env,
+  userId: string,
   nowSec: number,
   coord: Awaited<ReturnType<typeof getCoordinatorStatus>>,
 ): Promise<OperationalVendorState[]> {
   const ymd = utcYmdFromUnix(nowSec);
-  const capsPayload = await buildRequestCapsPayload(env);
-  const vendorsMeta = await buildVendorsPayload(env);
+  const capsPayload = await buildRequestCapsPayload(env, userId);
+  const vendorsMeta = await buildVendorsPayload(env, userId);
   const ids = getRegisteredProviderIds();
   const orch =
     coord && "ok" in coord && coord.ok === true ? coord.providerOrchestration ?? {} : {};
@@ -562,7 +587,7 @@ async function buildOperationalVendorStates(
       const label = meta?.label ?? VENDOR_LABELS[id] ?? id;
       const enabled = meta?.enabled ?? false;
       const cap = capsPayload.requestCapsPerDay[id] ?? null;
-      const usedUtcDay = await getProviderUtcDayRequestCount(env.DB, id, ymd);
+      const usedUtcDay = await getProviderUtcDayRequestCount(env.DB, userId, id, ymd);
       const exhaustedForDay = cap != null && cap > 0 && usedUtcDay >= cap;
       const o = orch[id];
       return {
@@ -864,8 +889,9 @@ export async function handleDashboardApi(
 
   if (!path.startsWith("/api/")) return null;
 
-  const deny = await requireDashboardSession(request, env);
-  if (deny) return deny;
+  const session = await requireDashboardSession(request, env);
+  if (session instanceof Response) return session;
+  const { userId } = session;
 
   if (path === "/api/settings" && request.method === "GET") {
     const [
@@ -881,17 +907,17 @@ export async function handleDashboardApi(
       capsPayload,
       cvCache,
     ] = await Promise.all([
-      getApiExtractionEnabled(env.DB),
+      getApiExtractionEnabled(env.DB, userId),
       getVerboseLoggingEnabled(env.DB),
-      getDashboardShowJobPipelineParams(env.DB),
-      getDashboardShowJobApiRaw(env.DB),
-      getDashboardAiDebugRescoreEnabled(env.DB),
-      getSearchRoleTiers(env.DB),
-      buildVendorsPayload(env),
-      getSearchCountries(env.DB),
-      getSearchRuntimePolicy(env.DB),
-      buildRequestCapsPayload(env),
-      getCvCacheStatus(env.DB),
+      getDashboardShowJobPipelineParams(env.DB, userId),
+      getDashboardShowJobApiRaw(env.DB, userId),
+      getDashboardAiDebugRescoreEnabled(env.DB, userId),
+      getSearchRoleTiers(env.DB, userId),
+      buildVendorsPayload(env, userId),
+      getSearchCountries(env.DB, userId),
+      getSearchRuntimePolicy(env.DB, userId),
+      buildRequestCapsPayload(env, userId),
+      getCvCacheStatus(env.DB, userId),
     ]);
     return json({
       ok: true,
@@ -956,7 +982,7 @@ export async function handleDashboardApi(
     }
     const uploadedAtUnix = Math.floor(Date.now() / 1000);
     const sanitizedText = sanitizeCvTextForAiScoring(extracted.text);
-    await setCvExtractionCache(env.DB, { ...extracted, uploadedAtUnix, sanitizedText });
+    await setCvExtractionCache(env.DB, userId, { ...extracted, uploadedAtUnix, sanitizedText });
     if (env.DOCS_BUCKET) {
       await env.DOCS_BUCKET.put("cv/latest.docx", buf, {
         httpMetadata: { contentType: DOCX_MIME, cacheControl: "private, max-age=0" },
@@ -967,13 +993,13 @@ export async function handleDashboardApi(
       htmlLen: extracted.html.length,
       sanitizedLen: sanitizedText.length,
     });
-    const nextCvCache = await getCvCacheStatus(env.DB);
+    const nextCvCache = await getCvCacheStatus(env.DB, userId);
     return json({ ok: true, cvCache: nextCvCache });
   }
 
   if (path === "/api/settings/cv-sanitized" && request.method === "GET") {
     const compare = url.searchParams.get("compare") === "1";
-    const row = await getCvExtractionFromDb(env.DB);
+    const row = await getCvExtractionFromDb(env.DB, userId);
     const cached = row.sanitizedText?.trim() ?? "";
     const hasRaw = Boolean(row.text?.trim() && row.html?.trim());
     let compareSanitizedNow: string | undefined;
@@ -997,9 +1023,9 @@ export async function handleDashboardApi(
   }
 
   if (path === "/api/pipeline-status" && request.method === "GET") {
-    const st = await getCoordinatorStatus(env);
+    const st = await getCoordinatorStatus(env, userId);
     if (!st || st.ok !== true) return json(st);
-    const gate = await getPipelineFetchAllowed(env);
+    const gate = await getPipelineFetchAllowed(env, userId);
     const operational = getOperationalHoursState(env);
     return json({
       ...st,
@@ -1015,7 +1041,7 @@ export async function handleDashboardApi(
 
   if (path === "/api/pipeline/clear-exhaust-pause" && request.method === "POST") {
     try {
-      const r = await clearExhaustPause(env);
+      const r = await clearExhaustPause(env, userId);
       await log.info(env, "dashboard", "Pipeline orchestration pause(s) cleared (manual)", r);
       return json(r);
     } catch (e) {
@@ -1037,7 +1063,7 @@ export async function handleDashboardApi(
   }
 
   if (path === "/api/statistics" && request.method === "GET") {
-    const payload = await buildStatisticsPayload(env, {
+    const payload = await buildStatisticsPayload(env, userId, {
       days: url.searchParams.get("days"),
       top: url.searchParams.get("top"),
       from: url.searchParams.get("from"),
@@ -1049,17 +1075,17 @@ export async function handleDashboardApi(
   }
 
   if (path === "/api/search-path-exhaustion" && request.method === "GET") {
-    const payload = await buildSearchPathExhaustionPayload(env);
+    const payload = await buildSearchPathExhaustionPayload(env, userId);
     return json(payload);
   }
 
   if (path === "/api/operational-dashboard" && request.method === "GET") {
     const nowSec = Math.floor(Date.now() / 1000);
     const ymd = utcYmdFromUnix(nowSec);
-    const coord = await getCoordinatorStatus(env);
-    const gate = await getPipelineFetchAllowed(env);
+    const coord = await getCoordinatorStatus(env, userId);
+    const gate = await getPipelineFetchAllowed(env, userId);
     const operational = getOperationalHoursState(env, nowSec);
-    const vendors = await buildOperationalVendorStates(env, nowSec, coord);
+    const vendors = await buildOperationalVendorStates(env, userId, nowSec, coord);
     return json({
       ok: true,
       utcDate: ymd,
@@ -1078,11 +1104,11 @@ export async function handleDashboardApi(
   if (path === "/api/operational-dashboard/refresh-limits" && request.method === "POST") {
     const nowSec = Math.floor(Date.now() / 1000);
     const ymd = utcYmdFromUnix(nowSec);
-    const { deletedRows } = await clearAllProviderUtcDayRequestCountsForUtcDate(env.DB, ymd);
+    const { deletedRows } = await clearAllProviderUtcDayRequestCountsForUtcDate(env.DB, userId, ymd);
     let coordinatorCleared = 0;
     let coordinatorError: string | null = null;
     try {
-      const r = await clearRequestCapPauseForProviders(env, { providerIds: [...getRegisteredProviderIds()] });
+      const r = await clearRequestCapPauseForProviders(env, userId, { providerIds: [...getRegisteredProviderIds()] });
       coordinatorCleared = r.cleared;
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
@@ -1117,11 +1143,11 @@ export async function handleDashboardApi(
 
   if (path === "/api/operational-signals" && request.method === "GET") {
     const nowSec = Math.floor(Date.now() / 1000);
-    const coord = await getCoordinatorStatus(env);
-    const gate = await getPipelineFetchAllowed(env);
+    const coord = await getCoordinatorStatus(env, userId);
+    const gate = await getPipelineFetchAllowed(env, userId);
     const operational = getOperationalHoursState(env, nowSec);
-    const vendors = await buildOperationalVendorStates(env, nowSec, coord);
-    const rawIncidentRows = await listOperationalAppLogs(env.DB, 400);
+    const vendors = await buildOperationalVendorStates(env, userId, nowSec, coord);
+    const rawIncidentRows = await listOperationalAppLogs(env.DB, userId, 400);
     const incidents = appendDummyLowIncidentIfEnabled(env, groupOperationalIncidents(rawIncidentRows), nowSec);
     const status = buildOperationalStatusSummary({
       coord,
@@ -1174,14 +1200,14 @@ export async function handleDashboardApi(
       return json({ ok: false, error: "invalid_json" }, 400);
     }
     if (body.purgeAll === true) {
-      const deleted = await deleteOperationalAppLogs(env.DB);
+      const deleted = await deleteOperationalAppLogs(env.DB, userId);
       return json({ ok: true, deleted, purgedAll: true });
     }
     const key = typeof body.key === "string" ? body.key.trim() : "";
     const severity = body.severity;
     if (!key) return json({ ok: false, error: "missing_key" }, 400);
     if (!isIncidentSeverity(severity)) return json({ ok: false, error: "bad_severity" }, 400);
-    const deleted = await deleteOperationalIncidentGroup(env.DB, { key, severity });
+    const deleted = await deleteOperationalIncidentGroup(env.DB, userId, { key, severity });
     return json({ ok: true, deleted, purgedAll: false });
   }
 
@@ -1190,7 +1216,7 @@ export async function handleDashboardApi(
     if (idRaw !== null && idRaw !== "") {
       const id = parseInt(idRaw, 10);
       if (!Number.isFinite(id) || id <= 0) return json({ ok: false, error: "bad_id" }, 400);
-      const rev = await getAiInstructionRevisionById(env.DB, id);
+      const rev = await getAiInstructionRevisionById(env.DB, userId, id);
       if (!rev) return json({ ok: false, error: "not_found" }, 404);
       return json({
         ok: true,
@@ -1207,7 +1233,7 @@ export async function handleDashboardApi(
     const limitRaw = url.searchParams.get("limit");
     const limitParsed = limitRaw ? parseInt(limitRaw, 10) : 30;
     const limit = Number.isFinite(limitParsed) ? limitParsed : 30;
-    const revisions = await listAiInstructionRevisions(env.DB, limit);
+    const revisions = await listAiInstructionRevisions(env.DB, userId, limit);
     return json({ ok: true, revisions });
   }
 
@@ -1226,7 +1252,7 @@ export async function handleDashboardApi(
     const noteErr = validateRevisionNoteForSave(noteRaw);
     if (noteErr) return json({ ok: false, error: noteErr }, 400);
     const now = Math.floor(Date.now() / 1000);
-    const out = await revertAiInstructionsToRevision(env.DB, rid, now, noteRaw);
+    const out = await revertAiInstructionsToRevision(env.DB, userId, rid, now, noteRaw);
     if (!out) return json({ ok: false, error: "not_found" }, 404);
     await log.info(env, "dashboard", "AI instructions reverted to revision", { revisionId: rid });
     return json({ ok: true, scoring: out.scoring, drafts: out.drafts });
@@ -1246,7 +1272,7 @@ export async function handleDashboardApi(
     const noteRaw = typeof body.note === "string" ? body.note : "";
     const nErr = validateRevisionNoteForSave(noteRaw);
     if (nErr) return json({ ok: false, error: nErr }, 400);
-    const updated = await updateAiInstructionRevisionNote(env.DB, rid, noteRaw);
+    const updated = await updateAiInstructionRevisionNote(env.DB, userId, rid, noteRaw);
     if (!updated) return json({ ok: false, error: "not_found" }, 404);
     await log.info(env, "dashboard", "AI instruction revision note updated", { revisionId: rid });
     return json({ ok: true, note: noteRaw.trim() });
@@ -1256,14 +1282,14 @@ export async function handleDashboardApi(
     const idRaw = url.searchParams.get("id");
     const id = idRaw ? parseInt(idRaw, 10) : NaN;
     if (!Number.isFinite(id) || id <= 0) return json({ ok: false, error: "bad_id" }, 400);
-    const deleted = await deleteAiInstructionRevision(env.DB, id);
+    const deleted = await deleteAiInstructionRevision(env.DB, userId, id);
     if (!deleted) return json({ ok: false, error: "not_found" }, 404);
     await log.info(env, "dashboard", "AI instruction revision deleted", { revisionId: id });
     return json({ ok: true });
   }
 
   if (path === "/api/ai-instructions" && request.method === "GET") {
-    const { scoring, drafts } = await getAiInstructionsForEditor(env.DB);
+    const { scoring, drafts } = await getAiInstructionsForEditor(env.DB, userId);
     return json({ ok: true, scoring, drafts });
   }
 
@@ -1283,14 +1309,15 @@ export async function handleDashboardApi(
     const revNoteErr = validateRevisionNoteForSave(revisionNoteRaw);
     if (revNoteErr) return json({ ok: false, error: revNoteErr }, 400);
     if (body.reset === true) {
-      const previous = await getAiInstructionsForEditor(env.DB);
-      await resetOpenAiInstructionsToDefaults(env.DB);
+      const previous = await getAiInstructionsForEditor(env.DB, userId);
+      await resetOpenAiInstructionsToDefaults(env.DB, userId);
       await log.info(env, "dashboard", "AI instructions reset to repository defaults");
-      const next = await getAiInstructionsForEditor(env.DB);
+      const next = await getAiInstructionsForEditor(env.DB, userId);
       const now = Math.floor(Date.now() / 1000);
       if (!aiInstructionSnapshotsEqual(previous, next)) {
         await appendAiInstructionRevision(
           env.DB,
+          userId,
           {
             scoring: previous.scoring,
             drafts: previous.drafts,
@@ -1307,26 +1334,27 @@ export async function handleDashboardApi(
     if (!hasScoring && !hasDrafts) {
       return json({ ok: false, error: "bad_body" }, 400);
     }
-    const previous = await getAiInstructionsForEditor(env.DB);
+    const previous = await getAiInstructionsForEditor(env.DB, userId);
     if (hasScoring) {
       const err = validateScoringInstructionForSave(body.scoring!);
       if (err) return json({ ok: false, error: err }, 400);
-      await setStoredOpenAiScoringInstruction(env.DB, body.scoring!);
+      await setStoredOpenAiScoringPolicyInstruction(env.DB, userId, body.scoring!);
     }
     if (hasDrafts) {
       const err = validateDraftInstructionForSave(body.drafts!);
       if (err) return json({ ok: false, error: err }, 400);
-      await setStoredOpenAiDraftInstruction(env.DB, body.drafts!);
+      await setStoredOpenAiDraftInstruction(env.DB, userId, body.drafts!);
     }
     await log.info(env, "dashboard", "AI instructions saved", {
       scoring: hasScoring,
       drafts: hasDrafts,
     });
-    const next = await getAiInstructionsForEditor(env.DB);
+    const next = await getAiInstructionsForEditor(env.DB, userId);
     const now = Math.floor(Date.now() / 1000);
     if (!aiInstructionSnapshotsEqual(previous, next)) {
       await appendAiInstructionRevision(
         env.DB,
+        userId,
         {
           scoring: previous.scoring,
           drafts: previous.drafts,
@@ -1344,7 +1372,7 @@ export async function handleDashboardApi(
     if (idRaw !== null && idRaw !== "") {
       const id = parseInt(idRaw, 10);
       if (!Number.isFinite(id) || id <= 0) return json({ ok: false, error: "bad_id" }, 400);
-      const rev = await getSearchRoleRevisionById(env.DB, id);
+      const rev = await getSearchRoleRevisionById(env.DB, userId, id);
       if (!rev) return json({ ok: false, error: "not_found" }, 404);
       const tiers = tiersFromRevisionRow(rev);
       return json({
@@ -1362,7 +1390,7 @@ export async function handleDashboardApi(
     const limitRaw = url.searchParams.get("limit");
     const limitParsed = limitRaw ? parseInt(limitRaw, 10) : 30;
     const limit = Number.isFinite(limitParsed) ? limitParsed : 30;
-    const revisions = await listSearchRoleRevisions(env.DB, limit);
+    const revisions = await listSearchRoleRevisions(env.DB, userId, limit);
     return json({ ok: true, revisions });
   }
 
@@ -1381,7 +1409,7 @@ export async function handleDashboardApi(
     const noteErr = validateRevisionNoteForSave(noteRaw);
     if (noteErr) return json({ ok: false, error: noteErr }, 400);
     const now = Math.floor(Date.now() / 1000);
-    const out = await revertSearchRolesToRevision(env.DB, rid, now, noteRaw);
+    const out = await revertSearchRolesToRevision(env.DB, userId, rid, now, noteRaw);
     if (!out) return json({ ok: false, error: "not_found" }, 404);
     await log.info(env, "dashboard", "Search role tiers reverted to revision", { revisionId: rid });
     return json({ ok: true, roleTiers: { tier1: out.tier1, tier2: out.tier2 } });
@@ -1401,7 +1429,7 @@ export async function handleDashboardApi(
     const noteRaw = typeof body.note === "string" ? body.note : "";
     const nErr = validateRevisionNoteForSave(noteRaw);
     if (nErr) return json({ ok: false, error: nErr }, 400);
-    const updated = await updateSearchRoleRevisionNote(env.DB, rid, noteRaw);
+    const updated = await updateSearchRoleRevisionNote(env.DB, userId, rid, noteRaw);
     if (!updated) return json({ ok: false, error: "not_found" }, 404);
     await log.info(env, "dashboard", "Search role revision note updated", { revisionId: rid });
     return json({ ok: true, note: noteRaw.trim() });
@@ -1411,7 +1439,7 @@ export async function handleDashboardApi(
     const idRaw = url.searchParams.get("id");
     const id = idRaw ? parseInt(idRaw, 10) : NaN;
     if (!Number.isFinite(id) || id <= 0) return json({ ok: false, error: "bad_id" }, 400);
-    const deleted = await deleteSearchRoleRevision(env.DB, id);
+    const deleted = await deleteSearchRoleRevision(env.DB, userId, id);
     if (!deleted) return json({ ok: false, error: "not_found" }, 404);
     await log.info(env, "dashboard", "Search role revision deleted", { revisionId: id });
     return json({ ok: true });
@@ -1491,11 +1519,11 @@ export async function handleDashboardApi(
       const rnErr = validateRevisionNoteForSave(roleRevisionNoteRaw);
       if (rnErr) return json({ ok: false, error: rnErr }, 400);
     }
-    const apiBefore = await getApiExtractionEnabled(env.DB);
+    const apiBefore = await getApiExtractionEnabled(env.DB, userId);
     const verboseBefore = await getVerboseLoggingEnabled(env.DB);
 
     if (hasApi && body.apiExtractionEnabled !== apiBefore) {
-      await setApiExtractionEnabled(env.DB, body.apiExtractionEnabled!);
+      await setApiExtractionEnabled(env.DB, userId, body.apiExtractionEnabled!);
       await log.info(
         env,
         "dashboard",
@@ -1512,19 +1540,19 @@ export async function handleDashboardApi(
     }
 
     if (hasShowPipelineParams) {
-      await setDashboardShowJobPipelineParams(env.DB, body.dashboardShowJobPipelineParams!);
+      await setDashboardShowJobPipelineParams(env.DB, userId, body.dashboardShowJobPipelineParams!);
       await log.info(env, "dashboard", "Job list: pipeline request params visibility updated", {
         show: body.dashboardShowJobPipelineParams,
       });
     }
     if (hasShowApiRaw) {
-      await setDashboardShowJobApiRaw(env.DB, body.dashboardShowJobApiRaw!);
+      await setDashboardShowJobApiRaw(env.DB, userId, body.dashboardShowJobApiRaw!);
       await log.info(env, "dashboard", "Job list: API raw fields visibility updated", {
         show: body.dashboardShowJobApiRaw,
       });
     }
     if (hasAiDebugRescore) {
-      await setDashboardAiDebugRescoreEnabled(env.DB, body.dashboardAiDebugRescoreEnabled!);
+      await setDashboardAiDebugRescoreEnabled(env.DB, userId, body.dashboardAiDebugRescoreEnabled!);
       await log.info(env, "dashboard", "AI debug new-copy button visibility updated", {
         enabled: body.dashboardAiDebugRescoreEnabled,
       });
@@ -1540,13 +1568,13 @@ export async function handleDashboardApi(
           next.push(id);
         }
       }
-      await setEnabledJobSourceIds(env.DB, next, getRegisteredProviderIds());
+      await setEnabledJobSourceIds(env.DB, userId, next, getRegisteredProviderIds());
       await log.info(env, "dashboard", "Pipeline vendors updated", { enabledJobSources: next });
       if (ctx) {
         ctx.waitUntil(
           (async () => {
             try {
-              const r = await startOrResumeCoordinator(env, { reason: "dashboard_vendors" });
+              const r = await startOrResumeCoordinator(env, userId, { reason: "dashboard_vendors" });
               await log.info(env, "dashboard", "Coordinator start requested after vendor list change", r);
             } catch (e) {
               const msg = e instanceof Error ? e.message : String(e);
@@ -1571,18 +1599,18 @@ export async function handleDashboardApi(
     }
 
     if (hasRoleTiersReset) {
-      const previousRoles = await getSearchRoleTiers(env.DB);
+      const previousRoles = await getSearchRoleTiers(env.DB, userId);
       const defaults = normalizeSearchRoleTiers(DEFAULT_SEARCH_ROLE_TIERS);
-      await setSearchRoleTiers(env.DB, defaults);
-      await log.info(env, "dashboard", "Search role tiers reset to codebase defaults", {
-        tier1Count: defaults.tier1.length,
-        tier2Count: defaults.tier2.length,
+      await setSearchRoleTiers(env.DB, userId, defaults);
+      await log.info(env, "dashboard", "Search roles reset to codebase defaults", {
+        roleCount: defaults.tier1.length,
       });
       const nowRoles = Math.floor(Date.now() / 1000);
-      const nextRolesSnap = await getSearchRoleTiers(env.DB);
+      const nextRolesSnap = await getSearchRoleTiers(env.DB, userId);
       if (!searchRoleTiersEqual(previousRoles, nextRolesSnap)) {
         await appendSearchRoleRevision(
           env.DB,
+          userId,
           { tiers: previousRoles, source: "reset", note: roleRevisionNoteRaw },
           nowRoles,
         );
@@ -1591,7 +1619,7 @@ export async function handleDashboardApi(
         ctx.waitUntil(
           (async () => {
             try {
-              const r = await startOrResumeCoordinator(env, { reason: "dashboard_roles" });
+              const r = await startOrResumeCoordinator(env, userId, { reason: "dashboard_roles" });
               await log.info(env, "dashboard", "Coordinator start requested after role list change", r);
             } catch (e) {
               const msg = e instanceof Error ? e.message : String(e);
@@ -1614,21 +1642,21 @@ export async function handleDashboardApi(
         );
       }
     } else if (hasRoleTiers) {
-      const previousRoles = await getSearchRoleTiers(env.DB);
+      const previousRoles = await getSearchRoleTiers(env.DB, userId);
       const nextRoles = {
         tier1: Array.isArray(body.roleTiers?.tier1) ? body.roleTiers!.tier1.filter((x): x is string => typeof x === "string") : previousRoles.tier1,
         tier2: Array.isArray(body.roleTiers?.tier2) ? body.roleTiers!.tier2.filter((x): x is string => typeof x === "string") : previousRoles.tier2,
       };
-      await setSearchRoleTiers(env.DB, nextRoles);
-      await log.info(env, "dashboard", "Search role tiers updated", {
-        tier1Count: nextRoles.tier1.length,
-        tier2Count: nextRoles.tier2.length,
+      await setSearchRoleTiers(env.DB, userId, nextRoles);
+      const snapSave = await getSearchRoleTiers(env.DB, userId);
+      await log.info(env, "dashboard", "Search roles updated", {
+        roleCount: snapSave.tier1.length,
       });
       const nowSave = Math.floor(Date.now() / 1000);
-      const snapSave = await getSearchRoleTiers(env.DB);
       if (!searchRoleTiersEqual(previousRoles, snapSave)) {
         await appendSearchRoleRevision(
           env.DB,
+          userId,
           { tiers: previousRoles, source: "save", note: roleRevisionNoteRaw },
           nowSave,
         );
@@ -1637,7 +1665,7 @@ export async function handleDashboardApi(
         ctx.waitUntil(
           (async () => {
             try {
-              const r = await startOrResumeCoordinator(env, { reason: "dashboard_roles" });
+              const r = await startOrResumeCoordinator(env, userId, { reason: "dashboard_roles" });
               await log.info(env, "dashboard", "Coordinator start requested after role list change", r);
             } catch (e) {
               const msg = e instanceof Error ? e.message : String(e);
@@ -1688,13 +1716,13 @@ export async function handleDashboardApi(
       const patchedIds = Object.keys(patch) as JobSourceId[];
       const effectiveCapsBefore: Partial<Record<JobSourceId, number>> = {};
       for (const id of patchedIds) {
-        effectiveCapsBefore[id] = await getResolvedProviderDailyRequestCap(env.DB, env, id);
+        effectiveCapsBefore[id] = await getResolvedProviderDailyRequestCap(env.DB, env, userId, id);
       }
-      await patchProviderRequestCapOverrides(env.DB, patch);
+      await patchProviderRequestCapOverrides(env.DB, userId, patch);
       const capRaisedIds: JobSourceId[] = [];
       for (const id of patchedIds) {
         const before = effectiveCapsBefore[id] ?? 0;
-        const after = await getResolvedProviderDailyRequestCap(env.DB, env, id);
+        const after = await getResolvedProviderDailyRequestCap(env.DB, env, userId, id);
         const raised = after > before || (before > 0 && after === 0);
         if (raised) capRaisedIds.push(id);
       }
@@ -1706,7 +1734,7 @@ export async function handleDashboardApi(
         ctx.waitUntil(
           (async () => {
             try {
-              const r = await clearRequestCapPauseForProviders(env, { providerIds: capRaisedIds });
+              const r = await clearRequestCapPauseForProviders(env, userId, { providerIds: capRaisedIds });
               await log.info(env, "dashboard", "Coordinator cleared request-cap pause after cap raise", {
                 cleared: r.cleared,
                 status: r.status,
@@ -1752,14 +1780,14 @@ export async function handleDashboardApi(
         items.push({ iso2: iso2Raw, fullName });
       }
       const normalized = normalizeSearchCountries(items);
-      await setSearchCountries(env.DB, normalized);
+      await setSearchCountries(env.DB, userId, normalized);
       await log.info(env, "dashboard", "Search countries updated", { count: normalized.length });
     }
 
     const apiTurnedOn = hasApi && body.apiExtractionEnabled === true && !apiBefore;
     if (apiTurnedOn && (await getVerboseLoggingEnabled(env.DB))) {
       const now = Math.floor(Date.now() / 1000);
-      const freezeUntil = await getLinkedinFreezeUntil(env.DB);
+      const freezeUntil = await getLinkedinFreezeUntil(env.DB, userId);
       const asleep = freezeUntil > now;
       const freezeIso = freezeUntil > 0 ? new Date(freezeUntil * 1000).toISOString() : null;
       await log.verbose(
@@ -1781,7 +1809,7 @@ export async function handleDashboardApi(
       ctx.waitUntil(
         (async () => {
           try {
-            const r = await startOrResumeCoordinator(env, { reason: "dashboard_enable" });
+            const r = await startOrResumeCoordinator(env, userId, { reason: "dashboard_enable" });
             await log.info(env, "dashboard", "Coordinator start requested after API extraction enabled", r);
           } catch (e) {
             const msg = e instanceof Error ? e.message : String(e);
@@ -1804,24 +1832,24 @@ export async function handleDashboardApi(
       );
     }
 
-    const capsPayload = await buildRequestCapsPayload(env);
+    const capsPayload = await buildRequestCapsPayload(env, userId);
     return json({
       ok: true,
-      apiExtractionEnabled: await getApiExtractionEnabled(env.DB),
+      apiExtractionEnabled: await getApiExtractionEnabled(env.DB, userId),
       verboseLoggingEnabled: await getVerboseLoggingEnabled(env.DB),
-      dashboardShowJobPipelineParams: await getDashboardShowJobPipelineParams(env.DB),
-      dashboardShowJobApiRaw: await getDashboardShowJobApiRaw(env.DB),
-      dashboardAiDebugRescoreEnabled: await getDashboardAiDebugRescoreEnabled(env.DB),
-      roleTiers: await getSearchRoleTiers(env.DB),
+      dashboardShowJobPipelineParams: await getDashboardShowJobPipelineParams(env.DB, userId),
+      dashboardShowJobApiRaw: await getDashboardShowJobApiRaw(env.DB, userId),
+      dashboardAiDebugRescoreEnabled: await getDashboardAiDebugRescoreEnabled(env.DB, userId),
+      roleTiers: await getSearchRoleTiers(env.DB, userId),
       searchConfig: {
-        countries: await getSearchCountries(env.DB),
+        countries: await getSearchCountries(env.DB, userId),
         defaultCountries: [...DEFAULT_SEARCH_COUNTRIES],
-        policy: await getSearchRuntimePolicy(env.DB),
+        policy: await getSearchRuntimePolicy(env.DB, userId),
       },
       pipelineHardKillActive: isPipelineHardKillActive(env),
       requestCapsPerDay: capsPayload.requestCapsPerDay,
       requestCapsDetail: capsPayload.requestCapsDetail,
-      vendors: await buildVendorsPayload(env),
+      vendors: await buildVendorsPayload(env, userId),
     });
   }
 
@@ -1829,19 +1857,19 @@ export async function handleDashboardApi(
     const raw = url.searchParams.get("limit");
     const n = raw ? parseInt(raw, 10) : 200;
     const limit = Number.isFinite(n) ? n : 200;
-    const logs = await listAppLogs(env.DB, limit);
+    const logs = await listAppLogs(env.DB, userId, limit);
     return json({ ok: true, logs });
   }
 
   if (path === "/api/logs" && request.method === "DELETE") {
-    const deleted = await deleteAllAppLogs(env.DB);
+    const deleted = await deleteAllAppLogs(env.DB, userId);
     return json({ ok: true, deleted });
   }
 
   if (path === "/api/jobs" && request.method === "GET") {
     const tab = url.searchParams.get("tab") || "active";
     if (!TAB_RE.test(tab)) return json({ ok: false, error: "bad_tab" }, 400);
-    return buildDashboardJobListResponse(env, {
+    return buildDashboardJobListResponse(env, userId, {
       tab: tab as DashboardJobListTab,
       cursor: null,
       limit: clampDashboardJobListLimit(url.searchParams.get("limit")),
@@ -1864,6 +1892,7 @@ export async function handleDashboardApi(
     scheduleSalaryCacheBackfillNudge(env, ctx);
     return buildDashboardJobListResponse(
       env,
+      userId,
       {
         tab: tabRaw as DashboardJobListTab,
         cursor,
@@ -1883,6 +1912,7 @@ export async function handleDashboardApi(
     const bodyObj = (body && typeof body === "object" ? body : {}) as Record<string, unknown>;
     const ids = await queryDashboardJobListIds(
       env.DB,
+      userId,
       tabRaw as DashboardJobListTab,
       normalizeDashboardJobListPrefs(bodyObj.prefs),
     );
@@ -1891,74 +1921,87 @@ export async function handleDashboardApi(
 
   const favMatch = path.match(/^\/api\/jobs\/([^/]+)\/favorite$/);
   if (favMatch && request.method === "POST") {
-    return handleFavorite(env, favMatch[1]!, request);
+    return handleFavorite(env, userId, favMatch[1]!, request);
   }
 
   if (path === "/api/jobs/bulk-deny" && request.method === "POST") {
-    return handleBulkDeny(env, request);
+    return handleBulkDeny(env, userId, request);
   }
 
   if (path === "/api/jobs/bulk-accept" && request.method === "POST") {
-    return handleBulkAccept(env, request);
+    return handleBulkAccept(env, userId, request);
   }
 
   if (path === "/api/jobs/bulk-restore" && request.method === "POST") {
-    return handleBulkRestore(env, request);
+    return handleBulkRestore(env, userId, request);
   }
 
   if (path === "/api/jobs/bulk-delete" && request.method === "POST") {
-    return handleBulkDelete(env, request);
+    return handleBulkDelete(env, userId, request);
   }
 
   const debugRescoreMatch = path.match(/^\/api\/jobs\/([^/]+)\/debug-ai-rescore$/);
   if (debugRescoreMatch && request.method === "POST") {
-    return handleDebugAiRescore(env, debugRescoreMatch[1]!);
+    return handleDebugAiRescore(env, userId, debugRescoreMatch[1]!);
   }
 
   const retryFailedMatch = path.match(/^\/api\/jobs\/([^/]+)\/retry-scoring$/);
   if (retryFailedMatch && request.method === "POST") {
-    return handleRetryFailedJob(env, retryFailedMatch[1]!);
+    return handleRetryFailedJob(env, userId, retryFailedMatch[1]!);
   }
 
   const genMatch = path.match(/^\/api\/jobs\/([^/]+)\/generate$/);
   if (genMatch && request.method === "POST") {
     const id = genMatch[1]!;
-    return handleGenerate(env, id);
+    return handleGenerate(env, userId, id);
   }
 
   const accMatch = path.match(/^\/api\/jobs\/([^/]+)\/accept$/);
   if (accMatch && request.method === "POST") {
-    return handleDecision(env, accMatch[1]!, "accepted");
+    return handleDecision(env, userId, accMatch[1]!, "accepted");
   }
 
   const denyMatch = path.match(/^\/api\/jobs\/([^/]+)\/deny$/);
   if (denyMatch && request.method === "POST") {
-    return handleDecision(env, denyMatch[1]!, "denied");
+    return handleDecision(env, userId, denyMatch[1]!, "denied");
   }
 
   const restoreMatch = path.match(/^\/api\/jobs\/([^/]+)\/restore$/);
   if (restoreMatch && request.method === "POST") {
-    return handleRestoreToActive(env, restoreMatch[1]!);
+    return handleRestoreToActive(env, userId, restoreMatch[1]!);
   }
 
   const dlCv = path.match(/^\/api\/jobs\/([^/]+)\/download\/cv$/);
   if (dlCv && request.method === "GET") {
-    return handleDownload(env, dlCv[1]!, "cv");
+    return handleDownload(env, userId, dlCv[1]!, "cv");
   }
 
   const dlCover = path.match(/^\/api\/jobs\/([^/]+)\/download\/cover$/);
   if (dlCover && request.method === "GET") {
-    return handleDownload(env, dlCover[1]!, "cover");
+    return handleDownload(env, userId, dlCover[1]!, "cover");
+  }
+
+  // ── /api/me ─────────────────────────────────────────────────────────────
+  if (path === "/api/me" && request.method === "GET") {
+    const user = await getUserById(env.DB, userId);
+    if (!user) return json({ ok: false, error: "user_not_found" }, 404);
+    return json({ ok: true, userId: user.id, username: user.username, role: user.role });
+  }
+
+  // ── Admin routes (require role=admin) ────────────────────────────────────
+  if (path.startsWith("/api/admin/")) {
+    if (session.role !== "admin") return json({ ok: false, error: "forbidden" }, 403);
+    return handleAdminApi(env, request, path);
   }
 
   return null;
 }
 
-async function handleDebugAiRescore(env: Env, id: string): Promise<Response> {
-  if (!(await getDashboardAiDebugRescoreEnabled(env.DB))) {
+async function handleDebugAiRescore(env: Env, userId: string, id: string): Promise<Response> {
+  if (!(await getDashboardAiDebugRescoreEnabled(env.DB, userId))) {
     return json({ ok: false, error: "feature_disabled", code: "feature_disabled" }, 403);
   }
-  const r = await rescoreJobBypassingHardFilters(env, id);
+  const r = await rescoreJobBypassingHardFilters(env, userId, id);
   if (!r.ok) {
     const status =
       r.code === "not_found"
@@ -1983,8 +2026,8 @@ async function handleDebugAiRescore(env: Env, id: string): Promise<Response> {
   });
 }
 
-async function handleRetryFailedJob(env: Env, id: string): Promise<Response> {
-  const result = await retryFailedJobProcessing(env, id);
+async function handleRetryFailedJob(env: Env, userId: string, id: string): Promise<Response> {
+  const result = await retryFailedJobProcessing(env, userId, id);
   if (!result.ok) {
     const status = result.code === "not_found" ? 404 : 400;
     return json({ ok: false, error: result.error, code: result.code }, status);
@@ -2016,14 +2059,17 @@ async function handleLogin(env: Env, request: Request): Promise<Response> {
   const username = typeof body.username === "string" ? body.username : "";
   const password = typeof body.password === "string" ? body.password : "";
 
-  if (!dashboardUserMatches(env, username)) {
-    return json({ ok: false, error: "invalid_credentials" }, 401);
-  }
-  if (!(await verifyDashboardPassword(env, password))) {
+  const claims = await authenticateUser(env.DB, env, username, password);
+  if (!claims) {
     return json({ ok: false, error: "invalid_credentials" }, 401);
   }
 
-  const setCookie = await createSessionCookie(secret, username, request.url.startsWith("https:"));
+  const setCookie = await createSessionCookie(
+    secret,
+    claims.userId,
+    claims.role,
+    request.url.startsWith("https:"),
+  );
   return new Response(JSON.stringify({ ok: true }), {
     status: 200,
     headers: {
@@ -2044,17 +2090,17 @@ async function handleLogout(request: Request): Promise<Response> {
   });
 }
 
-async function handleGenerate(env: Env, id: string): Promise<Response> {
+async function handleGenerate(env: Env, userId: string, id: string): Promise<Response> {
   if (!env.DOCS_BUCKET) return json({ ok: false, error: "r2_not_configured" }, 503);
   if (!env.OPENAI_API_KEY) return json({ ok: false, error: "openai_not_configured" }, 503);
 
-  const job = await loadNormalizedJob(env.DB, id);
-  const scoring = await loadScoringResult(env.DB, id);
+  const job = await loadNormalizedJob(env.DB, userId, id);
+  const scoring = await loadScoringResult(env.DB, userId, id);
   if (!job || !scoring) return json({ ok: false, error: "not_found" }, 404);
 
   let drafts;
   try {
-    drafts = await generateTailoredDrafts(env.DB, env, job, scoring);
+    drafts = await generateTailoredDrafts(env.DB, env, userId, job, scoring);
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     await log.moderate(
@@ -2129,7 +2175,7 @@ async function handleGenerate(env: Env, id: string): Promise<Response> {
   }
 
   try {
-    await saveGeneratedDrafts(env.DB, id, drafts, cvKey, coverKey, now);
+    await saveGeneratedDrafts(env.DB, userId, id, drafts, cvKey, coverKey, now);
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     await log.moderate(
@@ -2155,7 +2201,7 @@ async function handleGenerate(env: Env, id: string): Promise<Response> {
   });
 }
 
-async function handleFavorite(env: Env, id: string, request: Request): Promise<Response> {
+async function handleFavorite(env: Env, userId: string, id: string, request: Request): Promise<Response> {
   let body: { favorite?: unknown };
   try {
     body = (await request.json()) as { favorite?: unknown };
@@ -2164,7 +2210,7 @@ async function handleFavorite(env: Env, id: string, request: Request): Promise<R
   }
   const favorite = body.favorite === true;
   const now = Math.floor(Date.now() / 1000);
-  const result = await setJobFavorite(env.DB, id, favorite, now);
+  const result = await setJobFavorite(env.DB, userId, id, favorite, now);
   if (!result.ok) {
     const code = result.error === "not_found" ? 404 : 400;
     return json({ ok: false, error: result.error }, code);
@@ -2219,10 +2265,11 @@ function intersectIdsPreservingOrder(candidateIds: string[], allowedIds: string[
 
 async function resolveBulkSelectionIds(
   db: D1Database,
+  userId: string,
   selection: DashboardBulkSelection,
 ): Promise<{ ids: string[]; affectedLoadedIds: string[] }> {
   if (selection.mode === "all_matching") {
-    const ids = await queryDashboardJobListIds(db, selection.tab, selection.prefs);
+    const ids = await queryDashboardJobListIds(db, userId, selection.tab, selection.prefs);
     return {
       ids,
       affectedLoadedIds: intersectIdsPreservingOrder(selection.loadedIds, ids),
@@ -2231,7 +2278,7 @@ async function resolveBulkSelectionIds(
   return { ids: selection.ids, affectedLoadedIds: selection.ids.slice() };
 }
 
-async function handleBulkDeny(env: Env, request: Request): Promise<Response> {
+async function handleBulkDeny(env: Env, userId: string, request: Request): Promise<Response> {
   let body: { ids?: unknown };
   try {
     body = (await request.json()) as { ids?: unknown };
@@ -2240,10 +2287,10 @@ async function handleBulkDeny(env: Env, request: Request): Promise<Response> {
   }
   const selection = parseBulkSelectionBody(body);
   if (!selection) return json({ ok: false, error: "bad_selection" }, 400);
-  const resolved = await resolveBulkSelectionIds(env.DB, selection);
+  const resolved = await resolveBulkSelectionIds(env.DB, userId, selection);
   if (resolved.ids.length === 0) return json({ ok: true, updated: 0, affectedLoadedIds: [] });
   const now = Math.floor(Date.now() / 1000);
-  const updatedIds = await bulkDenyActiveJobs(env.DB, resolved.ids, now);
+  const updatedIds = await bulkDenyActiveJobs(env.DB, userId, resolved.ids, now);
   if (updatedIds.length > 0) invalidateDashboardListMemoCaches();
   return json({
     ok: true,
@@ -2252,7 +2299,7 @@ async function handleBulkDeny(env: Env, request: Request): Promise<Response> {
   });
 }
 
-async function handleBulkAccept(env: Env, request: Request): Promise<Response> {
+async function handleBulkAccept(env: Env, userId: string, request: Request): Promise<Response> {
   let body: { ids?: unknown };
   try {
     body = (await request.json()) as { ids?: unknown };
@@ -2261,10 +2308,10 @@ async function handleBulkAccept(env: Env, request: Request): Promise<Response> {
   }
   const selection = parseBulkSelectionBody(body);
   if (!selection) return json({ ok: false, error: "bad_selection" }, 400);
-  const resolved = await resolveBulkSelectionIds(env.DB, selection);
+  const resolved = await resolveBulkSelectionIds(env.DB, userId, selection);
   if (resolved.ids.length === 0) return json({ ok: true, updated: 0, affectedLoadedIds: [] });
   const now = Math.floor(Date.now() / 1000);
-  const updatedIds = await bulkAcceptActiveJobs(env.DB, resolved.ids, now);
+  const updatedIds = await bulkAcceptActiveJobs(env.DB, userId, resolved.ids, now);
   if (updatedIds.length > 0) invalidateDashboardListMemoCaches();
   return json({
     ok: true,
@@ -2273,7 +2320,7 @@ async function handleBulkAccept(env: Env, request: Request): Promise<Response> {
   });
 }
 
-async function handleBulkRestore(env: Env, request: Request): Promise<Response> {
+async function handleBulkRestore(env: Env, userId: string, request: Request): Promise<Response> {
   let body: { ids?: unknown };
   try {
     body = (await request.json()) as { ids?: unknown };
@@ -2282,10 +2329,10 @@ async function handleBulkRestore(env: Env, request: Request): Promise<Response> 
   }
   const selection = parseBulkSelectionBody(body);
   if (!selection) return json({ ok: false, error: "bad_selection" }, 400);
-  const resolved = await resolveBulkSelectionIds(env.DB, selection);
+  const resolved = await resolveBulkSelectionIds(env.DB, userId, selection);
   if (resolved.ids.length === 0) return json({ ok: true, updated: 0, affectedLoadedIds: [] });
   const now = Math.floor(Date.now() / 1000);
-  const updatedIds = await bulkRestoreJobs(env.DB, resolved.ids, now);
+  const updatedIds = await bulkRestoreJobs(env.DB, userId, resolved.ids, now);
   if (updatedIds.length > 0) invalidateDashboardListMemoCaches();
   return json({
     ok: true,
@@ -2294,7 +2341,7 @@ async function handleBulkRestore(env: Env, request: Request): Promise<Response> 
   });
 }
 
-async function handleBulkDelete(env: Env, request: Request): Promise<Response> {
+async function handleBulkDelete(env: Env, userId: string, request: Request): Promise<Response> {
   let body: { ids?: unknown };
   try {
     body = (await request.json()) as { ids?: unknown };
@@ -2303,9 +2350,9 @@ async function handleBulkDelete(env: Env, request: Request): Promise<Response> {
   }
   const selection = parseBulkSelectionBody(body);
   if (!selection) return json({ ok: false, error: "bad_selection" }, 400);
-  const resolved = await resolveBulkSelectionIds(env.DB, selection);
+  const resolved = await resolveBulkSelectionIds(env.DB, userId, selection);
   if (resolved.ids.length === 0) return json({ ok: true, deleted: 0, affectedLoadedIds: [], r2Deleted: 0 });
-  const { deletedIds, r2Deleted } = await deleteJobsByIdsWithR2Cleanup(env.DB, env.DOCS_BUCKET, resolved.ids);
+  const { deletedIds, r2Deleted } = await deleteJobsByIdsWithR2Cleanup(env.DB, env.DOCS_BUCKET, resolved.ids, userId);
   if (deletedIds.length > 0) invalidateDashboardListMemoCaches();
   return json({
     ok: true,
@@ -2317,32 +2364,33 @@ async function handleBulkDelete(env: Env, request: Request): Promise<Response> {
 
 async function handleDecision(
   env: Env,
+  userId: string,
   id: string,
   decision: "accepted" | "denied",
 ): Promise<Response> {
-  const row = await getJob(env.DB, id);
+  const row = await getJob(env.DB, userId, id);
   if (!row) return json({ ok: false, error: "not_found" }, 404);
   if (row.dash_bucket !== "active") {
     return json({ ok: false, error: "not_active_tab" }, 400);
   }
   const now = Math.floor(Date.now() / 1000);
-  await setDashboardDecision(env.DB, id, decision, now);
+  await setDashboardDecision(env.DB, userId, id, decision, now);
   invalidateDashboardListMemoCaches();
   return json({ ok: true });
 }
 
-async function handleRestoreToActive(env: Env, id: string): Promise<Response> {
-  const row = await getJob(env.DB, id);
+async function handleRestoreToActive(env: Env, userId: string, id: string): Promise<Response> {
+  const row = await getJob(env.DB, userId, id);
   if (!row) return json({ ok: false, error: "not_found" }, 404);
   const now = Math.floor(Date.now() / 1000);
   if (row.dash_bucket === "accepted" || row.dash_bucket === "denied") {
-    const ok = await restoreDashboardJobToActive(env.DB, id, now);
+    const ok = await restoreDashboardJobToActive(env.DB, userId, id, now);
     if (!ok) return json({ ok: false, error: "not_applied_or_rejected" }, 400);
     invalidateDashboardListMemoCaches();
     return json({ ok: true });
   }
   if (row.dash_bucket === "filtered") {
-    const ok = await restoreFilteredJobToActive(env.DB, id, now);
+    const ok = await restoreFilteredJobToActive(env.DB, userId, id, now);
     if (!ok) return json({ ok: false, error: "not_filtered" }, 400);
     invalidateDashboardListMemoCaches();
     return json({ ok: true });
@@ -2352,11 +2400,12 @@ async function handleRestoreToActive(env: Env, id: string): Promise<Response> {
 
 async function handleDownload(
   env: Env,
+  userId: string,
   id: string,
   kind: "cv" | "cover",
 ): Promise<Response> {
   if (!env.DOCS_BUCKET) return json({ ok: false, error: "r2_not_configured" }, 503);
-  const keys = await getJobR2Keys(env.DB, id);
+  const keys = await getJobR2Keys(env.DB, userId, id);
   if (!keys) return json({ ok: false, error: "not_found" }, 404);
   const key = kind === "cv" ? keys.r2_cv_key : keys.r2_cover_key;
   if (!key) return json({ ok: false, error: "not_generated" }, 404);
@@ -2364,7 +2413,7 @@ async function handleDownload(
   const obj = await env.DOCS_BUCKET.get(key);
   if (!obj) return json({ ok: false, error: "missing_object" }, 404);
 
-  const company = await getJobCompany(env.DB, id);
+  const company = await getJobCompany(env.DB, userId, id);
   const filename =
     kind === "cv" ? cvDownloadFilename(company) : coverDownloadFilename(company);
   const headers = new Headers();
@@ -2373,4 +2422,191 @@ async function handleDownload(
   if (obj.size != null) headers.set("content-length", String(obj.size));
 
   return new Response(obj.body, { status: 200, headers });
+}
+
+// ══ ADMIN API ══════════════════════════════════════════════════════════════════
+
+async function handleAdminApi(env: Env, request: Request, path: string): Promise<Response> {
+  const now = Math.floor(Date.now() / 1000);
+
+  // ── Users list ────────────────────────────────────────────────────────────
+  if (path === "/api/admin/users" && request.method === "GET") {
+    const users = await listUsers(env.DB);
+    const withCaps = await Promise.all(
+      users.map(async (u) => ({
+        ...u,
+        caps: await getUserProviderCaps(env.DB, u.id),
+      })),
+    );
+    return json({ ok: true, users: withCaps });
+  }
+
+  // ── Create user ───────────────────────────────────────────────────────────
+  if (path === "/api/admin/users" && request.method === "POST") {
+    let body: { username?: string; password?: string; role?: string };
+    try {
+      body = (await request.json()) as typeof body;
+    } catch {
+      return json({ ok: false, error: "invalid_json" }, 400);
+    }
+    if (typeof body.username !== "string" || !body.username.trim()) {
+      return json({ ok: false, error: "username_required" }, 400);
+    }
+    if (typeof body.password !== "string" || body.password.length < 8) {
+      return json({ ok: false, error: "password_too_short" }, 400);
+    }
+    let username: string;
+    try {
+      username = normalizeUsername(body.username);
+    } catch (e) {
+      return json({ ok: false, error: e instanceof Error ? e.message : "invalid_username" }, 400);
+    }
+    const role = body.role === "admin" ? "admin" : "user";
+    try {
+      const { id } = await createUser(env.DB, { username, password: body.password, role, now });
+      return json({ ok: true, id });
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      if (msg.includes("UNIQUE") || msg.includes("unique")) {
+        return json({ ok: false, error: "username_taken" }, 409);
+      }
+      return json({ ok: false, error: msg }, 500);
+    }
+  }
+
+  // ── Per-user routes ───────────────────────────────────────────────────────
+  const userMatch = path.match(/^\/api\/admin\/users\/([^/]+)$/);
+  if (userMatch) {
+    const targetId = userMatch[1]!;
+
+    if (request.method === "PATCH") {
+      let body: { password?: string; role?: string; status?: string };
+      try {
+        body = (await request.json()) as typeof body;
+      } catch {
+        return json({ ok: false, error: "invalid_json" }, 400);
+      }
+      if (typeof body.password === "string") {
+        if (body.password.length < 8) return json({ ok: false, error: "password_too_short" }, 400);
+        await updatePassword(env.DB, targetId, body.password, now);
+      }
+      if (body.role === "admin" || body.role === "user") {
+        await setUserRole(env.DB, targetId, body.role, now);
+      }
+      if (body.status === "active" || body.status === "disabled") {
+        await setUserStatus(env.DB, targetId, body.status, now);
+      }
+      return json({ ok: true });
+    }
+
+    if (request.method === "DELETE") {
+      await setUserStatus(env.DB, targetId, "disabled", now);
+      return json({ ok: true });
+    }
+  }
+
+  // ── User caps ─────────────────────────────────────────────────────────────
+  const capsMatch = path.match(/^\/api\/admin\/users\/([^/]+)\/caps$/);
+  if (capsMatch) {
+    const targetId = capsMatch[1]!;
+
+    if (request.method === "GET") {
+      const caps = await getUserProviderCaps(env.DB, targetId);
+      return json({ ok: true, caps });
+    }
+
+    if (request.method === "PATCH") {
+      let body: { caps?: unknown };
+      try {
+        body = (await request.json()) as typeof body;
+      } catch {
+        return json({ ok: false, error: "invalid_json" }, 400);
+      }
+      if (!body.caps || typeof body.caps !== "object" || Array.isArray(body.caps)) {
+        return json({ ok: false, error: "invalid_caps" }, 400);
+      }
+      const capsIn = body.caps as Record<string, unknown>;
+      const capsOut: Partial<Record<string, number>> = {};
+      for (const [k, v] of Object.entries(capsIn)) {
+        if (typeof v === "number" && Number.isFinite(v) && v >= 0) {
+          capsOut[k] = Math.floor(v);
+        }
+      }
+      await setUserProviderCaps(env.DB, targetId, capsOut, now);
+      return json({ ok: true });
+    }
+  }
+
+  // ── Global scoring contract ───────────────────────────────────────────────
+  if (path === "/api/admin/scoring-contract") {
+    if (request.method === "GET") {
+      const contract = await getGlobalScoringContract(env.DB);
+      const defaultContract = Array.isArray(OPENAI_SCORING_CONTRACT_INSTRUCTION)
+        ? OPENAI_SCORING_CONTRACT_INSTRUCTION.join("\n")
+        : String(OPENAI_SCORING_CONTRACT_INSTRUCTION);
+      return json({ ok: true, contract: contract ?? defaultContract, isDefault: !contract });
+    }
+    if (request.method === "PUT") {
+      let body: { contract?: string; reset?: boolean };
+      try {
+        body = (await request.json()) as typeof body;
+      } catch {
+        return json({ ok: false, error: "invalid_json" }, 400);
+      }
+      if (body.reset) {
+        const defaultContract = Array.isArray(OPENAI_SCORING_CONTRACT_INSTRUCTION)
+          ? OPENAI_SCORING_CONTRACT_INSTRUCTION.join("\n")
+          : String(OPENAI_SCORING_CONTRACT_INSTRUCTION);
+        await setGlobalScoringContract(env.DB, defaultContract);
+        return json({ ok: true, reset: true });
+      }
+      if (typeof body.contract !== "string" || !body.contract.trim()) {
+        return json({ ok: false, error: "contract_required" }, 400);
+      }
+      await setGlobalScoringContract(env.DB, body.contract.trim());
+      return json({ ok: true });
+    }
+  }
+
+  // ── New-user template ─────────────────────────────────────────────────────
+  if (path === "/api/admin/new-user-template") {
+    if (request.method === "GET") {
+      const template = await getGlobalNewUserTemplate(env.DB);
+      return json({ ok: true, template: template ?? {}, keys: [...USER_SETTINGS_TEMPLATE_KEYS] });
+    }
+    if (request.method === "PUT") {
+      let body: { template?: unknown };
+      try {
+        body = (await request.json()) as typeof body;
+      } catch {
+        return json({ ok: false, error: "invalid_json" }, 400);
+      }
+      if (!body.template || typeof body.template !== "object" || Array.isArray(body.template)) {
+        return json({ ok: false, error: "invalid_template" }, 400);
+      }
+      const t = body.template as Record<string, unknown>;
+      const filtered: Record<string, string> = {};
+      for (const key of USER_SETTINGS_TEMPLATE_KEYS) {
+        if (typeof t[key] === "string") filtered[key] = t[key] as string;
+      }
+      await setGlobalNewUserTemplate(env.DB, filtered);
+      return json({ ok: true });
+    }
+  }
+
+  // ── Sync template from admin ──────────────────────────────────────────────
+  if (path === "/api/admin/new-user-template/sync-from-admin" && request.method === "POST") {
+    await syncNewUserTemplateFromAdmin(env.DB, now);
+    return json({ ok: true });
+  }
+
+  // ── Admin pipeline status for a specific user ─────────────────────────────
+  if (path === "/api/admin/pipeline-status" && request.method === "GET") {
+    const targetUserId = new URL(request.url).searchParams.get("userId");
+    if (!targetUserId) return json({ ok: false, error: "userId_required" }, 400);
+    const status = await getCoordinatorStatus(env, targetUserId);
+    return json(status);
+  }
+
+  return json({ ok: false, error: "not_found" }, 404);
 }

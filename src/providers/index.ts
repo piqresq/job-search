@@ -12,8 +12,8 @@ export function getRegisteredProviderIds(): JobSourceId[] {
 }
 
 /** Pipeline provider order — used as the stable tie-break order for weighted coordinator rotation. */
-export async function getEnabledProviders(env: Env): Promise<JobSourceProvider[]> {
-  const ids = await getEnabledJobSourceIdsFromDb(env.DB, getRegisteredProviderIds());
+export async function getEnabledProviders(env: Env, userId: string): Promise<JobSourceProvider[]> {
+  const ids = await getEnabledJobSourceIdsFromDb(env.DB, userId, getRegisteredProviderIds());
   if (ids.length === 0) {
     return [];
   }

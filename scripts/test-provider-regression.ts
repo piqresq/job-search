@@ -194,6 +194,7 @@ async function testRapidApiJsonRequestTreatsPersistentQuotaAsDoneForCycle() {
       rapidApiJsonRequest(
         db,
         env,
+        "test-user",
         "https://example.com/jobs",
         "linkedin-job-search-api.p.rapidapi.com",
         "diagnostic_scope",
@@ -235,6 +236,7 @@ async function testRapidApiJsonRequestKeepsTransientLimitAsBackoff() {
       rapidApiJsonRequest(
         db,
         env,
+        "test-user",
         "https://example.com/jobs",
         "linkedin-job-search-api.p.rapidapi.com",
         "diagnostic_scope",

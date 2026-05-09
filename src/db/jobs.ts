@@ -122,20 +122,20 @@ export function defaultDashboardJobListPrefs(): DashboardJobListPrefs {
   };
 }
 
-export async function getJob(db: D1Database, id: string): Promise<JobRow | null> {
+export async function getJob(db: D1Database, userId: string, id: string): Promise<JobRow | null> {
   const row = await db
     .prepare(
-      "SELECT id, status, fit_score, recommendation, dash_bucket FROM jobs WHERE id = ?",
+      "SELECT id, status, fit_score, recommendation, dash_bucket FROM jobs WHERE user_id = ? AND id = ?",
     )
-    .bind(id)
+    .bind(userId, id)
     .first<JobRow>();
   return row ?? null;
 }
 
-export async function loadNormalizedJob(db: D1Database, id: string) {
+export async function loadNormalizedJob(db: D1Database, userId: string, id: string) {
   const row = await db
-    .prepare("SELECT normalized_json FROM jobs WHERE id = ?")
-    .bind(id)
+    .prepare("SELECT normalized_json FROM jobs WHERE user_id = ? AND id = ?")
+    .bind(userId, id)
     .first<{ normalized_json: string }>();
   if (!row?.normalized_json) return null;
   try {
@@ -147,11 +147,12 @@ export async function loadNormalizedJob(db: D1Database, id: string) {
 
 export async function loadScoringResult(
   db: D1Database,
+  userId: string,
   id: string,
 ): Promise<import("../types/job").ScoringResult | null> {
   const row = await db
-    .prepare("SELECT scoring_json FROM jobs WHERE id = ?")
-    .bind(id)
+    .prepare("SELECT scoring_json FROM jobs WHERE user_id = ? AND id = ?")
+    .bind(userId, id)
     .first<{ scoring_json: string | null }>();
   if (!row?.scoring_json) return null;
   try {
@@ -163,6 +164,7 @@ export async function loadScoringResult(
 
 export async function upsertNormalizedJob(
   db: D1Database,
+  userId: string,
   id: string,
   job: NormalizedJob,
   now: number,
@@ -174,11 +176,11 @@ export async function upsertNormalizedJob(
   await db
     .prepare(
       `INSERT INTO jobs (
-        id, source, external_id, title, company, job_url, apply_url, location, is_remote,
+        user_id, id, source, external_id, title, company, job_url, apply_url, location, is_remote,
         description, salary_raw, salary_min, salary_max, salary_currency, normalized_json,
         hard_filter_passed, status, dash_bucket, created_at, updated_at, content_dedupe_hash,
         salary_monthly_eur, salary_display_eur
-      ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,0,'imported','active',?,?,?,?,?)
+      ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,0,'imported','active',?,?,?,?,?)
       ON CONFLICT(id) DO UPDATE SET
         title = excluded.title,
         company = excluded.company,
@@ -200,6 +202,7 @@ export async function upsertNormalizedJob(
         salary_display_eur = COALESCE(excluded.salary_display_eur, jobs.salary_display_eur)`,
     )
     .bind(
+      userId,
       id,
       job.source,
       job.externalId,
@@ -227,17 +230,18 @@ export async function upsertNormalizedJob(
 /** Earliest-saved row wins; used to hard-reject later listings with the same content fingerprint. */
 export async function findOtherJobIdWithContentDedupeHash(
   db: D1Database,
+  userId: string,
   hash: string,
   excludeId: string,
 ): Promise<string | null> {
   const row = await db
     .prepare(
       `SELECT id FROM jobs
-       WHERE content_dedupe_hash = ? AND id != ?
+       WHERE user_id = ? AND content_dedupe_hash = ? AND id != ?
        ORDER BY created_at ASC, id ASC
        LIMIT 1`,
     )
-    .bind(hash, excludeId)
+    .bind(userId, hash, excludeId)
     .first<{ id: string }>();
   return row?.id ?? null;
 }
@@ -245,6 +249,7 @@ export async function findOtherJobIdWithContentDedupeHash(
 /** After AI scoring: persist description-derived salary into D1 and normalized_json. */
 export async function updateNormalizedJobSalary(
   db: D1Database,
+  userId: string,
   id: string,
   job: NormalizedJob,
   now: number,
@@ -263,7 +268,7 @@ export async function updateNormalizedJobSalary(
         salary_monthly_eur = COALESCE(?, salary_monthly_eur),
         salary_display_eur = COALESCE(?, salary_display_eur),
         updated_at = ?
-      WHERE id = ?`,
+      WHERE user_id = ? AND id = ?`,
     )
     .bind(
       job.salaryRaw ?? null,
@@ -274,26 +279,28 @@ export async function updateNormalizedJobSalary(
       salaryCache?.monthlyEur ?? null,
       salaryCache?.display ?? null,
       now,
+      userId,
       id,
     )
     .run();
 }
 
-/** After AI scoring: persist `normalized_json` when only non-salary fields (e.g. workplace) changed. */
 export async function updateNormalizedJobNormalizedJson(
   db: D1Database,
+  userId: string,
   id: string,
   job: NormalizedJob,
   now: number,
 ): Promise<void> {
   await db
-    .prepare(`UPDATE jobs SET normalized_json = ?, updated_at = ? WHERE id = ?`)
-    .bind(JSON.stringify(job), now, id)
+    .prepare(`UPDATE jobs SET normalized_json = ?, updated_at = ? WHERE user_id = ? AND id = ?`)
+    .bind(JSON.stringify(job), now, userId, id)
     .run();
 }
 
 export async function markHardRejected(
   db: D1Database,
+  userId: string,
   id: string,
   reasons: string[],
   now: number,
@@ -307,13 +314,18 @@ export async function markHardRejected(
         dash_bucket = 'filtered',
         dash_moved_at = NULL,
         updated_at = ?
-      WHERE id = ?`,
+      WHERE user_id = ? AND id = ?`,
     )
-    .bind(JSON.stringify(reasons), now, id)
+    .bind(JSON.stringify(reasons), now, userId, id)
     .run();
 }
 
-export async function markHardPassed(db: D1Database, id: string, now: number): Promise<void> {
+export async function markHardPassed(
+  db: D1Database,
+  userId: string,
+  id: string,
+  now: number,
+): Promise<void> {
   await db
     .prepare(
       `UPDATE jobs SET
@@ -321,23 +333,22 @@ export async function markHardPassed(db: D1Database, id: string, now: number): P
         hard_reject_reasons = NULL,
         dash_bucket = COALESCE(dash_bucket, 'active'),
         updated_at = ?
-      WHERE id = ?`,
+      WHERE user_id = ? AND id = ?`,
     )
-    .bind(now, id)
+    .bind(now, userId, id)
     .run();
 }
 
-/**
- * Surface a partially processed row in the Filtered tab with a human-readable reason.
- * `failed` rows stay in the Filtered tab and can be retried from the dashboard.
- */
 export async function markDashboardProcessingFailure(
   db: D1Database,
+  userId: string,
   id: string,
   reason: string,
   now: number,
 ): Promise<void> {
-  const note = reason.trim().slice(0, 1800) || "Pipeline stopped before a final recommendation was stored.";
+  const note =
+    reason.trim().slice(0, 1800) ||
+    "Pipeline stopped before a final recommendation was stored.";
   await db
     .prepare(
       `UPDATE jobs SET
@@ -352,14 +363,15 @@ export async function markDashboardProcessingFailure(
         hard_reject_reasons = NULL,
         scoring_notes = ?,
         updated_at = ?
-      WHERE id = ?`,
+      WHERE user_id = ? AND id = ?`,
     )
-    .bind(note, now, id)
+    .bind(note, now, userId, id)
     .run();
 }
 
 export async function saveScoring(
   db: D1Database,
+  userId: string,
   id: string,
   scoring: ScoringResult,
   now: number,
@@ -382,7 +394,7 @@ export async function saveScoring(
         dash_bucket = CASE WHEN ? THEN 'filtered' ELSE 'active' END,
         dash_moved_at = CASE WHEN ? THEN NULL ELSE dash_moved_at END,
         updated_at = ?
-      WHERE id = ?`,
+      WHERE user_id = ? AND id = ?`,
     )
     .bind(
       scoring.fit_score,
@@ -397,6 +409,7 @@ export async function saveScoring(
       reject ? 1 : 0,
       reject ? 1 : 0,
       now,
+      userId,
       id,
     )
     .run();
@@ -404,6 +417,7 @@ export async function saveScoring(
 
 export async function saveDraftsAndReview(
   db: D1Database,
+  userId: string,
   id: string,
   drafts: { cvDraft: string; coverLetter: string },
   tokenHash: string,
@@ -419,23 +433,28 @@ export async function saveDraftsAndReview(
         review_token_expires_at = ?,
         status = 'review_email_sent',
         updated_at = ?
-      WHERE id = ?`,
+      WHERE user_id = ? AND id = ?`,
     )
-    .bind(drafts.cvDraft, drafts.coverLetter, tokenHash, expiresAt, now, id)
+    .bind(drafts.cvDraft, drafts.coverLetter, tokenHash, expiresAt, now, userId, id)
     .run();
 }
 
 export async function setJobStatus(
   db: D1Database,
+  userId: string,
   id: string,
   status: string,
   now: number,
 ): Promise<void> {
-  await db.prepare(`UPDATE jobs SET status = ?, updated_at = ? WHERE id = ?`).bind(status, now, id).run();
+  await db
+    .prepare(`UPDATE jobs SET status = ?, updated_at = ? WHERE user_id = ? AND id = ?`)
+    .bind(status, now, userId, id)
+    .run();
 }
 
 export async function updateDrafts(
   db: D1Database,
+  userId: string,
   id: string,
   cv: string,
   letter: string,
@@ -443,14 +462,17 @@ export async function updateDrafts(
 ): Promise<void> {
   await db
     .prepare(
-      `UPDATE jobs SET draft_cv = ?, draft_cover_letter = ?, status = 'edit_pending', updated_at = ? WHERE id = ?`,
+      `UPDATE jobs SET draft_cv = ?, draft_cover_letter = ?, status = 'edit_pending', updated_at = ? WHERE user_id = ? AND id = ?`,
     )
-    .bind(cv, letter, now, id)
+    .bind(cv, letter, now, userId, id)
     .run();
 }
 
-export async function getJobFull(db: D1Database, id: string) {
-  return db.prepare("SELECT * FROM jobs WHERE id = ?").bind(id).first<Record<string, unknown>>();
+export async function getJobFull(db: D1Database, userId: string, id: string) {
+  return db
+    .prepare("SELECT * FROM jobs WHERE user_id = ? AND id = ?")
+    .bind(userId, id)
+    .first<Record<string, unknown>>();
 }
 
 /**
@@ -492,7 +514,11 @@ const DASHBOARD_LIST_COLUMNS_ALIASED = `j.id AS id, j.title AS title, j.company 
               json_extract(j.normalized_json, '$.postedAtUnix') AS posted_at_unix,
               json_extract(j.normalized_json, '$.apiFetchedAtUnix') AS api_fetched_at_unix`;
 
-async function listDashboardListRowsForJobIds(db: D1Database, ids: string[]): Promise<DashboardListRow[]> {
+async function listDashboardListRowsForJobIds(
+  db: D1Database,
+  userId: string,
+  ids: string[],
+): Promise<DashboardListRow[]> {
   if (ids.length === 0) return [];
   const chunkSize = 80;
   const byId = new Map<string, DashboardListRow>();
@@ -500,29 +526,29 @@ async function listDashboardListRowsForJobIds(db: D1Database, ids: string[]): Pr
     const slice = ids.slice(i, i + chunkSize);
     const ph = slice.map(() => "?").join(",");
     const { results } = await db
-      .prepare(`SELECT ${DASHBOARD_LIST_COLUMNS} FROM jobs WHERE id IN (${ph})`)
-      .bind(...slice)
+      .prepare(`SELECT ${DASHBOARD_LIST_COLUMNS} FROM jobs WHERE user_id = ? AND id IN (${ph})`)
+      .bind(userId, ...slice)
       .all<DashboardListRow>();
     for (const row of results ?? []) byId.set(row.id, row);
   }
   return ids.map((id) => byId.get(id)).filter((r): r is DashboardListRow => r != null);
 }
 
-/**
- * Active list is capped at 200 rows by `updated_at`, so starred jobs can fall off that page while still
- * appearing on the Favorites tab. This prepends any active favorited rows that are missing from that page.
- */
-export async function listActiveJobsForDashboardWithFavoriteOverflow(db: D1Database): Promise<DashboardListRow[]> {
-  const top = await listJobsByDashboardBucket(db, "active");
+export async function listActiveJobsForDashboardWithFavoriteOverflow(
+  db: D1Database,
+  userId: string,
+): Promise<DashboardListRow[]> {
+  const top = await listJobsByDashboardBucket(db, userId, "active");
   const topIds = new Set(top.map((r) => r.id));
 
   const { results: favOrder } = await db
     .prepare(
       `SELECT f.job_id AS job_id FROM job_favorites f
        INNER JOIN jobs j ON j.id = f.job_id
-       WHERE j.dash_bucket = 'active'
+       WHERE f.user_id = ? AND j.user_id = ? AND j.dash_bucket = 'active'
        ORDER BY f.created_at DESC`,
     )
+    .bind(userId, userId)
     .all<{ job_id: string }>();
 
   const missingIds: string[] = [];
@@ -536,51 +562,56 @@ export async function listActiveJobsForDashboardWithFavoriteOverflow(db: D1Datab
 
   if (missingIds.length === 0) return top;
 
-  const extra = await listDashboardListRowsForJobIds(db, missingIds);
+  const extra = await listDashboardListRowsForJobIds(db, userId, missingIds);
   return [...extra, ...top];
 }
 
 export async function listJobsByDashboardBucket(
   db: D1Database,
+  userId: string,
   bucket: "active" | "accepted" | "denied" | "filtered",
 ): Promise<DashboardListRow[]> {
   const { results } = await db
     .prepare(
       `SELECT ${DASHBOARD_LIST_COLUMNS}
-       FROM jobs WHERE dash_bucket = ?
+       FROM jobs WHERE user_id = ? AND dash_bucket = ?
        ORDER BY updated_at DESC, id DESC
        LIMIT 200`,
     )
-    .bind(bucket)
+    .bind(userId, bucket)
     .all<DashboardListRow>();
   return results ?? [];
 }
 
-/** Active jobs marked as favorites (same columns as {@link listJobsByDashboardBucket}). */
-export async function listFavoriteJobsForDashboard(db: D1Database): Promise<DashboardListRow[]> {
+export async function listFavoriteJobsForDashboard(
+  db: D1Database,
+  userId: string,
+): Promise<DashboardListRow[]> {
   const { results } = await db
     .prepare(
       `SELECT ${DASHBOARD_LIST_COLUMNS_ALIASED}
        FROM jobs j
        INNER JOIN job_favorites f ON f.job_id = j.id
-       WHERE j.dash_bucket = 'active'
+       WHERE j.user_id = ? AND f.user_id = ? AND j.dash_bucket = 'active'
        ORDER BY f.created_at DESC
        LIMIT 200`,
     )
+    .bind(userId, userId)
     .all<DashboardListRow>();
   return results ?? [];
 }
 
 async function listAllJobsByDashboardBucket(
   db: D1Database,
+  userId: string,
   bucket: "active" | "accepted" | "denied" | "filtered",
 ): Promise<DashboardListRow[]> {
   const { results } = await db
     .prepare(
       `SELECT ${DASHBOARD_LIST_COLUMNS}
-       FROM jobs WHERE dash_bucket = ?`,
+       FROM jobs WHERE user_id = ? AND dash_bucket = ?`,
     )
-    .bind(bucket)
+    .bind(userId, bucket)
     .all<DashboardListRow>();
   return results ?? [];
 }
@@ -678,7 +709,7 @@ END`;
 
 const DASHBOARD_JOB_SEARCH_TIER_EXPR = `CASE
   WHEN CAST(json_extract(j.normalized_json, '$.searchTier') AS INTEGER) IN (1, 2)
-    THEN CAST(json_extract(j.normalized_json, '$.searchTier') AS INTEGER)
+    THEN 1
   ELSE NULL
 END`;
 
@@ -729,32 +760,32 @@ const DASHBOARD_JOB_LISTING_POSTED_SORT_EXPR = `CASE
   ELSE 0
 END`;
 
-function dashboardJobListScope(tab: DashboardJobListTab): DashboardJobListScope {
+function dashboardJobListScope(tab: DashboardJobListTab, userId: string): DashboardJobListScope {
   if (tab === "favorites") {
     return {
-      fromSql: `FROM jobs j INNER JOIN job_favorites f ON f.job_id = j.id`,
-      whereClauses: [DASHBOARD_JOB_VISIBLE_ACTIVE_SCOPE_EXPR],
-      params: [],
+      fromSql: `FROM jobs j INNER JOIN job_favorites f ON f.job_id = j.id AND f.user_id = ?`,
+      whereClauses: [`j.user_id = ?`, DASHBOARD_JOB_VISIBLE_ACTIVE_SCOPE_EXPR],
+      params: [userId, userId],
     };
   }
   if (tab === "active") {
     return {
       fromSql: `FROM jobs j`,
-      whereClauses: [DASHBOARD_JOB_VISIBLE_ACTIVE_SCOPE_EXPR],
-      params: [],
+      whereClauses: [`j.user_id = ?`, DASHBOARD_JOB_VISIBLE_ACTIVE_SCOPE_EXPR],
+      params: [userId],
     };
   }
   if (tab === "filtered") {
     return {
       fromSql: `FROM jobs j`,
-      whereClauses: [DASHBOARD_JOB_FILTERED_SCOPE_EXPR],
-      params: [],
+      whereClauses: [`j.user_id = ?`, DASHBOARD_JOB_FILTERED_SCOPE_EXPR],
+      params: [userId],
     };
   }
   return {
     fromSql: `FROM jobs j`,
-    whereClauses: [`j.dash_bucket = ?`],
-    params: [tab],
+    whereClauses: [`j.user_id = ?`, `j.dash_bucket = ?`],
+    params: [userId, tab],
   };
 }
 
@@ -866,8 +897,9 @@ function buildDashboardJobListQuerySpec(
   tab: DashboardJobListTab,
   prefs: DashboardJobListPrefs,
   cursor?: DashboardJobListCursor | null,
+  userId?: string,
 ): DashboardJobListQuerySpec {
-  const scope = dashboardJobListScope(tab);
+  const scope = dashboardJobListScope(tab, userId ?? "");
   const whereClauses = [...scope.whereClauses];
   const params: DashboardJobListSqlValue[] = [...scope.params];
 
@@ -1058,7 +1090,7 @@ function dashboardCountryFacetKey(row: DashboardListRow): string {
 }
 
 function dashboardRoleQueryKey(row: DashboardListRow): string {
-  const tier = row.search_tier === 1 || row.search_tier === 2 ? row.search_tier : null;
+  const tier = row.search_tier === 1 || row.search_tier === 2 ? 1 : null;
   const query = String(row.search_query ?? "").trim();
   return JSON.stringify({ t: tier, q: query });
 }
@@ -1206,8 +1238,8 @@ type TabFacetCache = {
   roleQueries: string[];
 };
 
-const tabScopeTotalCache = new Map<DashboardJobListTab, TabScopeTotalCache>();
-const tabFacetCache = new Map<DashboardJobListTab, TabFacetCache>();
+const tabScopeTotalCache = new Map<string, TabScopeTotalCache>();
+const tabFacetCache = new Map<string, TabFacetCache>();
 
 export function invalidateDashboardListMemoCaches(): void {
   tabScopeTotalCache.clear();
@@ -1216,7 +1248,10 @@ export function invalidateDashboardListMemoCaches(): void {
 
 const DASHBOARD_STALE_IMPORTED_AGE_SEC = 600;
 
-async function surfaceStaleImportedJobsAsFiltered(db: D1Database): Promise<number> {
+async function surfaceStaleImportedJobsAsFiltered(
+  db: D1Database,
+  userId: string,
+): Promise<number> {
   const staleBefore = Math.floor(Date.now() / 1000) - DASHBOARD_STALE_IMPORTED_AGE_SEC;
   const { results } = await db
     .prepare(
@@ -1238,36 +1273,41 @@ async function surfaceStaleImportedJobsAsFiltered(db: D1Database): Promise<numbe
              THEN 'The pipeline stopped before the hard-filter rejection reason could be saved.'
            ELSE 'The pipeline stopped before this job reached a final dashboard state.'
          END
-       WHERE COALESCE(status, '') = 'imported'
+       WHERE user_id = ?
+         AND COALESCE(status, '') = 'imported'
          AND COALESCE(dash_bucket, 'active') = 'active'
          AND LOWER(REPLACE(TRIM(COALESCE(recommendation, '')), ' ', '_')) = ''
          AND COALESCE(NULLIF(updated_at, 0), created_at, 0) <= ?
        RETURNING id`,
     )
-    .bind(staleBefore)
+    .bind(userId, staleBefore)
     .all<{ id: string }>();
   return (results ?? []).length;
 }
 
 async function getCachedTabScopeTotal(
   db: D1Database,
+  userId: string,
   tab: DashboardJobListTab,
   scope: DashboardJobListScope,
 ): Promise<number> {
-  const cached = tabScopeTotalCache.get(tab);
+  const cacheKey = `${userId}:${tab}`;
+  const cached = tabScopeTotalCache.get(cacheKey);
   const now = Date.now();
   if (cached && cached.expiresAt > now) return cached.total;
   const total = await countDashboardJobListRows(db, scope);
-  tabScopeTotalCache.set(tab, { expiresAt: now + TAB_SCOPE_CACHE_TTL_MS, total });
+  tabScopeTotalCache.set(cacheKey, { expiresAt: now + TAB_SCOPE_CACHE_TTL_MS, total });
   return total;
 }
 
 async function getCachedTabFacets(
   db: D1Database,
+  userId: string,
   tab: DashboardJobListTab,
   scope: DashboardJobListScope,
 ): Promise<{ countries: string[]; roleQueries: string[] }> {
-  const cached = tabFacetCache.get(tab);
+  const cacheKey = `${userId}:${tab}`;
+  const cached = tabFacetCache.get(cacheKey);
   const now = Date.now();
   if (cached && cached.expiresAt > now) {
     return { countries: cached.countries, roleQueries: cached.roleQueries };
@@ -1276,7 +1316,7 @@ async function getCachedTabFacets(
     listDashboardJobFacetCountries(db, scope),
     listDashboardJobFacetRoleQueries(db, scope),
   ]);
-  tabFacetCache.set(tab, {
+  tabFacetCache.set(cacheKey, {
     expiresAt: now + TAB_SCOPE_CACHE_TTL_MS,
     countries,
     roleQueries,
@@ -1286,27 +1326,30 @@ async function getCachedTabFacets(
 
 export async function queryDashboardJobListPage(
   db: D1Database,
+  userId: string,
   tab: DashboardJobListTab,
   prefs: DashboardJobListPrefs,
   cursor: DashboardJobListCursor | null,
   limit: number,
 ): Promise<DashboardJobListPage> {
   if (tab === "active" || tab === "favorites" || tab === "filtered") {
-    const surfaced = await surfaceStaleImportedJobsAsFiltered(db);
+    const surfaced = await surfaceStaleImportedJobsAsFiltered(db, userId);
     if (surfaced > 0) invalidateDashboardListMemoCaches();
   }
-  const scope = dashboardJobListScope(tab);
-  const filteredQuery = buildDashboardJobListQuerySpec(tab, prefs);
-  const pageQuery = cursor ? buildDashboardJobListQuerySpec(tab, prefs, cursor) : filteredQuery;
+  const scope = dashboardJobListScope(tab, userId);
+  const filteredQuery = buildDashboardJobListQuerySpec(tab, prefs, undefined, userId);
+  const pageQuery = cursor
+    ? buildDashboardJobListQuerySpec(tab, prefs, cursor, userId)
+    : filteredQuery;
   const safeLimit = Math.min(100, Math.max(1, Math.floor(limit)));
   const cursorSelectSql = buildDashboardJobListCursorSelectSql(pageQuery.orderFields);
   const selectSql = cursorSelectSql
     ? `${DASHBOARD_LIST_COLUMNS_ALIASED}, ${cursorSelectSql}`
     : DASHBOARD_LIST_COLUMNS_ALIASED;
   const [totalUnfiltered, totalMatching, facets, pageResult] = await Promise.all([
-    getCachedTabScopeTotal(db, tab, scope),
+    getCachedTabScopeTotal(db, userId, tab, scope),
     countDashboardJobListRows(db, filteredQuery),
-    getCachedTabFacets(db, tab, scope),
+    getCachedTabFacets(db, userId, tab, scope),
     db
       .prepare(
         `SELECT ${selectSql}
@@ -1327,21 +1370,25 @@ export async function queryDashboardJobListPage(
     totalMatching,
     totalUnfiltered,
     hasMore,
-    nextCursor: hasMore && lastRow ? buildDashboardJobListCursorFromRow(lastRow, pageQuery.orderFields) : null,
+    nextCursor:
+      hasMore && lastRow
+        ? buildDashboardJobListCursorFromRow(lastRow, pageQuery.orderFields)
+        : null,
     facets,
   };
 }
 
 export async function queryDashboardJobListIds(
   db: D1Database,
+  userId: string,
   tab: DashboardJobListTab,
   prefs: DashboardJobListPrefs,
 ): Promise<string[]> {
   if (tab === "active" || tab === "favorites" || tab === "filtered") {
-    const surfaced = await surfaceStaleImportedJobsAsFiltered(db);
+    const surfaced = await surfaceStaleImportedJobsAsFiltered(db, userId);
     if (surfaced > 0) invalidateDashboardListMemoCaches();
   }
-  const query = buildDashboardJobListQuerySpec(tab, prefs);
+  const query = buildDashboardJobListQuerySpec(tab, prefs, undefined, userId);
   const { results } = await db
     .prepare(
       `SELECT j.id AS id
@@ -1351,11 +1398,19 @@ export async function queryDashboardJobListIds(
     )
     .bind(...query.params)
     .all<{ id: string }>();
-  return (results ?? []).map((row) => row.id).filter((id): id is string => typeof id === "string" && id.length > 0);
+  return (results ?? [])
+    .map((row) => row.id)
+    .filter((id): id is string => typeof id === "string" && id.length > 0);
 }
 
-export async function getFavoriteJobIdsSet(db: D1Database): Promise<Set<string>> {
-  const { results } = await db.prepare(`SELECT job_id FROM job_favorites`).all<{ job_id: string }>();
+export async function getFavoriteJobIdsSet(
+  db: D1Database,
+  userId: string,
+): Promise<Set<string>> {
+  const { results } = await db
+    .prepare(`SELECT job_id FROM job_favorites WHERE user_id = ?`)
+    .bind(userId)
+    .all<{ job_id: string }>();
   const s = new Set<string>();
   for (const r of results ?? []) s.add(r.job_id);
   return s;
@@ -1363,33 +1418,45 @@ export async function getFavoriteJobIdsSet(db: D1Database): Promise<Set<string>>
 
 export async function setJobFavorite(
   db: D1Database,
+  userId: string,
   jobId: string,
   favorite: boolean,
   now: number,
 ): Promise<{ ok: true } | { ok: false; error: string }> {
-  const row = await getJob(db, jobId);
+  const row = await getJob(db, userId, jobId);
   if (!row) return { ok: false, error: "not_found" };
   if (row.dash_bucket !== "active") return { ok: false, error: "not_active" };
   if (favorite) {
     await db
       .prepare(
-        `INSERT INTO job_favorites (job_id, created_at) VALUES (?, ?)
-         ON CONFLICT(job_id) DO UPDATE SET created_at = excluded.created_at`,
+        `INSERT INTO job_favorites (user_id, job_id, created_at) VALUES (?, ?, ?)
+         ON CONFLICT(user_id, job_id) DO UPDATE SET created_at = excluded.created_at`,
       )
-      .bind(jobId, now)
+      .bind(userId, jobId, now)
       .run();
   } else {
-    await db.prepare(`DELETE FROM job_favorites WHERE job_id = ?`).bind(jobId).run();
+    await db
+      .prepare(`DELETE FROM job_favorites WHERE user_id = ? AND job_id = ?`)
+      .bind(userId, jobId)
+      .run();
   }
   return { ok: true };
 }
 
-async function deleteFavoriteForJob(db: D1Database, jobId: string): Promise<void> {
-  await db.prepare(`DELETE FROM job_favorites WHERE job_id = ?`).bind(jobId).run();
+async function deleteFavoriteForJob(
+  db: D1Database,
+  userId: string,
+  jobId: string,
+): Promise<void> {
+  await db
+    .prepare(`DELETE FROM job_favorites WHERE user_id = ? AND job_id = ?`)
+    .bind(userId, jobId)
+    .run();
 }
 
 export async function setDashboardDecision(
   db: D1Database,
+  userId: string,
   id: string,
   decision: "accepted" | "denied",
   now: number,
@@ -1397,25 +1464,27 @@ export async function setDashboardDecision(
   const status = decision === "accepted" ? "approved" : "rejected";
   await db
     .prepare(
-      `UPDATE jobs SET dash_bucket = ?, dash_moved_at = ?, status = ?, updated_at = ? WHERE id = ?`,
+      `UPDATE jobs SET dash_bucket = ?, dash_moved_at = ?, status = ?, updated_at = ?
+       WHERE id = ? AND user_id = ?`,
     )
-    .bind(decision, now, status, now, id)
+    .bind(decision, now, status, now, id, userId)
     .run();
-  await deleteFavoriteForJob(db, id);
+  await deleteFavoriteForJob(db, userId, id);
 }
 
 /** Move job from Applied / Rejected back to the main job list (active bucket). */
 export async function restoreDashboardJobToActive(
   db: D1Database,
+  userId: string,
   id: string,
   now: number,
 ): Promise<boolean> {
   const result = await db
     .prepare(
       `UPDATE jobs SET dash_bucket = 'active', dash_moved_at = ?, status = 'dashboard_open', updated_at = ?
-       WHERE id = ? AND dash_bucket IN ('accepted', 'denied')`,
+       WHERE id = ? AND user_id = ? AND dash_bucket IN ('accepted', 'denied')`,
     )
-    .bind(now, now, id)
+    .bind(now, now, id, userId)
     .run();
   return (result.meta?.changes ?? 0) > 0;
 }
@@ -1424,6 +1493,7 @@ export async function restoreDashboardJobToActive(
 /** Reject many jobs that are still on the dashboard active list (e.g. visible-filtered bulk deny). */
 export async function bulkDenyActiveJobs(
   db: D1Database,
+  userId: string,
   ids: string[],
   now: number,
 ): Promise<string[]> {
@@ -1437,10 +1507,10 @@ export async function bulkDenyActiveJobs(
     const { results } = await db
       .prepare(
         `UPDATE jobs SET dash_bucket = 'denied', dash_moved_at = ?, status = 'rejected', updated_at = ?
-         WHERE dash_bucket = 'active' AND id IN (${placeholders})
+         WHERE user_id = ? AND dash_bucket = 'active' AND id IN (${placeholders})
          RETURNING id`,
       )
-      .bind(now, now, ...slice)
+      .bind(now, now, userId, ...slice)
       .all<{ id: string }>();
     updatedIds.push(
       ...(results ?? [])
@@ -1448,8 +1518,8 @@ export async function bulkDenyActiveJobs(
         .filter((id): id is string => typeof id === "string" && id.length > 0),
     );
     await db
-      .prepare(`DELETE FROM job_favorites WHERE job_id IN (${placeholders})`)
-      .bind(...slice)
+      .prepare(`DELETE FROM job_favorites WHERE user_id = ? AND job_id IN (${placeholders})`)
+      .bind(userId, ...slice)
       .run();
   }
   return updatedIds;
@@ -1458,6 +1528,7 @@ export async function bulkDenyActiveJobs(
 /** Move many active jobs to Applied (same rules as single accept). */
 export async function bulkAcceptActiveJobs(
   db: D1Database,
+  userId: string,
   ids: string[],
   now: number,
 ): Promise<string[]> {
@@ -1471,10 +1542,10 @@ export async function bulkAcceptActiveJobs(
     const { results } = await db
       .prepare(
         `UPDATE jobs SET dash_bucket = 'accepted', dash_moved_at = ?, status = 'approved', updated_at = ?
-         WHERE dash_bucket = 'active' AND id IN (${placeholders})
+         WHERE user_id = ? AND dash_bucket = 'active' AND id IN (${placeholders})
          RETURNING id`,
       )
-      .bind(now, now, ...slice)
+      .bind(now, now, userId, ...slice)
       .all<{ id: string }>();
     updatedIds.push(
       ...(results ?? [])
@@ -1482,15 +1553,20 @@ export async function bulkAcceptActiveJobs(
         .filter((id): id is string => typeof id === "string" && id.length > 0),
     );
     await db
-      .prepare(`DELETE FROM job_favorites WHERE job_id IN (${placeholders})`)
-      .bind(...slice)
+      .prepare(`DELETE FROM job_favorites WHERE user_id = ? AND job_id IN (${placeholders})`)
+      .bind(userId, ...slice)
       .run();
   }
   return updatedIds;
 }
 
 /** Restore jobs from Applied / Reject / Filtered out to the main list (per-row bucket rules). */
-export async function bulkRestoreJobs(db: D1Database, ids: string[], now: number): Promise<string[]> {
+export async function bulkRestoreJobs(
+  db: D1Database,
+  userId: string,
+  ids: string[],
+  now: number,
+): Promise<string[]> {
   const uniq = [...new Set(ids.filter((id) => typeof id === "string" && id.length > 0))];
   if (uniq.length === 0) return [];
   const batchSize = 80;
@@ -1501,10 +1577,10 @@ export async function bulkRestoreJobs(db: D1Database, ids: string[], now: number
     const archived = await db
       .prepare(
         `UPDATE jobs SET dash_bucket = 'active', dash_moved_at = ?, status = 'dashboard_open', updated_at = ?
-         WHERE id IN (${placeholders}) AND dash_bucket IN ('accepted', 'denied')
+         WHERE user_id = ? AND id IN (${placeholders}) AND dash_bucket IN ('accepted', 'denied')
          RETURNING id`,
       )
-      .bind(now, now, ...slice)
+      .bind(now, now, userId, ...slice)
       .all<{ id: string }>();
     updatedIds.push(
       ...((archived.results ?? [])
@@ -1522,10 +1598,10 @@ export async function bulkRestoreJobs(db: D1Database, ids: string[], now: number
           hard_reject_reasons = NULL,
           fit_score = CASE WHEN COALESCE(fit_score, 0) < 60 THEN 60 ELSE fit_score END,
           updated_at = ?
-         WHERE id IN (${placeholders}) AND dash_bucket = 'filtered'
+         WHERE user_id = ? AND id IN (${placeholders}) AND dash_bucket = 'filtered'
          RETURNING id`,
       )
-      .bind(now, now, ...slice)
+      .bind(now, now, userId, ...slice)
       .all<{ id: string }>();
     updatedIds.push(
       ...((filtered.results ?? [])
@@ -1538,6 +1614,7 @@ export async function bulkRestoreJobs(db: D1Database, ids: string[], now: number
 
 export async function restoreFilteredJobToActive(
   db: D1Database,
+  userId: string,
   id: string,
   now: number,
 ): Promise<boolean> {
@@ -1552,15 +1629,16 @@ export async function restoreFilteredJobToActive(
         hard_reject_reasons = NULL,
         fit_score = CASE WHEN COALESCE(fit_score, 0) < 60 THEN 60 ELSE fit_score END,
         updated_at = ?
-      WHERE id = ? AND dash_bucket = 'filtered'`,
+      WHERE id = ? AND user_id = ? AND dash_bucket = 'filtered'`,
     )
-    .bind(now, now, id)
+    .bind(now, now, id, userId)
     .run();
   return (result.meta?.changes ?? 0) > 0;
 }
 
 export async function saveGeneratedDrafts(
   db: D1Database,
+  userId: string,
   id: string,
   drafts: { cvDraft: string; coverLetter: string },
   r2CvKey: string,
@@ -1575,29 +1653,31 @@ export async function saveGeneratedDrafts(
         r2_cv_key = ?,
         r2_cover_key = ?,
         updated_at = ?
-      WHERE id = ?`,
+      WHERE id = ? AND user_id = ?`,
     )
-    .bind(drafts.cvDraft, drafts.coverLetter, r2CvKey, r2CoverKey, now, id)
+    .bind(drafts.cvDraft, drafts.coverLetter, r2CvKey, r2CoverKey, now, id, userId)
     .run();
 }
 
 export async function getJobR2Keys(
   db: D1Database,
+  userId: string,
   id: string,
 ): Promise<{ r2_cv_key: string | null; r2_cover_key: string | null } | null> {
   return db
-    .prepare("SELECT r2_cv_key, r2_cover_key FROM jobs WHERE id = ?")
-    .bind(id)
+    .prepare("SELECT r2_cv_key, r2_cover_key FROM jobs WHERE id = ? AND user_id = ?")
+    .bind(id, userId)
     .first<{ r2_cv_key: string | null; r2_cover_key: string | null }>();
 }
 
 export async function getJobCompany(
   db: D1Database,
+  userId: string,
   id: string,
 ): Promise<string | null> {
   const row = await db
-    .prepare("SELECT company FROM jobs WHERE id = ?")
-    .bind(id)
+    .prepare("SELECT company FROM jobs WHERE id = ? AND user_id = ?")
+    .bind(id, userId)
     .first<{ company: string | null }>();
   return row?.company ?? null;
 }
@@ -1606,12 +1686,13 @@ export async function getJobCompany(
 export async function deleteR2DocObjectsForJobs(
   bucket: R2Bucket | undefined,
   db: D1Database,
+  userId: string,
   ids: string[],
 ): Promise<number> {
   if (!bucket || ids.length === 0) return 0;
   let n = 0;
   for (const id of ids) {
-    const row = await getJobR2Keys(db, id);
+    const row = await getJobR2Keys(db, userId, id);
     for (const key of [row?.r2_cv_key, row?.r2_cover_key]) {
       if (!key) continue;
       try {
@@ -1625,56 +1706,73 @@ export async function deleteR2DocObjectsForJobs(
   return n;
 }
 
-async function deleteJobFavoritesForJobIds(db: D1Database, ids: string[]): Promise<void> {
+async function deleteJobFavoritesForJobIds(
+  db: D1Database,
+  userId: string,
+  ids: string[],
+): Promise<void> {
   if (ids.length === 0) return;
   const batchSize = 80;
   for (let i = 0; i < ids.length; i += batchSize) {
     const slice = ids.slice(i, i + batchSize);
     const placeholders = slice.map(() => "?").join(",");
     await db
-      .prepare(`DELETE FROM job_favorites WHERE job_id IN (${placeholders})`)
-      .bind(...slice)
+      .prepare(`DELETE FROM job_favorites WHERE user_id = ? AND job_id IN (${placeholders})`)
+      .bind(userId, ...slice)
       .run();
   }
 }
 
 /** Deletes D1 rows only. Prefer `deleteJobsByIdsWithR2Cleanup` when CV/cover docs may exist in R2. */
-export async function deleteJobsByIds(db: D1Database, ids: string[]): Promise<void> {
+export async function deleteJobsByIds(
+  db: D1Database,
+  userId: string,
+  ids: string[],
+): Promise<void> {
   if (ids.length === 0) return;
-  await deleteJobFavoritesForJobIds(db, ids);
+  await deleteJobFavoritesForJobIds(db, userId, ids);
   const batchSize = 80;
   for (let i = 0; i < ids.length; i += batchSize) {
     const slice = ids.slice(i, i + batchSize);
     const placeholders = slice.map(() => "?").join(",");
     await db
-      .prepare(`DELETE FROM jobs WHERE id IN (${placeholders})`)
-      .bind(...slice)
+      .prepare(`DELETE FROM jobs WHERE user_id = ? AND id IN (${placeholders})`)
+      .bind(userId, ...slice)
       .run();
   }
 }
 
-/** Deletes D1 jobs, then best-effort removes related R2 docs using returned keys. */
+/**
+ * Deletes D1 jobs, then best-effort removes related R2 docs using returned keys.
+ * Pass `userId` for dashboard-initiated deletes (restricts to that user's rows).
+ * Omit `userId` for maintenance sweeps where IDs are already pre-filtered by caller.
+ */
 export async function deleteJobsByIdsWithR2Cleanup(
   db: D1Database,
   bucket: R2Bucket | undefined,
   ids: string[],
+  userId?: string,
 ): Promise<{ deletedIds: string[]; r2Deleted: number }> {
   const uniq = [...new Set(ids.filter((id) => typeof id === "string" && id.length > 0))];
   if (uniq.length === 0) return { deletedIds: [], r2Deleted: 0 };
-  await deleteJobFavoritesForJobIds(db, uniq);
+  if (userId) {
+    await deleteJobFavoritesForJobIds(db, userId, uniq);
+  }
   const batchSize = 80;
   const deletedIds: string[] = [];
   let r2Deleted = 0;
   for (let i = 0; i < uniq.length; i += batchSize) {
     const slice = uniq.slice(i, i + batchSize);
     const placeholders = slice.map(() => "?").join(",");
+    const userFilter = userId ? `AND user_id = ?` : "";
+    const binds: (string | number | null)[] = userId ? [...slice, userId] : [...slice];
     const { results } = await db
       .prepare(
         `DELETE FROM jobs
-         WHERE id IN (${placeholders})
+         WHERE id IN (${placeholders}) ${userFilter}
          RETURNING id, r2_cv_key, r2_cover_key`,
       )
-      .bind(...slice)
+      .bind(...binds)
       .all<{ id: string; r2_cv_key: string | null; r2_cover_key: string | null }>();
     for (const row of results ?? []) {
       if (typeof row.id === "string" && row.id.length > 0) deletedIds.push(row.id);
@@ -1709,7 +1807,9 @@ export async function selectExpiredDashboardJobs(db: D1Database, now: number): P
       `SELECT id FROM jobs
        WHERE dash_bucket = 'denied'
          AND (? - COALESCE(dash_moved_at, updated_at, created_at)) > ?
-         AND NOT EXISTS (SELECT 1 FROM job_favorites f WHERE f.job_id = jobs.id)`,
+         AND NOT EXISTS (
+           SELECT 1 FROM job_favorites f WHERE f.job_id = jobs.id AND f.user_id = jobs.user_id
+         )`,
     )
     .bind(now, fourWeeks)
     .all<{ id: string }>();
@@ -1719,7 +1819,9 @@ export async function selectExpiredDashboardJobs(db: D1Database, now: number): P
       `SELECT id FROM jobs
        WHERE dash_bucket = 'active'
          AND (? - created_at) > ?
-         AND NOT EXISTS (SELECT 1 FROM job_favorites f WHERE f.job_id = jobs.id)`,
+         AND NOT EXISTS (
+           SELECT 1 FROM job_favorites f WHERE f.job_id = jobs.id AND f.user_id = jobs.user_id
+         )`,
     )
     .bind(now, fourWeeks)
     .all<{ id: string }>();
@@ -1729,7 +1831,9 @@ export async function selectExpiredDashboardJobs(db: D1Database, now: number): P
       `SELECT id FROM jobs
        WHERE dash_bucket = 'filtered'
          AND (? - created_at) > ?
-         AND NOT EXISTS (SELECT 1 FROM job_favorites f WHERE f.job_id = jobs.id)`,
+         AND NOT EXISTS (
+           SELECT 1 FROM job_favorites f WHERE f.job_id = jobs.id AND f.user_id = jobs.user_id
+         )`,
     )
     .bind(now, fourWeeks)
     .all<{ id: string }>();

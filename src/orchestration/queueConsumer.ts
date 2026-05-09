@@ -1,4 +1,5 @@
 import { applyStatisticsDeltas, type StatisticsVariantDimension } from "../db/statistics";
+import { BOOTSTRAP_ADMIN_ID } from "../db/users";
 import { log, observabilityLog } from "../logging/appLog";
 import { dedupeKey } from "../pipeline/dedupe";
 import { processFetchedJobs } from "../pipeline/runPipeline";
@@ -25,6 +26,7 @@ function isPipelineQueueMessage(x: unknown): x is PipelineQueueMessage {
   const o = x as Record<string, unknown>;
   return (
     o.kind === "provider_chunk" &&
+    typeof o.userId === "string" &&
     typeof o.cycleId === "string" &&
     typeof o.seq === "number" &&
     typeof o.providerId === "string"
@@ -40,10 +42,6 @@ function statisticsVariantForChunk(
     (typeof providerMeta?.query === "string" ? providerMeta.query.trim() : "") ||
     (typeof first?.searchQuery === "string" ? first.searchQuery.trim() : "");
   if (!searchQuery) return null;
-  const tier =
-    typeof providerMeta?.tier === "number" && Number.isFinite(providerMeta.tier)
-      ? providerMeta.tier
-      : first?.searchTier;
   const countryKey =
     (typeof providerMeta?.countryKey === "string" ? providerMeta.countryKey.trim() : "") ||
     (typeof first?.searchCountryKey === "string" ? first.searchCountryKey.trim() : "");
@@ -53,7 +51,7 @@ function statisticsVariantForChunk(
     (typeof first?.searchCountryLabel === "string" ? first.searchCountryLabel.trim() : "");
   return {
     searchQuery,
-    tier,
+    tier: 1,
     countryKey,
     countryLabel,
   };
@@ -71,7 +69,7 @@ function createChunkHeartbeater(env: Env, msg: PipelineQueueMessage): {
       }
       try {
         lastBeatAt = now;
-        const heartbeat = await heartbeatQueueMessage(env, {
+        const heartbeat = await heartbeatQueueMessage(env, msg.userId, {
           cycleId: msg.cycleId,
           seq: msg.seq,
           providerId: msg.providerId,
@@ -221,7 +219,7 @@ async function runProviderChunk(
       },
     );
     await heartbeat?.beat("provider_fetch_start", {}, true);
-    providerResult = await provider.fetchChunk(env, { page: 1, pageSize: 15, cycleId: msg.cycleId });
+    providerResult = await provider.fetchChunk(env, { userId: msg.userId, page: 1, pageSize: 15, cycleId: msg.cycleId });
     observabilityLog(
       "debug",
       "orchestrator",
@@ -290,7 +288,7 @@ async function runProviderChunk(
   if (keptJobs.length > 0) {
     await heartbeat?.beat("cycle_dedupe_start", { fetched: keptJobs.length });
     try {
-      const dedupe = await dedupeCycleKeys(env, {
+      const dedupe = await dedupeCycleKeys(env, msg.userId, {
         cycleId: msg.cycleId,
         keys: keptJobs.map(dedupeKey),
       });
@@ -317,7 +315,7 @@ async function runProviderChunk(
           statusKind: "degraded",
         },
       );
-      await reportOrchestrationErrorToCoordinator(env, {
+      await reportOrchestrationErrorToCoordinator(env, msg.userId, {
         message: `dedupeCycleKeys: ${error}`,
         phase: "dedupeCycleKeys",
       });
@@ -332,6 +330,7 @@ async function runProviderChunk(
   try {
     await applyStatisticsDeltas(env.DB, [
       {
+        userId: msg.userId,
         providerId: msg.providerId,
         atUnix: Math.floor(Date.now() / 1000),
         jobsReceived: providerResult.jobs.length,
@@ -382,7 +381,7 @@ async function runProviderChunk(
   );
   await heartbeat?.beat("process_jobs_start", { keptJobs: keptJobs.length }, true);
   const processingStartedAtMs = Date.now();
-  const processedSummary = await processFetchedJobs(env, keptJobs, {
+  const processedSummary = await processFetchedJobs(env, msg.userId, keptJobs, {
     onJobStart: async ({ index, total, job }) => {
       await heartbeat?.beat("process_job_start", {
         index,
@@ -477,7 +476,7 @@ export async function handlePipelineQueue(
           fingerprint: "queue_message_malformed",
         },
       );
-      await reportOrchestrationErrorToCoordinator(env, {
+      await reportOrchestrationErrorToCoordinator(env, BOOTSTRAP_ADMIN_ID, {
         message: "Malformed queue message (not provider_chunk)",
         phase: "queue_validate",
       });
@@ -485,7 +484,7 @@ export async function handlePipelineQueue(
     }
 
     try {
-      const claim = await claimQueueMessage(env, {
+      const claim = await claimQueueMessage(env, body.userId, {
         cycleId: body.cycleId,
         seq: body.seq,
         providerId: body.providerId,
@@ -538,7 +537,7 @@ export async function handlePipelineQueue(
           },
           true,
         );
-        await reportProviderChunk(env, {
+        await reportProviderChunk(env, body.userId, {
           cycleId: body.cycleId,
           seq: body.seq,
           providerId: body.providerId,
@@ -625,7 +624,7 @@ export async function handlePipelineQueue(
           },
         );
         try {
-          await reportOrchestrationErrorToCoordinator(env, {
+          await reportOrchestrationErrorToCoordinator(env, body.userId, {
             message: `reportProviderChunk: ${error}`,
             phase: "reportProviderChunk",
           });
@@ -652,7 +651,8 @@ export async function handlePipelineQueue(
           statusKind: "failed",
         },
       );
-      await reportOrchestrationErrorToCoordinator(env, {
+      const errUserId = isPipelineQueueMessage(body) ? body.userId : BOOTSTRAP_ADMIN_ID;
+      await reportOrchestrationErrorToCoordinator(env, errUserId, {
         message: errMsg(e),
         phase: "queue_consumer",
       });

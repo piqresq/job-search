@@ -16,6 +16,7 @@ export type LogCategory =
 export type LogStatusKind = "running" | "paused" | "sleeping" | "blocked" | "degraded" | "failed" | "ok";
 
 export type LogContext = {
+  userId?: string | null;
   severity?: LogSeverity | null;
   category?: LogCategory | null;
   eventType?: string | null;
@@ -32,6 +33,7 @@ type AppLogWrite = {
   scope: string;
   message: string;
   meta?: unknown;
+  userId?: string | null;
 } & LogContext;
 
 function consoleLine(level: LogLevel, scope: string, message: string, meta?: unknown): void {
@@ -110,6 +112,7 @@ export async function writeAppLog(env: Env, row: AppLogWrite): Promise<void> {
   if (!shouldPersist(row.level)) return;
   try {
     await insertAppLog(env.DB, {
+      userId: row.userId ?? undefined,
       level: row.level,
       scope: row.scope,
       message: row.message,

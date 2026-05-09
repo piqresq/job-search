@@ -21,8 +21,6 @@ export const DEFAULT_SEARCH_ROLE_TIERS: SearchRoleTiers = {
     "Solutions Consultant",
     "Implementation Consultant",
     "Product Operations Manager",
-  ],
-  tier2: [
     "Technical Support Manager",
     "Customer Support Manager",
     "Technical Support Specialist",
@@ -31,6 +29,7 @@ export const DEFAULT_SEARCH_ROLE_TIERS: SearchRoleTiers = {
     "Onboarding Manager",
     "Client Services Manager",
   ],
+  tier2: [],
 };
 
 export function normalizeSearchRoleList(input: readonly unknown[]): string[] {
@@ -53,11 +52,10 @@ export function normalizeSearchRoleTiers(
   opts?: { fallbackToDefaults?: boolean },
 ): SearchRoleTiers {
   const fallbackToDefaults = opts?.fallbackToDefaults !== false;
-  const tier1 = normalizeSearchRoleList(input?.tier1 ?? []);
-  const tier2 = normalizeSearchRoleList(input?.tier2 ?? []);
+  const tier1 = normalizeSearchRoleList([...(input?.tier1 ?? []), ...(input?.tier2 ?? [])]);
   return {
     tier1: tier1.length || !fallbackToDefaults ? tier1 : [...DEFAULT_SEARCH_ROLE_TIERS.tier1],
-    tier2: tier2.length || !fallbackToDefaults ? tier2 : [...DEFAULT_SEARCH_ROLE_TIERS.tier2],
+    tier2: [],
   };
 }
 

@@ -11,20 +11,19 @@ import type {
   ProviderChunkReport,
 } from "./types";
 
-const COORDINATOR_NAME = "global";
 const BASE_URL = "https://pipeline-coordinator";
 
 function errMsg(e: unknown): string {
   return e instanceof Error ? e.message : String(e);
 }
 
-function getCoordinatorStub(env: Env): DurableObjectStub {
-  const id = env.PIPELINE_COORDINATOR.idFromName(COORDINATOR_NAME);
+function getCoordinatorStub(env: Env, userId: string): DurableObjectStub {
+  const id = env.PIPELINE_COORDINATOR.idFromName(userId);
   return env.PIPELINE_COORDINATOR.get(id);
 }
 
-async function postJson<T>(env: Env, path: string, body: unknown): Promise<T> {
-  const stub = getCoordinatorStub(env);
+async function postJson<T>(env: Env, userId: string, path: string, body: unknown): Promise<T> {
+  const stub = getCoordinatorStub(env, userId);
   const res = await stub.fetch(
     new Request(`${BASE_URL}${path}`, {
       method: "POST",
@@ -41,64 +40,71 @@ async function postJson<T>(env: Env, path: string, body: unknown): Promise<T> {
 
 export async function startOrResumeCoordinator(
   env: Env,
+  userId: string,
   body: { reason: string },
 ): Promise<CoordinatorStartResponse> {
-  return postJson<CoordinatorStartResponse>(env, "/start", body);
+  return postJson<CoordinatorStartResponse>(env, userId, "/start", body);
 }
 
 /** Clears `request_cap` done-for-cycle pause for listed providers after dashboard raises caps. */
 export async function clearRequestCapPauseForProviders(
   env: Env,
+  userId: string,
   body: { providerIds: JobSourceId[] },
 ): Promise<{ ok: true; cleared: number; status: string; wakeAt: number | null }> {
-  return postJson(env, "/clear-request-cap-pause", body);
+  return postJson(env, userId, "/clear-request-cap-pause", body);
 }
 
 /** Clears D1 exhaustion/freeze pause state without touching daily-cap counters. */
-export async function clearExhaustPause(env: Env): Promise<{
+export async function clearExhaustPause(env: Env, userId: string): Promise<{
   ok: true;
   clearedProviders: number;
   status: string;
   wakeAt: number | null;
   cycleId: string | null;
 }> {
-  return postJson(env, "/clear-exhaust-pause", {});
+  return postJson(env, userId, "/clear-exhaust-pause", {});
 }
 
 export async function claimQueueMessage(
   env: Env,
+  userId: string,
   body: Pick<PipelineQueueMessage, "cycleId" | "seq" | "providerId">,
 ): Promise<CoordinatorClaimResponse> {
-  return postJson<CoordinatorClaimResponse>(env, "/claim", body);
+  return postJson<CoordinatorClaimResponse>(env, userId, "/claim", body);
 }
 
 export async function heartbeatQueueMessage(
   env: Env,
+  userId: string,
   body: Pick<PipelineQueueMessage, "cycleId" | "seq" | "providerId"> & { stage?: string },
 ): Promise<CoordinatorHeartbeatResponse> {
-  return postJson<CoordinatorHeartbeatResponse>(env, "/heartbeat", body);
+  return postJson<CoordinatorHeartbeatResponse>(env, userId, "/heartbeat", body);
 }
 
 export async function dedupeCycleKeys(
   env: Env,
+  userId: string,
   body: { cycleId: string; keys: string[] },
 ): Promise<CoordinatorDedupeResponse> {
-  return postJson<CoordinatorDedupeResponse>(env, "/dedupe", body);
+  return postJson<CoordinatorDedupeResponse>(env, userId, "/dedupe", body);
 }
 
 export async function reportProviderChunk(
   env: Env,
+  userId: string,
   body: ProviderChunkReport,
 ): Promise<CoordinatorReportResponse> {
-  return postJson<CoordinatorReportResponse>(env, "/report", body);
+  return postJson<CoordinatorReportResponse>(env, userId, "/report", body);
 }
 
 /** GET /status — coordinator health for dashboard (no POST body). */
 export async function getCoordinatorStatus(
   env: Env,
+  userId: string,
 ): Promise<CoordinatorStatusResponse | { ok: false; error: string }> {
   try {
-    const stub = getCoordinatorStub(env);
+    const stub = getCoordinatorStub(env, userId);
     const res = await stub.fetch(new Request(`${BASE_URL}/status`, { method: "GET" }));
     const j = (await res.json()) as { ok?: boolean };
     if (!res.ok) {
@@ -116,10 +122,11 @@ export async function getCoordinatorStatus(
 /** POST /orchestration-error — queue / worker reports non-provider failures. */
 export async function reportOrchestrationErrorToCoordinator(
   env: Env,
+  userId: string,
   body: { message: string; phase: string },
 ): Promise<void> {
   try {
-    const stub = getCoordinatorStub(env);
+    const stub = getCoordinatorStub(env, userId);
     const res = await stub.fetch(
       new Request(`${BASE_URL}/orchestration-error`, {
         method: "POST",
@@ -164,6 +171,7 @@ export async function reportOrchestrationErrorToCoordinator(
 }
 
 export function makeProviderChunkMessage(
+  userId: string,
   cycleId: string,
   seq: number,
   providerId: JobSourceId,
@@ -171,6 +179,7 @@ export function makeProviderChunkMessage(
 ): PipelineQueueMessage {
   return {
     kind: "provider_chunk",
+    userId,
     cycleId,
     seq,
     providerId,

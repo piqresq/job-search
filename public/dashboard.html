@@ -3225,15 +3225,20 @@
       <section class="settings-card ai-instructions-card" aria-labelledby="ai-instructions-h">
         <h2 id="ai-instructions-h">AI PROMPTS</h2>
         <p class="hint" style="margin-top:0">
-          Stored in D1 and used for job scoring and CV/cover drafts. Keep the JSON output contract (e.g.
-          <code>fit_score</code>, <code>recommendation</code> for scoring; <code>cv_html</code>,
-          <code>cover_letter</code> for drafts) or the pipeline may fail to parse results. Salary floors in scoring:
-          leave <code>{{NET_MONTHLY_MIN_EUR}}</code> and <code>{{GROSS_MONTHLY_MIN_EUR}}</code> in place—they are
-          replaced at runtime from hard-filter constants.
+          Stored in D1 and used for job scoring and CV/cover drafts. The scoring textarea below is your
+          <strong>candidate scoring policy</strong>: profile, target roles, industries, languages,
+          location preferences, salary floors, weighting, and any extra hard-reject rules. The
+          backend separately enforces the JSON output contract, salary parsing, <code>workplace_type</code>
+          extraction, the 3-sentence <code>position_summary</code>, and the threshold→recommendation
+          mapping — none of those need to be repeated here. Placeholders
+          <code>{{NET_MONTHLY_MIN_EUR}}</code> and <code>{{GROSS_MONTHLY_MIN_EUR}}</code> are
+          substituted at runtime from the global hard-filter constants. Keep the draft JSON output
+          contract (e.g. <code>cv_html</code>, <code>cover_letter</code>) or the pipeline may fail to
+          parse draft results.
         </p>
         <div class="ai-instructions-grid">
           <div class="settings-role-field ai-instruction-field">
-            <label for="ai-instruction-scoring">Job scoring (system message, before candidate profile)</label>
+            <label for="ai-instruction-scoring">Candidate scoring policy</label>
             <textarea id="ai-instruction-scoring" spellcheck="false" autocomplete="off" rows="14"></textarea>
           </div>
           <div class="settings-role-field ai-instruction-field">
@@ -7469,8 +7474,6 @@
       var m = {
         scoring_instruction_too_long: "Scoring text exceeds the maximum length (120,000 characters).",
         scoring_instruction_empty: "Scoring instructions cannot be empty.",
-        scoring_instruction_missing_keys_hint:
-          "Scoring text must still mention fit_score and recommendation so the model returns parseable JSON.",
         draft_instruction_too_long: "Draft text exceeds the maximum length (120,000 characters).",
         draft_instruction_empty: "Draft instructions cannot be empty.",
         draft_instruction_missing_keys_hint:

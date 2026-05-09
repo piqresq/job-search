@@ -6,5 +6,4 @@ import { DEFAULT_SEARCH_ROLE_TIERS, quotedRoleOrQuery } from "./searchRoles";
  */
 export const DEFAULT_LINKEDIN_TITLE_FILTER = quotedRoleOrQuery([
   ...DEFAULT_SEARCH_ROLE_TIERS.tier1,
-  ...DEFAULT_SEARCH_ROLE_TIERS.tier2,
 ]);

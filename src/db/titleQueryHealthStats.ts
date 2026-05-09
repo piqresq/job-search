@@ -38,7 +38,8 @@ function utcDayEndUnix(ymd: string): number {
 }
 
 /** Shared filter for title-query health rows in a date window. */
-const TITLE_HEALTH_TIME_FILTER = `COALESCE(
+const TITLE_HEALTH_TIME_FILTER = `j.user_id = ?
+  AND COALESCE(
     CAST(json_extract(j.normalized_json, '$.apiFetchedAtUnix') AS INTEGER),
     j.created_at
   ) BETWEEN ? AND ?
@@ -86,6 +87,7 @@ function mapExample(r: ExampleRow): TitleQueryHealthExample {
  */
 export async function aggregateTitleQueryHealthByVendor(
   db: D1Database,
+  userId: string,
   fromYmd: string,
   toYmd: string,
 ): Promise<TitleQueryHealthVendorAggregate[]> {
@@ -154,7 +156,7 @@ export async function aggregateTitleQueryHealthByVendor(
       INNER JOIN median_by_source ON median_by_source.source = agg.source
       ORDER BY agg.source`,
     )
-    .bind(startUnix, endUnix)
+    .bind(userId, startUnix, endUnix)
     .all<AggRow>();
 
   const aggRows = (aggRes.results ?? []).filter(
@@ -192,11 +194,11 @@ export async function aggregateTitleQueryHealthByVendor(
     const [lowRes, highRes] = await Promise.all([
       db
         .prepare(`${exampleSelect} ORDER BY score ASC, j.id ASC LIMIT 5`)
-        .bind(startUnix, endUnix, providerId)
+        .bind(userId, startUnix, endUnix, providerId)
         .all<ExampleRow>(),
       db
         .prepare(`${exampleSelect} ORDER BY score DESC, j.id ASC LIMIT 3`)
-        .bind(startUnix, endUnix, providerId)
+        .bind(userId, startUnix, endUnix, providerId)
         .all<ExampleRow>(),
     ]);
 

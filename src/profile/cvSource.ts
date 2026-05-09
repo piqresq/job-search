@@ -7,24 +7,24 @@ import { CV_SOURCE_HTML } from "./cv-extracted-html.gen";
  * Single read: D1 cache is used only when **both** text and HTML rows are present and non-empty
  * (avoids mixing one DB field with bundled fallback for the other).
  */
-export async function getCvSources(db: D1Database): Promise<{ text: string; html: string }> {
-  const row = await getCvExtractionFromDb(db);
+export async function getCvSources(db: D1Database, userId: string): Promise<{ text: string; html: string }> {
+  const row = await getCvExtractionFromDb(db, userId);
   if (row.text?.trim() && row.html?.trim()) {
     return { text: row.text, html: row.html };
   }
   return { text: CV_SOURCE_TEXT, html: CV_SOURCE_HTML };
 }
 
-export async function getCvSourceText(db: D1Database): Promise<string> {
-  return (await getCvSources(db)).text;
+export async function getCvSourceText(db: D1Database, userId: string): Promise<string> {
+  return (await getCvSources(db, userId)).text;
 }
 
-export async function getCvSourceHtml(db: D1Database): Promise<string> {
-  return (await getCvSources(db)).html;
+export async function getCvSourceHtml(db: D1Database, userId: string): Promise<string> {
+  return (await getCvSources(db, userId)).html;
 }
 
 /** For dashboard Settings: whether the Worker uses uploaded CV or bundled repository extract. */
-export async function getCvCacheStatus(db: D1Database): Promise<{
+export async function getCvCacheStatus(db: D1Database, userId: string): Promise<{
   source: "database" | "bundled";
   uploadedAtUnix: number | null;
   textChars: number;
@@ -33,7 +33,7 @@ export async function getCvCacheStatus(db: D1Database): Promise<{
   sanitizedTextChars: number;
   hasSanitizedTextCache: boolean;
 }> {
-  const row = await getCvExtractionFromDb(db);
+  const row = await getCvExtractionFromDb(db, userId);
   if (row.text?.trim() && row.html?.trim()) {
     const st = row.sanitizedText ?? "";
     return {
@@ -59,8 +59,8 @@ export async function getCvCacheStatus(db: D1Database): Promise<{
  * Plain text sent to OpenAI **scoring** only: uses D1 `cv_sanitized_text` when present (written on upload);
  * otherwise sanitizes raw extract in memory (legacy DB row or bundled fallback).
  */
-export async function getCvTextForAiScoring(db: D1Database): Promise<string> {
-  const row = await getCvExtractionFromDb(db);
+export async function getCvTextForAiScoring(db: D1Database, userId: string): Promise<string> {
+  const row = await getCvExtractionFromDb(db, userId);
   if (row.text?.trim() && row.html?.trim()) {
     if (row.sanitizedText?.trim()) return row.sanitizedText;
     return sanitizeCvTextForAiScoring(row.text);

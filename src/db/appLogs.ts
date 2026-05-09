@@ -1,3 +1,5 @@
+import { BOOTSTRAP_ADMIN_ID } from "./users";
+
 export type AppLogRow = {
   id: number;
   ts: number;
@@ -19,6 +21,7 @@ export type AppLogRow = {
 export async function insertAppLog(
   db: D1Database,
   row: {
+    userId?: string;
     level: string;
     scope: string;
     message: string;
@@ -34,19 +37,20 @@ export async function insertAppLog(
     statusKind?: string | null;
   },
 ): Promise<void> {
+  const userId = row.userId ?? BOOTSTRAP_ADMIN_ID;
   const ts = Math.floor(Date.now() / 1000);
-  const meta =
-    row.meta !== undefined && row.meta !== null ? JSON.stringify(row.meta) : null;
+  const meta = row.meta !== undefined && row.meta !== null ? JSON.stringify(row.meta) : null;
   const msg = row.message.slice(0, 4000);
   const scope = row.scope.slice(0, 128);
   await db
     .prepare(
       `INSERT INTO app_logs (
-        ts, level, scope, message, meta,
+        user_id, ts, level, scope, message, meta,
         severity, category, event_type, provider_id, job_id, cycle_id, phase, fingerprint, status_kind
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     )
     .bind(
+      userId,
       ts,
       row.level,
       scope,
@@ -65,7 +69,11 @@ export async function insertAppLog(
     .run();
 }
 
-export async function listAppLogs(db: D1Database, limit: number): Promise<AppLogRow[]> {
+export async function listAppLogs(
+  db: D1Database,
+  userId: string,
+  limit: number,
+): Promise<AppLogRow[]> {
   const cap = Math.min(Math.max(1, Math.floor(limit)), 500);
   const res = await db
     .prepare(
@@ -73,14 +81,19 @@ export async function listAppLogs(db: D1Database, limit: number): Promise<AppLog
          id, ts, level, scope, message, meta,
          severity, category, event_type, provider_id, job_id, cycle_id, phase, fingerprint, status_kind
        FROM app_logs
+       WHERE user_id = ?
        ORDER BY ts DESC, id DESC LIMIT ?`,
     )
-    .bind(cap)
+    .bind(userId, cap)
     .all<AppLogRow>();
   return res.results ?? [];
 }
 
-export async function listOperationalAppLogs(db: D1Database, limit: number): Promise<AppLogRow[]> {
+export async function listOperationalAppLogs(
+  db: D1Database,
+  userId: string,
+  limit: number,
+): Promise<AppLogRow[]> {
   const cap = Math.min(Math.max(1, Math.floor(limit)), 500);
   const res = await db
     .prepare(
@@ -88,22 +101,23 @@ export async function listOperationalAppLogs(db: D1Database, limit: number): Pro
          id, ts, level, scope, message, meta,
          severity, category, event_type, provider_id, job_id, cycle_id, phase, fingerprint, status_kind
        FROM app_logs
-       WHERE severity IN ('critical', 'moderate', 'low')
+       WHERE user_id = ? AND severity IN ('critical', 'moderate', 'low')
        ORDER BY ts DESC, id DESC LIMIT ?`,
     )
-    .bind(cap)
+    .bind(userId, cap)
     .all<AppLogRow>();
   return res.results ?? [];
 }
 
 export async function deleteOperationalIncidentGroup(
   db: D1Database,
+  userId: string,
   args: { severity: "critical" | "moderate" | "low"; key: string },
 ): Promise<number> {
   const res = await db
     .prepare(
       `DELETE FROM app_logs
-       WHERE severity = ?
+       WHERE user_id = ? AND severity = ?
          AND (
            fingerprint = ?
            OR (
@@ -119,20 +133,20 @@ export async function deleteOperationalIncidentGroup(
            )
          )`,
     )
-    .bind(args.severity, args.key, args.key)
+    .bind(userId, args.severity, args.key, args.key)
     .run();
   return res.meta.changes ?? 0;
 }
 
-export async function deleteOperationalAppLogs(db: D1Database): Promise<number> {
+export async function deleteOperationalAppLogs(db: D1Database, userId: string): Promise<number> {
   const res = await db
-    .prepare(`DELETE FROM app_logs WHERE severity IN ('critical', 'moderate', 'low')`)
+    .prepare(`DELETE FROM app_logs WHERE user_id = ? AND severity IN ('critical', 'moderate', 'low')`)
+    .bind(userId)
     .run();
   return res.meta.changes ?? 0;
 }
 
-/** Remove every row from `app_logs` (dashboard Textbot + all persisted logger output). */
-export async function deleteAllAppLogs(db: D1Database): Promise<number> {
-  const res = await db.prepare("DELETE FROM app_logs").run();
+export async function deleteAllAppLogs(db: D1Database, userId: string): Promise<number> {
+  const res = await db.prepare("DELETE FROM app_logs WHERE user_id = ?").bind(userId).run();
   return res.meta.changes ?? 0;
 }

@@ -65,13 +65,14 @@ export function isTransientVendorLimitStatus(status: number, preview: string): b
 export async function rapidApiJsonRequest(
   db: D1Database,
   env: Env,
+  userId: string,
   url: string,
   host: string,
   scope: string,
   cycleId?: string,
   statsVariant?: StatisticsVariantDimension,
 ): Promise<unknown> {
-  const res = await rapidApiFetch(db, env, url, host, scope, cycleId, statsVariant);
+  const res = await rapidApiFetch(db, env, userId, url, host, scope, cycleId, statsVariant);
   const text = await res.text();
   if (!res.ok) {
     const preview = text.slice(0, 500);

@@ -1,6 +1,7 @@
 import type { JobSourceId, NormalizedJob } from "../types/job";
 
 export type FetchJobsParams = {
+  userId: string;
   query?: string;
   page?: number;
   pageSize?: number;

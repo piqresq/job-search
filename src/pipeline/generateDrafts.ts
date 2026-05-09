@@ -42,13 +42,14 @@ function modelSupportsReasoningEffort(model: string): boolean {
 export async function generateTailoredDrafts(
   db: D1Database,
   env: Env,
+  userId: string,
   job: NormalizedJob,
   scoring: ScoringResult,
 ): Promise<DraftBundle | null> {
   const key = env.OPENAI_API_KEY;
   if (!key) return null;
 
-  const draftSystemInstruction = await loadDraftInstructionForPrompt(db);
+  const draftSystemInstruction = await loadDraftInstructionForPrompt(db, userId);
 
   const model = env.OPENAI_DRAFT_MODEL?.trim() || DEFAULT_DRAFT_MODEL;
   const reasoningEffort = normalizeDraftReasoningEffort(env.OPENAI_DRAFT_REASONING_EFFORT);
@@ -60,7 +61,7 @@ export async function generateTailoredDrafts(
     reasoningEffort: modelSupportsReasoningEffort(model) ? reasoningEffort : undefined,
   });
 
-  const { text: cvText, html: cvHtmlBase } = await getCvSources(db);
+  const { text: cvText, html: cvHtmlBase } = await getCvSources(db, userId);
   const title = sanitizeOpenAiTransportText(job.title ?? "");
   const company = sanitizeOpenAiTransportText(job.company ?? "");
   const description = sanitizeOpenAiTransportText(`Description excerpt: ${(job.description ?? "").slice(0, 8000)}`);

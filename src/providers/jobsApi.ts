@@ -208,13 +208,13 @@ export const jobsApiProvider: JobSourceProvider = {
     if (!parseRapidApiKeys(env).length) {
       throw new Error("Missing RapidAPI keys: set RAPIDAPI_KEYS or RAPIDAPI_KEY for Jobs API");
     }
-    if (!(await isExtractionActive(env))) {
+    const userId = params.userId;
+    if (!(await isExtractionActive(env, userId))) {
       return { jobs: [], more: false, doneForCycle: false };
     }
-
     const [searchCountries, searchPolicy] = await Promise.all([
-      getSearchCountries(env.DB),
-      getSearchRuntimePolicy(env.DB),
+      getSearchCountries(env.DB, userId),
+      getSearchRuntimePolicy(env.DB, userId),
     ]);
     const datePosted = jobsApiDatePostedForPolicy(searchPolicy);
     const wp = jobsApiWorkplaceTypesForPolicy(searchPolicy);
@@ -235,6 +235,7 @@ export const jobsApiProvider: JobSourceProvider = {
 
     return runPlannedSearchProvider<JobsApiSearchRow, Record<string, unknown> | null>({
       env,
+      userId,
       providerId: "jobs_api",
       cycleId,
       countries,
@@ -255,6 +256,7 @@ export const jobsApiProvider: JobSourceProvider = {
         const json = await rapidApiJsonRequest(
           env.DB,
           env,
+          userId,
           searchUrl.toString(),
           JOBS_API_HOST,
           "jobs_api",
@@ -280,6 +282,7 @@ export const jobsApiProvider: JobSourceProvider = {
         const json = await rapidApiJsonRequest(
           env.DB,
           env,
+          userId,
           buildJobsApiGetUrl(ctx.id).toString(),
           JOBS_API_HOST,
           "jobs_api",

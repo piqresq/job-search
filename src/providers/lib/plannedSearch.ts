@@ -9,7 +9,6 @@ import {
   type ProviderCountryPlan,
   type ProviderCountryStateRow,
   type ProviderQueryUnitPlan,
-  type ProviderSchedulerStateRow,
   type ProviderQueryUnitStateRow,
   type ProviderUnitScheduleStateRow,
   updateCountryState,
@@ -24,7 +23,6 @@ import { finalizeNormalizedJob } from "./normalizedJobValidation";
 import { nextUtcMidnightUnix } from "../../lib/nextUtcMidnight";
 import { assignWorkplaceTypeToJob } from "./workplaceTypeCanonical";
 
-const DEFAULT_TIER_SEQUENCE: readonly (1 | 2)[] = [1, 1, 1, 1, 1, 2, 2];
 const DEFAULT_ERROR_BACKOFF_SECONDS = 5 * 60;
 
 export class PlannedSearchBackoffError extends Error {
@@ -67,6 +65,7 @@ export type PlannedSearchContext = {
 
 export type PlannedSearchOptions<TSearchRow, TDetail> = {
   env: Env;
+  userId: string;
   providerId: JobSourceId;
   cycleId: string;
   countries: ProviderCountryPlan[];
@@ -74,6 +73,7 @@ export type PlannedSearchOptions<TSearchRow, TDetail> = {
   buildQueryUnits?: (roles: { tier1: string[]; tier2: string[] }) => ProviderQueryUnitPlan[];
   maxSearchAttemptsPerChunk: number;
   maxDetailFetches: number;
+  /** @deprecated All configured positions are now planned as tier 1. */
   tierSequence?: readonly (1 | 2)[];
   defaultIsRemote?: boolean;
   search: (ctx: PlannedSearchContext) => Promise<SearchPageResult<TSearchRow>>;
@@ -85,7 +85,7 @@ export type PlannedSearchOptions<TSearchRow, TDetail> = {
 export function buildSingleRoleQueryUnits(roles: { tier1: string[]; tier2: string[] }): ProviderQueryUnitPlan[] {
   return [
     ...roles.tier1.map((role, idx) => ({ id: `tier1:${idx}:${role}`, tier: 1 as const, queryValue: role })),
-    ...roles.tier2.map((role, idx) => ({ id: `tier2:${idx}:${role}`, tier: 2 as const, queryValue: role })),
+    ...roles.tier2.map((role, idx) => ({ id: `tier1:legacy-tier2:${idx}:${role}`, tier: 1 as const, queryValue: role })),
   ];
 }
 
@@ -98,7 +98,7 @@ export function buildConcatTierQueryUnits(
     out.push({ id: "tier1:bundle", tier: 1, queryValue: joinRoles(roles.tier1) });
   }
   if (roles.tier2.length) {
-    out.push({ id: "tier2:bundle", tier: 2, queryValue: joinRoles(roles.tier2) });
+    out.push({ id: "tier1:legacy-tier2:bundle", tier: 1, queryValue: joinRoles(roles.tier2) });
   }
   return out;
 }
@@ -139,24 +139,6 @@ function unitIsExhausted(unit: ProviderQueryUnitStateRow): boolean {
 
 function countryIsExhausted(country: ProviderCountryStateRow): boolean {
   return country.exhausted === 1;
-}
-
-function tierWeightsFromSequence(tierSequence: readonly (1 | 2)[]): { 1: number; 2: number } {
-  let tier1 = 0;
-  let tier2 = 0;
-  for (const tier of tierSequence) {
-    if (tier === 2) tier2 += 1;
-    else tier1 += 1;
-  }
-  return {
-    1: Math.max(1, tier1),
-    2: Math.max(1, tier2),
-  };
-}
-
-function schedulerTierPickCount(scheduler: ProviderSchedulerStateRow | null, tier: 1 | 2): number {
-  if (!scheduler) return 0;
-  return tier === 2 ? scheduler.tier2_pick_count : scheduler.tier1_pick_count;
 }
 
 function unitScheduleSortValues(
@@ -213,21 +195,11 @@ function chooseLeastUsedUnit(
   return { unit: candidates[0]!, nextEligibleAt: 0, hasActive };
 }
 
-function tierProjectedFairnessScore(
-  scheduler: ProviderSchedulerStateRow | null,
-  tierWeights: { 1: number; 2: number },
-  tier: 1 | 2,
-): number {
-  return (schedulerTierPickCount(scheduler, tier) + 1) / tierWeights[tier];
-}
-
 function pickUnitForCountryFair(
   units: ProviderQueryUnitStateRow[],
   now: number,
-  scheduler: ProviderSchedulerStateRow | null,
   schedules: Map<string, ProviderUnitScheduleStateRow>,
   unitOrder: Map<string, number>,
-  tierWeights: { 1: number; 2: number },
 ): {
   unit: ProviderQueryUnitStateRow | null;
   tier: 1 | 2;
@@ -244,31 +216,11 @@ function pickUnitForCountryFair(
     };
   }
 
-  let earliest = 0;
-  const candidates: { tier: 1 | 2; unit: ProviderQueryUnitStateRow; score: number; tierPicks: number }[] = [];
-  for (const tier of [1, 2] as const) {
-    const picked = chooseLeastUsedUnit(
-      units.filter((unit) => unit.tier === tier),
-      now,
-      schedules,
-      unitOrder,
-    );
-    earliest = minEligible([earliest, picked.nextEligibleAt]);
-    if (picked.unit) {
-      candidates.push({
-        tier,
-        unit: picked.unit,
-        score: tierProjectedFairnessScore(scheduler, tierWeights, tier),
-        tierPicks: schedulerTierPickCount(scheduler, tier),
-      });
-    }
-  }
-
-  if (candidates.length) {
-    candidates.sort((a, b) => a.score - b.score || a.tierPicks - b.tierPicks || a.tier - b.tier);
+  const picked = chooseLeastUsedUnit(units, now, schedules, unitOrder);
+  if (picked.unit) {
     return {
-      unit: candidates[0]!.unit,
-      tier: candidates[0]!.tier,
+      unit: picked.unit,
+      tier: 1,
       nextEligibleAt: 0,
       countryExhausted: false,
     };
@@ -277,7 +229,7 @@ function pickUnitForCountryFair(
   return {
     unit: null,
     tier: 1,
-    nextEligibleAt: earliest,
+    nextEligibleAt: picked.nextEligibleAt,
     countryExhausted: false,
   };
 }
@@ -307,10 +259,8 @@ function pickCountryForProviderFair(
   unitsByCountry: Map<string, ProviderQueryUnitStateRow[]>,
   now: number,
   cursor: number,
-  scheduler: ProviderSchedulerStateRow | null,
   unitSchedules: Map<string, ProviderUnitScheduleStateRow>,
   unitOrder: Map<string, number>,
-  tierWeights: { 1: number; 2: number },
 ):
   | {
       country: ProviderCountryStateRow;
@@ -354,7 +304,7 @@ function pickCountryForProviderFair(
     if (!country || countryIsExhausted(country)) continue;
     if (country.next_eligible_at > now) continue;
     const unitRows = unitsByCountry.get(country.country_key) ?? [];
-    const picked = pickUnitForCountryFair(unitRows, now, scheduler, unitSchedules, unitOrder, tierWeights);
+    const picked = pickUnitForCountryFair(unitRows, now, unitSchedules, unitOrder);
     const candidate = { country, countryIndex: idx, picked };
 
     if (picked.unit) {
@@ -503,7 +453,7 @@ export async function runPlannedSearchProvider<TSearchRow, TDetail>(
   opts: PlannedSearchOptions<TSearchRow, TDetail>,
 ): Promise<ProviderChunkResult> {
   const now = Math.floor(Date.now() / 1000);
-  const roleTiers = await getSearchRoleTiers(opts.env.DB);
+  const roleTiers = await getSearchRoleTiers(opts.env.DB, opts.userId);
   const queryUnits =
     opts.queryUnits && opts.queryUnits.length
       ? opts.queryUnits
@@ -511,7 +461,6 @@ export async function runPlannedSearchProvider<TSearchRow, TDetail>(
         ? opts.buildQueryUnits(roleTiers)
         : buildSingleRoleQueryUnits(roleTiers);
   const countries = opts.countries;
-  const tierSequence = opts.tierSequence ?? DEFAULT_TIER_SEQUENCE;
 
   if (!countries.length || !queryUnits.length) {
     return {
@@ -525,6 +474,7 @@ export async function runPlannedSearchProvider<TSearchRow, TDetail>(
 
   await ensureProviderPlanInitialized(
     opts.env.DB,
+    opts.userId,
     opts.providerId,
     opts.cycleId,
     countries,
@@ -532,10 +482,10 @@ export async function runPlannedSearchProvider<TSearchRow, TDetail>(
     now,
   );
 
-  const scheduler = await loadProviderSchedulerState(opts.env.DB, opts.providerId);
-  const countryStates = await listProviderCountryStates(opts.env.DB, opts.providerId);
-  const unitStates = await listProviderQueryUnitStates(opts.env.DB, opts.providerId);
-  const unitScheduleStates = await listProviderUnitScheduleStates(opts.env.DB, opts.providerId);
+  const scheduler = await loadProviderSchedulerState(opts.env.DB, opts.userId, opts.providerId);
+  const countryStates = await listProviderCountryStates(opts.env.DB, opts.userId, opts.providerId);
+  const unitStates = await listProviderQueryUnitStates(opts.env.DB, opts.userId, opts.providerId);
+  const unitScheduleStates = await listProviderUnitScheduleStates(opts.env.DB, opts.userId, opts.providerId);
   const countryMap = new Map(countryStates.map((country) => [country.country_key, country]));
   const unitsByCountry = new Map<string, ProviderQueryUnitStateRow[]>();
   for (const unit of unitStates) {
@@ -545,7 +495,6 @@ export async function runPlannedSearchProvider<TSearchRow, TDetail>(
   }
   const unitSchedules = new Map(unitScheduleStates.map((row) => [row.unit_id, row]));
   const unitOrder = new Map(queryUnits.map((unit, idx) => [unit.id, idx]));
-  const tierWeights = tierWeightsFromSequence(tierSequence);
 
   let cursor = scheduler?.country_cursor ?? 0;
 
@@ -556,10 +505,8 @@ export async function runPlannedSearchProvider<TSearchRow, TDetail>(
       unitsByCountry,
       now,
       cursor,
-      scheduler,
       unitSchedules,
       unitOrder,
-      tierWeights,
     );
     const selectedCountry = selected?.country ?? null;
     let selectedCountryIndex = selected?.countryIndex ?? cursor % countries.length;
@@ -622,16 +569,17 @@ export async function runPlannedSearchProvider<TSearchRow, TDetail>(
     }
 
     cursor = (selectedCountryIndex + 1) % countries.length;
-    await updateProviderCountryCursor(opts.env.DB, opts.providerId, cursor, now);
+    await updateProviderCountryCursor(opts.env.DB, opts.userId, opts.providerId, cursor, now);
 
     const unitRows = unitsByCountry.get(selectedCountry.country_key) ?? [];
     const picked =
-      selectedPick ?? pickUnitForCountryFair(unitRows, now, scheduler, unitSchedules, unitOrder, tierWeights);
+      selectedPick ?? pickUnitForCountryFair(unitRows, now, unitSchedules, unitOrder);
 
     if (picked.countryExhausted) {
       selectedCountry.exhausted = 1;
       await updateCountryState(
         opts.env.DB,
+        opts.userId,
         opts.providerId,
         selectedCountry.country_key,
         { exhausted: true, nextEligibleAt: 0, lastError: null },
@@ -644,6 +592,7 @@ export async function runPlannedSearchProvider<TSearchRow, TDetail>(
       selectedCountry.next_eligible_at = picked.nextEligibleAt || now + 60;
       await updateCountryState(
         opts.env.DB,
+        opts.userId,
         opts.providerId,
         selectedCountry.country_key,
         { nextEligibleAt: selectedCountry.next_eligible_at },
@@ -658,6 +607,7 @@ export async function runPlannedSearchProvider<TSearchRow, TDetail>(
     selectedCountry.last_error = null;
     await updateCountryState(
       opts.env.DB,
+      opts.userId,
       opts.providerId,
       selectedCountry.country_key,
       {
@@ -716,6 +666,7 @@ export async function runPlannedSearchProvider<TSearchRow, TDetail>(
       picked.unit.last_error = msg;
       await updateQueryUnitState(
         opts.env.DB,
+        opts.userId,
         opts.providerId,
         selectedCountry.country_key,
         picked.unit.unit_id,
@@ -804,6 +755,7 @@ export async function runPlannedSearchProvider<TSearchRow, TDetail>(
           picked.unit.last_error = msg;
           await updateQueryUnitState(
             opts.env.DB,
+            opts.userId,
             opts.providerId,
             selectedCountry.country_key,
             picked.unit.unit_id,
@@ -873,7 +825,7 @@ export async function runPlannedSearchProvider<TSearchRow, TDetail>(
       );
     }
 
-    await commitProviderUnitPickAndPagination(opts.env.DB, {
+    await commitProviderUnitPickAndPagination(opts.env.DB, opts.userId, {
       providerId: opts.providerId,
       countryKey: selectedCountry.country_key,
       unitId: picked.unit.unit_id,
@@ -915,8 +867,7 @@ export async function runPlannedSearchProvider<TSearchRow, TDetail>(
     picked.unit.exhausted = commitPlan.exhausted ? 1 : 0;
 
     if (scheduler) {
-      if (picked.tier === 2) scheduler.tier2_pick_count += 1;
-      else scheduler.tier1_pick_count += 1;
+      scheduler.tier1_pick_count += 1;
     }
     const scheduled = unitSchedules.get(picked.unit.unit_id);
     if (scheduled) {
@@ -943,6 +894,7 @@ export async function runPlannedSearchProvider<TSearchRow, TDetail>(
       selectedCountry.exhausted = 1;
       await updateCountryState(
         opts.env.DB,
+        opts.userId,
         opts.providerId,
         selectedCountry.country_key,
         { exhausted: true, nextEligibleAt: 0, lastError: null },

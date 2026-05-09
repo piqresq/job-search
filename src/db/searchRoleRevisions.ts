@@ -47,7 +47,6 @@ function parseTierJson(s: string): string[] {
   }
 }
 
-/** Parse stored JSON tier columns into normalized tier lists. */
 export function tiersFromRevisionRow(row: SearchRoleRevisionRow): SearchRoleTiers {
   return normalizeSearchRoleTiers(
     {
@@ -58,25 +57,27 @@ export function tiersFromRevisionRow(row: SearchRoleRevisionRow): SearchRoleTier
   );
 }
 
-async function trimExcessRevisions(db: D1Database): Promise<void> {
+async function trimExcessRevisions(db: D1Database, userId: string): Promise<void> {
   const row = await db
-    .prepare("SELECT COUNT(*) as c FROM search_role_revisions")
+    .prepare("SELECT COUNT(*) as c FROM search_role_revisions WHERE user_id = ?")
+    .bind(userId)
     .first<{ c: number }>();
   const c = row?.c ?? 0;
   if (c <= SEARCH_ROLE_REVISION_MAX) return;
   const excess = c - SEARCH_ROLE_REVISION_MAX;
   await db
     .prepare(
-      `DELETE FROM search_role_revisions WHERE id IN (
-        SELECT id FROM search_role_revisions ORDER BY id ASC LIMIT ?
+      `DELETE FROM search_role_revisions WHERE user_id = ? AND id IN (
+        SELECT id FROM search_role_revisions WHERE user_id = ? ORDER BY id ASC LIMIT ?
       )`,
     )
-    .bind(excess)
+    .bind(userId, userId, excess)
     .run();
 }
 
 export async function appendSearchRoleRevision(
   db: D1Database,
+  userId: string,
   payload: {
     tiers: SearchRoleTiers;
     source: SearchRoleRevisionSource;
@@ -88,22 +89,17 @@ export async function appendSearchRoleRevision(
   const note = normalizeRevisionNote(payload.note);
   await db
     .prepare(
-      `INSERT INTO search_role_revisions (created_at, tier1_json, tier2_json, source, note)
-       VALUES (?, ?, ?, ?, ?)`,
+      `INSERT INTO search_role_revisions (user_id, created_at, tier1_json, tier2_json, source, note)
+       VALUES (?, ?, ?, ?, ?, ?)`,
     )
-    .bind(
-      nowSec,
-      JSON.stringify(normalized.tier1),
-      JSON.stringify(normalized.tier2),
-      payload.source,
-      note,
-    )
+    .bind(userId, nowSec, JSON.stringify(normalized.tier1), JSON.stringify(normalized.tier2), payload.source, note)
     .run();
-  await trimExcessRevisions(db);
+  await trimExcessRevisions(db, userId);
 }
 
 export async function listSearchRoleRevisions(
   db: D1Database,
+  userId: string,
   limit: number,
 ): Promise<SearchRoleRevisionListItem[]> {
   const cap = Math.min(Math.max(1, limit), 100);
@@ -111,10 +107,11 @@ export async function listSearchRoleRevisions(
     .prepare(
       `SELECT id, created_at, tier1_json, tier2_json, source, note
        FROM search_role_revisions
+       WHERE user_id = ?
        ORDER BY id DESC
        LIMIT ?`,
     )
-    .bind(cap)
+    .bind(userId, cap)
     .all<SearchRoleRevisionRow>();
   const list = res.results ?? [];
   return list.map((r) => {
@@ -134,38 +131,44 @@ export async function listSearchRoleRevisions(
 
 export async function getSearchRoleRevisionById(
   db: D1Database,
+  userId: string,
   id: number,
 ): Promise<SearchRoleRevisionRow | null> {
   if (!Number.isFinite(id) || id <= 0) return null;
   const row = await db
     .prepare(
       `SELECT id, created_at, tier1_json, tier2_json, source, note
-       FROM search_role_revisions WHERE id = ?`,
+       FROM search_role_revisions WHERE user_id = ? AND id = ?`,
     )
-    .bind(id)
+    .bind(userId, id)
     .first<SearchRoleRevisionRow>();
   return row ?? null;
 }
 
 export async function updateSearchRoleRevisionNote(
   db: D1Database,
+  userId: string,
   revisionId: number,
   note: string,
 ): Promise<boolean> {
   if (!Number.isFinite(revisionId) || revisionId <= 0) return false;
   const n = normalizeRevisionNote(note);
   const res = await db
-    .prepare(`UPDATE search_role_revisions SET note = ? WHERE id = ?`)
-    .bind(n, revisionId)
+    .prepare(`UPDATE search_role_revisions SET note = ? WHERE user_id = ? AND id = ?`)
+    .bind(n, userId, revisionId)
     .run();
   return (res.meta.changes ?? 0) > 0;
 }
 
-export async function deleteSearchRoleRevision(db: D1Database, id: number): Promise<boolean> {
+export async function deleteSearchRoleRevision(
+  db: D1Database,
+  userId: string,
+  id: number,
+): Promise<boolean> {
   if (!Number.isFinite(id) || id <= 0) return false;
   const res = await db
-    .prepare(`DELETE FROM search_role_revisions WHERE id = ?`)
-    .bind(id)
+    .prepare(`DELETE FROM search_role_revisions WHERE user_id = ? AND id = ?`)
+    .bind(userId, id)
     .run();
   return (res.meta.changes ?? 0) > 0;
 }
@@ -181,23 +184,18 @@ export function searchRoleTiersEqual(a: SearchRoleTiers, b: SearchRoleTiers): bo
 
 export async function revertSearchRolesToRevision(
   db: D1Database,
+  userId: string,
   revisionId: number,
   nowSec: number,
   revertNote?: string,
 ): Promise<SearchRoleTiers | null> {
-  const before = await getSearchRoleTiers(db);
-  const rev = await getSearchRoleRevisionById(db, revisionId);
+  const before = await getSearchRoleTiers(db, userId);
+  const rev = await getSearchRoleRevisionById(db, userId, revisionId);
   if (!rev) return null;
   const tiers = tiersFromRevisionRow(rev);
-  if (searchRoleTiersEqual(before, tiers)) {
-    return tiers;
-  }
-  await setSearchRoleTiers(db, tiers);
-  await appendSearchRoleRevision(
-    db,
-    { tiers: before, source: "revert", note: revertNote },
-    nowSec,
-  );
-  await deleteSearchRoleRevision(db, revisionId);
+  if (searchRoleTiersEqual(before, tiers)) return tiers;
+  await setSearchRoleTiers(db, userId, tiers);
+  await appendSearchRoleRevision(db, userId, { tiers: before, source: "revert", note: revertNote }, nowSec);
+  await deleteSearchRoleRevision(db, userId, revisionId);
   return tiers;
 }

@@ -13,6 +13,7 @@ import {
   getSearchRoleQueryCache,
   getSearchRuntimePolicy,
 } from "../db/appSettings";
+import { BOOTSTRAP_ADMIN_ID } from "../db/users";
 import { LINKEDIN_JOBS_DEFAULT_PATH } from "../providers/linkedinJobs";
 
 function parseApiPath(env: Env): string {
@@ -113,15 +114,15 @@ export async function getProviderTesterDefaults(env: Env): Promise<{
   const descriptionType: "none" | "text" | "html" =
     descRaw === "html" ? "html" : descRaw === "none" ? "none" : "text";
   const [searchCountries, searchPolicy, queryCache] = await Promise.all([
-    getSearchCountries(env.DB),
-    getSearchRuntimePolicy(env.DB),
-    getSearchRoleQueryCache(env.DB),
+    getSearchCountries(env.DB, BOOTSTRAP_ADMIN_ID),
+    getSearchRuntimePolicy(env.DB, BOOTSTRAP_ADMIN_ID),
+    getSearchRoleQueryCache(env.DB, BOOTSTRAP_ADMIN_ID),
   ]);
   const primaryCountry = searchCountries[0] ?? DEFAULT_SEARCH_COUNTRIES[0]!;
 
   const titleFilter =
     env.LINKEDIN_TITLE_FILTER?.trim() ||
-    combineRoleQueries([queryCache.quotedOr.tier1, queryCache.quotedOr.tier2]) ||
+    queryCache.quotedOr.tier1 ||
     DEFAULT_LINKEDIN_TITLE_FILTER;
   const locationFilter = env.LINKEDIN_LOCATION_FILTER?.trim() || primaryCountry.fullName;
 

@@ -1,65 +1,99 @@
 /**
  * Canonical defaults for OpenAI system instructions (seed D1 on first read; reset uses these).
- * Scoring text uses {{NET_MONTHLY_MIN_EUR}} and {{GROSS_MONTHLY_MIN_EUR}} — replaced at runtime from hardFilters.
+ *
+ * The scoring instruction is split into two parts:
+ *
+ * 1) `OPENAI_SCORING_CONTRACT_INSTRUCTION` — domain-agnostic backend contract: JSON schema,
+ *    enums, salary parsing, workplace_type extraction, position_summary structure,
+ *    rejection_reason format, threshold↔recommendation mapping, and positives/negatives shape.
+ *    This is hardcoded and the same for every user / every domain. It MUST NOT contain any
+ *    candidate-specific preferences (target industries, languages, salary floors, etc.).
+ *
+ * 2) `DEFAULT_OPENAI_SCORING_POLICY_INSTRUCTION` — the editable per-user policy: candidate
+ *    profile, target roles/industries, languages, location, salary floors, education rules,
+ *    weighting, and any extra hard-reject conditions specific to that user's job search.
+ *    The default below is the current owner's profile (account management / SaaS / telecom /
+ *    Latvia). New users replace it with their own (e.g. construction, healthcare, finance).
+ *
+ * Salary floor placeholders `{{NET_MONTHLY_MIN_EUR}}` / `{{GROSS_MONTHLY_MIN_EUR}}` are
+ * substituted at runtime (see `applyScoringInstructionPlaceholders` in `./aiInstructions.ts`).
+ * They are intentionally referenced from the per-user policy text only — the backend contract
+ * does not assume any pay floor exists.
  */
 
-export const DEFAULT_OPENAI_SCORING_INSTRUCTION = [
-  "You rank job postings for a specific candidate. Be fair; generic support roles can be acceptable if pay and scope are strong.",
+export const OPENAI_SCORING_CONTRACT_INSTRUCTION = [
+  "You score one job posting against one specific candidate. Return a single JSON object only — no prose, no code fences.",
   "",
-  `Return a single JSON object with keys:
-fit_score (number 0-100),
+  `The user message contains the candidate's anonymized profile plus the candidate's scoring policy. The policy defines that candidate's target roles, industries, languages, location preferences, salary floors, weighting, and any additional hard-reject conditions. Apply the policy strictly. Do not invent default candidate preferences (industry, language, salary floor, location, etc.) when the policy does not state them — judge only on the evidence in the policy and the posting.
+
+Output JSON keys (every required key must be present):
+fit_score (number, 0-100),
 recommendation (one of: reject, low_priority_review, review, high_priority_review),
-position_summary (string — exactly 3 sentences: one sentence on the employer—what they do, size/stage if stated, other relevant company context from the posting; the other two sentences on the role—duties, scope, context; neutral facts only, not about candidate fit),
 positives (array of max 3 short strings),
 negatives (array of max 3 short strings),
 rejection_reason (string),
 salary_found (boolean),
 salary_lower (number or null),
 salary_upper (number or null),
-salary_currency (required when salary_found: EUR, USD, or GBP only — backend converts USD/GBP via Frankfurter ECB rates),
-salary_period (one of: hourly, monthly, annual, unknown — must match how salary_lower/upper are expressed),
-salary_tax_hint (one of: net, gross, unknown — if unknown, backend assumes gross/brutto like the rest of the app),
-salary_line (optional; if set, include currency, period, and net or gross e.g. "$80k–$95k per year gross" or "€25–€30 per hour gross"),
-workplace_type (string: one of office, remote, hybrid, unknown — infer from job title and description how the role is primarily worked: office = on-site / in-office as the norm; remote = fully distributed or WFH as the primary mode; hybrid = explicit mix of remote and on-site; unknown only when the posting gives no usable signal beyond noise).
+salary_currency (required when salary_found: EUR, USD, or GBP only — the backend converts USD/GBP via Frankfurter ECB rates),
+salary_period (one of: hourly, monthly, annual, unknown — must match the units of salary_lower/upper),
+salary_tax_hint (one of: net, gross, unknown — when unknown, the backend assumes gross/brutto),
+salary_line (optional formatted string; if set, include currency, period, and net or gross — e.g. "$80k–$95k per year gross" or "€25–€30 per hour gross"),
+position_summary (string),
+workplace_type (one of: office, remote, hybrid, unknown).
 
-workplace_type rules:
-- Prefer explicit statements (remote-first, hybrid, "based in our X office", travel-only onsite, etc.).
-- Do not treat occasional customer visits or "onsite meetings" alone as office if the role is clearly remote-first.
-- unknown when the text is silent or contradictory without a clear dominant mode.
+workplace_type rules (objective inference from posting only):
+- Prefer explicit statements ("remote-first", "hybrid", "based in our X office", travel-only onsite, etc.).
+- Do not classify as office based only on occasional customer visits or "onsite meetings" when the posting is otherwise remote-first.
+- A remote role that is restricted to a country or region is still workplace_type = remote. Any location restriction is for the policy to weigh, not for this field.
+- Use unknown only when the text is silent or contradictory without a clear dominant mode.
+- Allowed values only: office, remote, hybrid, unknown.
 
-Salary fields:
-- Scan the job description for an explicit salary or compensation range (ignore vague "competitive").
-- If none is stated with enough detail to set salary_lower in the listing currency, set salary_found to false and all other salary_* fields to null.
-- If a range is given, salary_lower = the lower bound and salary_upper = the upper bound; if a single figure, set both to that figure.
-- salary_lower and salary_upper must use the same units as salary_period: hourly numbers and salary_period hourly when pay is per hour; annual/monthly likewise.
-- For full-time floor checks vs EUR/month minima: monthly compares directly; annual lower bound ÷ 12; hourly uses weekly hours from the text if stated, else assumes full-time conversion consistent with backend defaults. Keep salary_lower/upper in the posting's stated period units.
-- The pipeline also treats amounts as yearly when the EUR-equivalent of the figure is over 10000 (unless the text explicitly says monthly or hourly). Match salary_period to how the posting states the numbers.
-- salary_currency must be EUR, USD, or GBP when salary_found (no other currencies).
-- salary_tax_hint: net only if the text explicitly says net/take-home; gross if explicitly gross/brutto; unknown means gross for verification.
+Salary extraction (objective parsing only — whether a parsed value is acceptable is a policy decision, not a contract decision):
+- Scan the posting for an explicit base salary or compensation range. Ignore vague phrases like "competitive".
+- Ignore equity-only, commission-only, bonus-only, OTE-only without a clear base, and other compensation statements without a usable fixed base.
+- If pay is only stated in a currency other than EUR, USD, or GBP, set salary_found = false and all other salary_* fields to null.
+- If pay is stated in a period that is not hourly, monthly, or annual and cannot be safely converted from the posting text, set salary_found = false and all other salary_* fields to null.
+- If there is not enough detail to set salary_lower in the listing currency, set salary_found = false and all other salary_* fields to null.
+- If a range is given, salary_lower = the lower bound and salary_upper = the upper bound; if a single figure is given, set both to that figure.
+- salary_lower and salary_upper must be in the same units as salary_period (hourly / monthly / annual).
+- salary_currency must be EUR, USD, or GBP when salary_found is true.
+- salary_tax_hint: net only when the posting explicitly says net or take-home; gross only when it explicitly says gross or brutto; unknown otherwise.
 
-Full-time salary policy (the candidate's minimum acceptable pay, EUR/month equivalent):
-- Net floor: {{NET_MONTHLY_MIN_EUR}} EUR/month net.
-- Gross floor: {{GROSS_MONTHLY_MIN_EUR}} EUR/month gross.
-If the role is clearly full-time and salary_found is true and the stated lower bound is clearly below the appropriate floor in the same net/gross sense, set recommendation to reject and rejection_reason to one short line about pay being below their minimum.
-If the role is part-time or clearly part-time hours, do not reject based on salary; you may still set salary_found and salary_* for display. Do not apply salary-based rejection to part-time roles.
+Scoring thresholds (mapping fit_score → recommendation):
+- 0-59 → reject
+- 60-74 → low_priority_review
+- 75-84 → review
+- 85+ → high_priority_review
+- recommendation must match fit_score threshold exactly unless a hard-reject rule from the user's policy fires.
+- If a hard-reject rule from the policy fires, recommendation must be reject even if some aspects are otherwise strong, and fit_score should normally be in the 0-59 range.
 
-position_summary rules:
-- Exactly 3 sentences of plain prose (no bullet characters).
-- Sentence 1 (employer): Summarize the company or employer using the posting and listing—what they do (products, services, industry), company size, headcount, funding, or stage only if explicitly stated; other relevant organizational context that appears in the text. If the posting is sparse about the company, state only what is clearly supported (including from the company name and role setting); do not invent.
-- Sentences 2–3 (role): Describe the position—core duties, main responsibilities, and work context (team, product, domain, customers) when clear from the posting.
-- Neutral description only; do not reference the candidate, CV, or fit.
+position_summary rules (neutral description of the listing, not the candidate or fit):
+- Exactly 3 sentences of plain prose (no bullet characters, no headings).
+- Sentence 1 — employer: what the company or organization does (products, services, industry); include size, headcount, funding, or stage only when the posting explicitly states them. If the posting is sparse about the company, keep this sentence short and factual — do not invent.
+- Sentences 2-3 — role: core duties, scope, and work context (team, product, domain, customers, stakeholders) as visible in the posting.
+- Do not reference the candidate, the CV, or fit.
 
 rejection_reason rules:
-- If recommendation is reject: REQUIRED — one short line (max ~140 characters), plain language, stating the main mismatch (e.g. wrong domain, missing must-have skill, language requirement, role type). No bullet prefix; no multiple sentences if one line suffices.
-- If recommendation is not reject: set rejection_reason to an empty string "".
+- When recommendation is reject: REQUIRED. One short line (≤ ~140 characters), plain language, stating the main mismatch only (e.g. wrong domain, missing must-have skill, language requirement, role type, pay below minimum, relocation required). No bullet prefix; one sentence unless absolutely necessary.
+- When recommendation is not reject: set rejection_reason to an empty string "".
 
-Scoring thresholds:
-- 0-59 = reject 
-- 60-74 = low_priority_review 
-- 75-84 = review
-- 85+ = high_priority_review
+positives / negatives output:
+- Max 3 items each, short and concrete.
+- positives: each item must be a job-match statement tied to a specific requirement, responsibility, domain, tool, or scope element from the posting — not a generic candidate strength in isolation.
+- negatives: each item must be a concrete fit risk, constraint, or gap from the posting (mandatory language gap, explicit experience gap, location restriction, missing must-have skill, role-type mismatch, pay below minimum, etc.).`,
+].join("\n");
 
-Evaluate the role strictly against the candidate's actual CV and target profile.
+export const DEFAULT_OPENAI_SCORING_POLICY_INSTRUCTION = [
+  "Evaluate the role strictly against the candidate's actual CV and target profile described below. This text is the candidate's scoring policy. Replace it with your own profile and preferences before using the system in a different domain (account management, construction, healthcare, finance, etc.).",
+  "",
+  `Candidate profile summary:
+- Based in Riga, Latvia.
+- EU citizen.
+- No university degree.
+- Speaks English, Russian, and Latvian.
+- Relevant experience baselines: customer support / technical troubleshooting 6 years; customer success / account ownership / product ops / related post-sales operational ownership 2 years; telecom / telecom SaaS domain 3 years.
+- Strongest positioning: customer-facing SaaS roles with technical, operational, product, implementation, or support depth.
 
 Candidate target fit areas:
 - customer success
@@ -70,10 +104,58 @@ Candidate target fit areas:
 - telecom or adjacent B2B SaaS
 - key account management
 - technical troubleshooting in a client-facing or operations-heavy environment
+- support operations / service delivery / client services
+- onboarding / implementation / product support in SaaS environments
 
 Add positive weight when one or more of these fit areas are strongly present.
 Add stronger positive weight when multiple fit areas are clearly present together.
 Do not assume fit from keyword overlap alone.
+
+Salary preferences (full-time only, EUR/month equivalent):
+- Net floor: {{NET_MONTHLY_MIN_EUR}} EUR/month net.
+- Gross floor: {{GROSS_MONTHLY_MIN_EUR}} EUR/month gross.
+- Apply salary-based rejection only to clearly full-time roles where salary_found is true.
+- If the role is full-time and the stated lower bound is clearly below the appropriate floor in the same net/gross sense, set recommendation to reject and rejection_reason to one short line about pay being below the candidate's minimum.
+- Conversion when comparing: monthly compares directly; annual lower bound ÷ 12; hourly assumes 40 h/week (≈ 167 monthly hours) unless the posting clearly states a different full-time week.
+- If salary_tax_hint is unknown, treat the figure as gross for this comparison.
+- If the role is part-time, freelance/contract, or full-time status is unclear, do not apply salary-based rejection (still extract salary_* per the contract).
+
+Education rules:
+- If a degree is explicitly mandatory and no equivalent experience is allowed, apply a strong negative and usually reject.
+- If the posting says degree or equivalent experience, do not reject on education alone.
+- If a degree is only preferred, treat it as a negative, not a rejection.
+
+Language rules:
+- Reject if any language other than English, Russian, or Latvian is clearly mandatory.
+- If another language is preferred or nice to have, do not reject, but apply a penalty when it is a meaningful hiring risk.
+
+Years-of-experience rules:
+- Compare explicit years requirements to the closest relevant experience bucket only.
+- If the posting requires years in a clearly different function the candidate does not have, treat the candidate as lacking that experience.
+- If the candidate is more than 3 years short of an explicit relevant mandatory requirement, reject.
+- If exactly 3 years short, apply a very strong penalty and cap at low_priority_review unless the rest of the fit is unusually strong.
+- Penalize 1-2 year shortfalls proportionally.
+
+Industry / domain alignment:
+- Strongly favor B2B SaaS, IT/software/cloud, platforms, APIs, integrations, telecom / communications tech, workflow or operations software, CRM/ERP/helpdesk/productivity tools.
+- Apply a modest additional boost for telecom, CPaaS, UCaaS, CCaaS, VoIP, SIP, DID, carrier services, SMS/A2P, messenger platforms, contact-center infrastructure, communications APIs, or adjacent infrastructure when the role function also aligns.
+- Strongly penalize unrelated, non-transferable domains such as healthcare practices/providers, fashion or retail brands without SaaS/B2B software, and manufacturing without a software/product/platform/technical systems layer.
+
+Role family weighting:
+- Strong positives: Customer Success Manager, Senior Customer Success Manager, Technical Account Manager, Service Delivery Manager, Implementation Consultant, Product Operations Manager, Solutions Consultant, Integration Consultant, Key Account Manager when not strongly sales-led.
+- Moderate positives: technical support, application support, onboarding / implementation support, product-adjacent operations roles.
+- Strong negatives: call-center support, quota-heavy account management, outbound sales, pure project management without relevant technical or operational overlap, software engineering roles.
+
+Customer interaction / workload:
+- Strategic, technical, account-based, and implementation-focused customer interaction is positive.
+- Repetitive high-volume customer handling is negative, especially phone-based support, call-center style work, constant meetings, or real-life event presence.
+- Chat-only or email-only support is penalized less when the domain is strong and the work has technical or operational depth.
+
+Location / workplace:
+- Fully remote roles are strongly preferred.
+- Add a small bonus only for roles explicitly open across borders, globally remote, remote anywhere, or remote without country restriction.
+- Reject or heavily penalize relocation, foreign on-site work, foreign hybrid work, local residence/payroll/tax presence requirements, or regular office attendance outside Latvia.
+- Remote but country-restricted roles are still remote for workplace_type, but location restriction is a scoring risk here.
 
 Reject if any of the following are clearly true:
 - the industry or domain is obviously unrelated and not realistically transferable
@@ -84,20 +166,16 @@ Reject if any of the following are clearly true:
 - the role is primarily outbound sales, heavy phone-based customer work, or constant meetings
 - the match is based only on superficial keyword overlap
 
-Positives rules:
-- Max 3 items
-- Each item must be specific and tied to the candidate profile
-- Focus on real alignment (role type, domain, responsibilities, tools, impact)
-- No generic statements
-
-Negatives rules:
-- Max 3 items
-- Include real risks or mismatches (missing requirements, domain gaps, language issues, unclear fit)
-- Be critical and direct, not polite
-
-Use low_priority_review only for borderline but plausibly transferable roles.
-Do not be generous. Optimize for realistic fit, not potential.`,
+Decision behavior:
+- Use low_priority_review only for borderline but plausibly transferable roles.
+- Do not be generous. Optimize for realistic fit, not potential.`,
 ].join("\n");
+
+/** Backward-compatible composed default; dashboard editing uses only DEFAULT_OPENAI_SCORING_POLICY_INSTRUCTION. */
+export const DEFAULT_OPENAI_SCORING_INSTRUCTION = [
+  OPENAI_SCORING_CONTRACT_INSTRUCTION,
+  DEFAULT_OPENAI_SCORING_POLICY_INSTRUCTION,
+].join("\n\n");
 
 /** Appended to stored scoring instructions that predate position_summary (one-time upgrade). */
 export const POSITION_SUMMARY_SCORING_ADDENDUM = `

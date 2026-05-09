@@ -5,6 +5,7 @@ import { handleDashboardApi } from "./dashboard/api";
 import { log } from "./logging/appLog";
 import { clearExhaustPause, startOrResumeCoordinator } from "./orchestration/client";
 import { PipelineCoordinator } from "./orchestration/PipelineCoordinator";
+import { PipelineDispatcher } from "./orchestration/PipelineDispatcher";
 import { handlePipelineQueue } from "./orchestration/queueConsumer";
 import { purgeExpiredDashboardJobs } from "./dashboard/retention";
 import {
@@ -14,6 +15,7 @@ import {
   setJobStatus,
   updateDrafts,
 } from "./db/jobs";
+import { BOOTSTRAP_ADMIN_ID } from "./db/users";
 import { fetchUsdGbpToEurRates } from "./pipeline/hardFilters";
 import { sendCloudflareEmailTest } from "./notify/email";
 import { fetchJsearchDiagnostics, type JsearchDiagnosticsOverrides } from "./providers/jsearch";
@@ -128,11 +130,30 @@ export default {
       return env.ASSETS.fetch(new Request(assetUrl.toString(), request));
     }
 
+    if (
+      (url.pathname === "/dashboard-v2" || url.pathname === "/dashboard-v2/") &&
+      request.method === "GET"
+    ) {
+      if (!env.ASSETS) return new Response("ASSETS not configured", { status: 503 });
+      const assetUrl = new URL(request.url);
+      assetUrl.pathname = "/dashboard-v2.html";
+      return env.ASSETS.fetch(new Request(assetUrl.toString(), request));
+    }
+
     if (request.method === "POST" && url.pathname === "/run") {
       const deny = adminAuthDenied(request, env);
       if (deny) return deny;
       try {
-        const result = await startOrResumeCoordinator(env, { reason: "manual_run" });
+        const dispatcherId = env.PIPELINE_DISPATCHER.idFromName("global");
+        const dispatcher = env.PIPELINE_DISPATCHER.get(dispatcherId);
+        const res = await dispatcher.fetch(
+          new Request("https://pipeline-dispatcher/poke", {
+            method: "POST",
+            headers: { "content-type": "application/json; charset=utf-8" },
+            body: JSON.stringify({ reason: "manual_run" }),
+          }),
+        );
+        const result = await res.json();
         return new Response(JSON.stringify(result), {
           headers: { "content-type": "application/json" },
         });
@@ -161,7 +182,7 @@ export default {
       const deny = adminAuthDenied(request, env);
       if (deny) return deny;
       try {
-        const result = await clearExhaustPause(env);
+        const result = await clearExhaustPause(env, BOOTSTRAP_ADMIN_ID);
         return new Response(JSON.stringify(result), {
           headers: { "content-type": "application/json; charset=utf-8" },
         });
@@ -221,7 +242,7 @@ export default {
           headers: { "content-type": "application/json" },
         });
       }
-      const result = await fetchJsearchDiagnostics(env, query, page, jOverrides);
+      const result = await fetchJsearchDiagnostics(env, BOOTSTRAP_ADMIN_ID, query, page, jOverrides);
       const status = result.error ? 500 : result.ok ? 200 : 502;
       return new Response(JSON.stringify(result, null, 2), {
         status,
@@ -252,14 +273,23 @@ export default {
     ctx.waitUntil(
       (async () => {
         try {
-          const r = await startOrResumeCoordinator(env, { reason: "scheduled" });
-          await log.info(env, "cron", "Scheduled pipeline poke", r);
+          const dispatcherId = env.PIPELINE_DISPATCHER.idFromName("global");
+          const dispatcher = env.PIPELINE_DISPATCHER.get(dispatcherId);
+          const res = await dispatcher.fetch(
+            new Request("https://pipeline-dispatcher/poke", {
+              method: "POST",
+              headers: { "content-type": "application/json; charset=utf-8" },
+              body: JSON.stringify({ reason: "scheduled" }),
+            }),
+          );
+          const r = (await res.json()) as { ok: boolean; dispatched: number; errors: unknown[] };
+          await log.info(env, "cron", "Scheduled dispatcher poke", r);
         } catch (e) {
           const msg = e instanceof Error ? e.message : String(e);
           await log.critical(
             env,
             "cron",
-            "Scheduled coordinator poke failed",
+            "Scheduled dispatcher poke failed",
             { error: msg.slice(0, 500) },
             {
               category: "orchestration",
@@ -327,7 +357,7 @@ export default {
   },
 };
 
-export { PipelineCoordinator };
+export { PipelineCoordinator, PipelineDispatcher };
 
 async function handleReviewGet(env: Env, url: URL): Promise<Response> {
   const secret = env.REVIEW_TOKEN_SECRET;
@@ -337,7 +367,7 @@ async function handleReviewGet(env: Env, url: URL): Promise<Response> {
   const payload = await verifyReviewToken(secret, token);
   if (!payload) return new Response("invalid or expired link", { status: 400 });
 
-  const row = await getJobFull(env.DB, payload.jobId);
+  const row = await getJobFull(env.DB, BOOTSTRAP_ADMIN_ID, payload.jobId);
   if (!row) return new Response("job not found", { status: 404 });
 
   const positives = safeJsonArray(row.reasons_to_apply);
@@ -369,7 +399,7 @@ async function handleEditGet(env: Env, url: URL): Promise<Response> {
   const payload = await verifyReviewToken(secret, token);
   if (!payload) return new Response("invalid or expired link", { status: 400 });
 
-  const row = await getJobFull(env.DB, payload.jobId);
+  const row = await getJobFull(env.DB, BOOTSTRAP_ADMIN_ID, payload.jobId);
   if (!row) return new Response("job not found", { status: 404 });
 
   const html = editPageHtml({
@@ -394,9 +424,9 @@ async function handleReviewAction(env: Env, request: Request): Promise<Response>
 
   const now = Math.floor(Date.now() / 1000);
   if (action === "approve") {
-    await setJobStatus(env.DB, payload.jobId, "approved", now);
+    await setJobStatus(env.DB, BOOTSTRAP_ADMIN_ID, payload.jobId, "approved", now);
   } else if (action === "reject") {
-    await setJobStatus(env.DB, payload.jobId, "rejected", now);
+    await setJobStatus(env.DB, BOOTSTRAP_ADMIN_ID, payload.jobId, "rejected", now);
   } else {
     return new Response("bad action", { status: 400 });
   }
@@ -420,7 +450,7 @@ async function handleReviewSave(env: Env, request: Request): Promise<Response> {
   if (!payload) return new Response("invalid or expired link", { status: 400 });
 
   const now = Math.floor(Date.now() / 1000);
-  await updateDrafts(env.DB, payload.jobId, cv, cover, now);
+  await updateDrafts(env.DB, BOOTSTRAP_ADMIN_ID, payload.jobId, cv, cover, now);
 
   return Response.redirect(new URL(`/review?t=${encodeURIComponent(token)}`, request.url).toString(), 302);
 }

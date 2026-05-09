@@ -223,8 +223,8 @@ function variantRow(row: StatisticsVariantAggregateRow): StatisticsVariantRow {
   const jobsOutstanding = Math.max(0, base.jobsReceived - base.jobsProcessed);
   return {
     searchQuery: row.search_query,
-    tier,
-    tierLabel: tier === 1 ? "Tier 1" : tier === 2 ? "Tier 2" : "Unknown tier",
+    tier: 1,
+    tierLabel: "Tier 1",
     providers: String(row.providers_csv || "")
       .split(",")
       .map((s) => s.trim())
@@ -255,6 +255,7 @@ function indexVariantProviderRequests(
 
 export async function buildStatisticsPayload(
   env: Env,
+  userId: string,
   opts?: {
     days?: string | number | null;
     top?: string | number | null;
@@ -267,7 +268,7 @@ export async function buildStatisticsPayload(
   const nowSec = Math.floor(Date.now() / 1000);
   const days = normalizeStatisticsDays(opts?.days);
   const topVariants = Math.max(5, Math.min(30, Math.floor(toNum(opts?.top) || 12)));
-  await ensureStatisticsBackfilled(env.DB, nowSec);
+  await ensureStatisticsBackfilled(env.DB, userId, nowSec);
 
   const todayYmd = utcYmdFromUnix(nowSec);
   const fromRaw = typeof opts?.from === "string" ? opts.from.trim() : "";
@@ -317,11 +318,11 @@ export async function buildStatisticsPayload(
   }
   const [dailyRows, providerRows, variantRows, variantProviderRequests, titleQueryHealthByVendor] =
     await Promise.all([
-      listStatisticsDailyProviderRows(env.DB, fromYmd, toYmd),
-      listStatisticsProviderAggregates(env.DB, fromYmd, toYmd),
-      listStatisticsVariantAggregates(env.DB, fromYmd, toYmd, topVariants),
-      listStatisticsVariantProviderRequestBreakdown(env.DB, fromYmd, toYmd),
-      aggregateTitleQueryHealthByVendor(env.DB, fromYmd, toYmd),
+      listStatisticsDailyProviderRows(env.DB, userId, fromYmd, toYmd),
+      listStatisticsProviderAggregates(env.DB, userId, fromYmd, toYmd),
+      listStatisticsVariantAggregates(env.DB, userId, fromYmd, toYmd, topVariants),
+      listStatisticsVariantProviderRequestBreakdown(env.DB, userId, fromYmd, toYmd),
+      aggregateTitleQueryHealthByVendor(env.DB, userId, fromYmd, toYmd),
     ]);
 
   const dailySeries = aggregateDailySeries(dailyRows, fromYmd, toYmd);
