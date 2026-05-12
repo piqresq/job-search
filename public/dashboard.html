@@ -506,13 +506,13 @@
      * Running: main dot stays solid; a second green dot expands from the center and fades (loop + short pause).
      */
     :root {
-      --pipeline-dot-fade-duration: 4s;
+      --pipeline-dot-fade-duration: 6.4s;
     }
     @keyframes pipeline-dot-fade-pulse {
-      0%, 10% { opacity: 1; }
-      26% { opacity: 0; }
-      29% { opacity: 0; }
-      64% { opacity: 1; }
+      0%, 18% { opacity: 1; }
+      44% { opacity: 0.36; }
+      58% { opacity: 0.36; }
+      82% { opacity: 1; }
       100% { opacity: 1; }
     }
     .pipeline-status-dot-stack--fade .pipeline-status-dot {
@@ -529,20 +529,20 @@
     @keyframes pipeline-dot-running-ripple {
       0% {
         transform: translate(-50%, -50%) scale(1);
-        opacity: 0.72;
+        opacity: 0.5;
       }
-      48% {
-        transform: translate(-50%, -50%) scale(2.05);
+      42% {
+        transform: translate(-50%, -50%) scale(2.15);
         opacity: 0;
       }
-      48.01%, 100% {
+      42.01%, 100% {
         transform: translate(-50%, -50%) scale(1);
         opacity: 0;
       }
     }
     .pipeline-status-dot-stack--running .pipeline-status-dot-ripple {
       display: block;
-      animation: pipeline-dot-running-ripple 1.45s ease-out infinite;
+      animation: pipeline-dot-running-ripple 3.8s ease-out infinite;
       will-change: transform, opacity;
     }
     .pipeline-status-dot-stack:not(.pipeline-status-dot-stack--running) .pipeline-status-dot-ripple {

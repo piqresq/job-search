@@ -1,5 +1,5 @@
 import { applyStatisticsDeltas, type StatisticsVariantDimension } from "../db/statistics";
-import { BOOTSTRAP_ADMIN_ID } from "../db/users";
+import { BOOTSTRAP_ADMIN_ID, getUserById } from "../db/users";
 import { log, observabilityLog } from "../logging/appLog";
 import { dedupeKey } from "../pipeline/dedupe";
 import { processFetchedJobs } from "../pipeline/runPipeline";
@@ -19,6 +19,11 @@ const CHUNK_HEARTBEAT_INTERVAL_SECONDS = 45;
 
 function errMsg(e: unknown): string {
   return e instanceof Error ? e.message : String(e);
+}
+
+async function isActiveUser(db: D1Database, userId: string): Promise<boolean> {
+  const user = await getUserById(db, userId);
+  return user?.status === "active";
 }
 
 function isPipelineQueueMessage(x: unknown): x is PipelineQueueMessage {
@@ -484,6 +489,16 @@ export async function handlePipelineQueue(
     }
 
     try {
+      if (!(await isActiveUser(env.DB, body.userId))) {
+        await log.info(env, "orchestrator", "Skipped queue message for deleted or disabled user", {
+          userId: body.userId,
+          cycleId: body.cycleId,
+          providerId: body.providerId,
+          seq: body.seq,
+        });
+        continue;
+      }
+
       const claim = await claimQueueMessage(env, body.userId, {
         cycleId: body.cycleId,
         seq: body.seq,
@@ -503,6 +518,15 @@ export async function handlePipelineQueue(
       const heartbeat = createChunkHeartbeater(env, body);
       await heartbeat.beat("claimed", {}, true);
       const result = await runProviderChunk(env, body, heartbeat);
+      if (!(await isActiveUser(env.DB, body.userId))) {
+        await log.info(env, "orchestrator", "Skipped queue report after user deletion/disable", {
+          userId: body.userId,
+          cycleId: body.cycleId,
+          providerId: body.providerId,
+          seq: body.seq,
+        });
+        continue;
+      }
       if (result.errors.length > 0) {
         await log.moderate(
           env,

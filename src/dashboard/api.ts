@@ -7,6 +7,7 @@ import {
   bulkDenyActiveJobs,
   bulkRestoreJobs,
   type DashboardJobListCursor,
+  type DashboardJobListPage,
   defaultDashboardJobListPrefs,
   deleteJobsByIdsWithR2Cleanup,
   type DashboardJobListPrefs,
@@ -67,7 +68,22 @@ import {
   setStoredOpenAiDraftInstruction,
   setStoredOpenAiScoringPolicyInstruction,
   setVerboseLoggingEnabled,
+  getSetupWizardCompletedAt,
+  setSetupWizardCompletedAt,
 } from "../db/appSettings";
+import {
+  addBoardItem,
+  importBoardSnapshot,
+  reorderBoardItems,
+  JOB_BOARD_COLUMNS,
+  listBoardItems,
+  moveBoardItem,
+  normalizeBoardColumnId,
+  purgeExpiredRejectedBoardItems,
+  removeBoardItem,
+  type JobBoardColumnId,
+  type JobBoardRow,
+} from "../db/jobBoard";
 import {
   getAiInstructionsForEditor,
   resetOpenAiInstructionsToDefaults,
@@ -117,6 +133,7 @@ import {
   clearExhaustPause,
   clearRequestCapPauseForProviders,
   getCoordinatorStatus,
+  resetCoordinatorStateForDeletedUser,
   startOrResumeCoordinator,
 } from "../orchestration/client";
 import { getOperationalHoursState } from "../orchestration/operationalHours";
@@ -128,6 +145,8 @@ import {
 } from "./session";
 import {
   createUser,
+  deleteUserAndOwnedData,
+  BOOTSTRAP_ADMIN_ID,
   getUserById,
   getUserProviderCaps,
   listUsers,
@@ -386,59 +405,13 @@ async function buildDashboardJobListResponse(
     getDashboardShowJobApiRaw(env.DB, userId),
     getDashboardAiDebugRescoreEnabled(env.DB, userId),
   ]);
-  const jobs = page.rows.map((r) => {
-    const jobUrl = r.job_url ?? "";
-    const applyUrl = r.apply_url ?? "";
-    const logo = listingLogoFromUrls(jobUrl, applyUrl);
-    const apiFetched = numOrNull(r.api_fetched_at_unix);
-    const createdAt = typeof r.created_at === "number" ? r.created_at : 0;
-    const apiRequestSec = resolveApiRequestUnixSec(apiFetched, createdAt);
-    const apiRequestDateYmd = apiRequestSec != null ? formatPostedDotYmdUtc(apiRequestSec) : "";
-    const dateHoverTitle =
-      apiRequestSec != null ? `API request (UTC): ${formatDotYmdHmUtc(apiRequestSec)}` : "";
-    const postedListing = numOrNull(r.posted_at_unix);
-    const listingPostedAtUnix = postedListing != null && postedListing > 0 ? postedListing : 0;
-    const ingestedAtUnix =
-      apiRequestSec != null && apiRequestSec > 0 ? apiRequestSec : createdAt > 0 ? createdAt : 0;
-    const postedAtUnix =
-      listingPostedAtUnix > 0 ? listingPostedAtUnix : ingestedAtUnix > 0 ? ingestedAtUnix : 0;
-    return {
-      id: r.id,
-      status: r.status ?? "",
-      title: r.title ?? "",
-      company: r.company ?? "",
-      jobUrl,
-      applyUrl,
-      countryName: r.country_name ?? "",
-      employmentType: r.employment_type ?? "",
-      workplaceType: workplaceTypeForDashboardList(r.workplace_type, r.normalized_json),
-      searchQuery: r.search_query ?? "",
-      searchTier: r.search_tier === 1 || r.search_tier === 2 ? 1 : null,
-      apiRequestDateYmd,
-      postedDateYmd: apiRequestDateYmd,
-      dateHoverTitle,
-      postedAtUnix,
-      listingPostedAtUnix,
-      ingestedAtUnix,
-      sortSalaryMonthlyEur: typeof r.salary_monthly_eur === "number" ? r.salary_monthly_eur : null,
-      salaryEur: r.salary_display_eur ?? "N/A",
-      fitScore: r.fit_score ?? 0,
-      recommendation: r.recommendation ?? "",
-      positionSummary: (r.position_summary ?? "").trim(),
-      positives: safeJsonStringArray(r.reasons_to_apply),
-      negatives: safeJsonStringArray(r.risks),
-      logo,
-      hasDocx: Boolean(r.r2_cv_key && r.r2_cover_key),
-      downloadCv: `/api/jobs/${r.id}/download/cv`,
-      downloadCover: `/api/jobs/${r.id}/download/cover`,
-      filterReasons: filterOutExplanationLines(r),
-      isFavorite: favSet.has(r.id),
-      ingestionFacts: showPipelineParams ? buildIngestionFactsFromNormalizedJson(r.normalized_json) : [],
-      ingestionRequestParamsStored: showPipelineParams ? hasStoredIngestionRequestParams(r.normalized_json) : false,
-      apiRawFields: showApiRaw ? buildRawApiFieldsFromNormalizedJson(r.normalized_json) : [],
-      apiRawFieldsStored: showApiRaw ? hasStoredApiRawFields(r.normalized_json) : false,
-    };
-  });
+  const jobs = page.rows.map((r) =>
+    dashboardJobPayloadFromRow(r, {
+      favoriteIds: favSet,
+      showPipelineParams,
+      showApiRaw,
+    }),
+  );
 
   return json({
     ok: true,
@@ -455,6 +428,106 @@ async function buildDashboardJobListResponse(
       aiDebugRescore,
     },
   });
+}
+
+type DashboardJobPayloadOptions = {
+  favoriteIds?: Set<string>;
+  showPipelineParams?: boolean;
+  showApiRaw?: boolean;
+};
+
+function dashboardJobPayloadFromRow(
+  r: DashboardJobListPage["rows"][number],
+  opts: DashboardJobPayloadOptions = {},
+) {
+  const jobUrl = r.job_url ?? "";
+  const applyUrl = r.apply_url ?? "";
+  const logo = listingLogoFromUrls(jobUrl, applyUrl);
+  const apiFetched = numOrNull(r.api_fetched_at_unix);
+  const createdAt = typeof r.created_at === "number" ? r.created_at : 0;
+  const apiRequestSec = resolveApiRequestUnixSec(apiFetched, createdAt);
+  const apiRequestDateYmd = apiRequestSec != null ? formatPostedDotYmdUtc(apiRequestSec) : "";
+  const dateHoverTitle = apiRequestSec != null ? `API request (UTC): ${formatDotYmdHmUtc(apiRequestSec)}` : "";
+  const postedListing = numOrNull(r.posted_at_unix);
+  const listingPostedAtUnix = postedListing != null && postedListing > 0 ? postedListing : 0;
+  const ingestedAtUnix = apiRequestSec != null && apiRequestSec > 0 ? apiRequestSec : createdAt > 0 ? createdAt : 0;
+  const postedAtUnix = listingPostedAtUnix > 0 ? listingPostedAtUnix : ingestedAtUnix > 0 ? ingestedAtUnix : 0;
+  const showPipelineParams = opts.showPipelineParams === true;
+  const showApiRaw = opts.showApiRaw === true;
+
+  return {
+    id: r.id,
+    status: r.status ?? "",
+    title: r.title ?? "",
+    company: r.company ?? "",
+    jobUrl,
+    applyUrl,
+    countryName: r.country_name ?? "",
+    employmentType: r.employment_type ?? "",
+    workplaceType: workplaceTypeForDashboardList(r.workplace_type, r.normalized_json),
+    searchQuery: r.search_query ?? "",
+    searchTier: r.search_tier === 1 || r.search_tier === 2 ? 1 : null,
+    apiRequestDateYmd,
+    postedDateYmd: apiRequestDateYmd,
+    dateHoverTitle,
+    postedAtUnix,
+    listingPostedAtUnix,
+    ingestedAtUnix,
+    sortSalaryMonthlyEur: typeof r.salary_monthly_eur === "number" ? r.salary_monthly_eur : null,
+    salaryEur: r.salary_display_eur ?? "N/A",
+    fitScore: r.fit_score ?? 0,
+    recommendation: r.recommendation ?? "",
+    positionSummary: (r.position_summary ?? "").trim(),
+    positives: safeJsonStringArray(r.reasons_to_apply),
+    negatives: safeJsonStringArray(r.risks),
+    logo,
+    hasDocx: Boolean(r.r2_cv_key && r.r2_cover_key),
+    downloadCv: `/api/jobs/${r.id}/download/cv`,
+    downloadCover: `/api/jobs/${r.id}/download/cover`,
+    filterReasons: filterOutExplanationLines(r),
+    isFavorite: opts.favoriteIds?.has(r.id) ?? false,
+    ingestionFacts: showPipelineParams ? buildIngestionFactsFromNormalizedJson(r.normalized_json) : [],
+    ingestionRequestParamsStored: showPipelineParams ? hasStoredIngestionRequestParams(r.normalized_json) : false,
+    apiRawFields: showApiRaw ? buildRawApiFieldsFromNormalizedJson(r.normalized_json) : [],
+    apiRawFieldsStored: showApiRaw ? hasStoredApiRawFields(r.normalized_json) : false,
+  };
+}
+
+type BoardJobPayload = ReturnType<typeof dashboardJobPayloadFromRow> & {
+  kanban_at: number;
+  boardUpdatedAtUnix: number;
+  generating: boolean;
+};
+
+function emptyBoardPayload(): Record<JobBoardColumnId, BoardJobPayload[]> {
+  return {
+    new: [],
+    applying: [],
+    applied: [],
+    interview: [],
+    rejected: [],
+  };
+}
+
+function buildBoardPayload(rows: JobBoardRow[]): Record<JobBoardColumnId, BoardJobPayload[]> {
+  const board = emptyBoardPayload();
+  for (const row of rows) {
+    const col = normalizeBoardColumnId(row.board_column_id);
+    if (!col) continue;
+    board[col].push({
+      ...dashboardJobPayloadFromRow(row),
+      kanban_at: row.board_entered_at,
+      boardUpdatedAtUnix: row.board_updated_at,
+      generating: row.board_generating === 1,
+    });
+  }
+  return board;
+}
+
+async function boardPayloadForUser(env: Env, userId: string): Promise<Record<JobBoardColumnId, BoardJobPayload[]>> {
+  const now = Math.floor(Date.now() / 1000);
+  await purgeExpiredRejectedBoardItems(env.DB, userId, now);
+  return buildBoardPayload(await listBoardItems(env.DB, userId));
 }
 
 const VENDOR_LABELS: Record<JobSourceId, string> = {
@@ -1290,24 +1363,32 @@ export async function handleDashboardApi(
 
   if (path === "/api/ai-instructions" && request.method === "GET") {
     const { scoring, drafts } = await getAiInstructionsForEditor(env.DB, userId);
-    return json({ ok: true, scoring, drafts });
+    const { getStoredSetupAnalysisPrompt } = await import("../db/appSettings");
+    const { DEFAULT_SETUP_ANALYSIS_PROMPT } = await import("../setup/setupRecommendations");
+    const storedSetup = await getStoredSetupAnalysisPrompt(env.DB, userId);
+    return json({ ok: true, scoring, drafts, setupAnalysis: storedSetup ?? DEFAULT_SETUP_ANALYSIS_PROMPT });
   }
 
   if (path === "/api/ai-instructions" && request.method === "PATCH") {
-    let body: { scoring?: string; drafts?: string; reset?: boolean; revisionNote?: string };
+    let body: { scoring?: string; drafts?: string; setupAnalysis?: string; reset?: boolean; resetSetupAnalysis?: boolean; revisionNote?: string };
     try {
-      body = (await request.json()) as {
-        scoring?: string;
-        drafts?: string;
-        reset?: boolean;
-        revisionNote?: string;
-      };
+      body = (await request.json()) as typeof body;
     } catch {
       return json({ ok: false, error: "invalid_json" }, 400);
     }
     const revisionNoteRaw = typeof body.revisionNote === "string" ? body.revisionNote : "";
     const revNoteErr = validateRevisionNoteForSave(revisionNoteRaw);
     if (revNoteErr) return json({ ok: false, error: revNoteErr }, 400);
+
+    // Handle setup analysis prompt reset independently
+    if (body.resetSetupAnalysis === true) {
+      const { setStoredSetupAnalysisPrompt } = await import("../db/appSettings");
+      await setStoredSetupAnalysisPrompt(env.DB, userId, "");
+      await log.info(env, "dashboard", "Setup analysis prompt reset to default");
+      const { DEFAULT_SETUP_ANALYSIS_PROMPT } = await import("../setup/setupRecommendations");
+      return json({ ok: true, setupAnalysis: DEFAULT_SETUP_ANALYSIS_PROMPT });
+    }
+
     if (body.reset === true) {
       const previous = await getAiInstructionsForEditor(env.DB, userId);
       await resetOpenAiInstructionsToDefaults(env.DB, userId);
@@ -1331,9 +1412,23 @@ export async function handleDashboardApi(
     }
     const hasScoring = typeof body.scoring === "string";
     const hasDrafts = typeof body.drafts === "string";
-    if (!hasScoring && !hasDrafts) {
+    const hasSetupAnalysis = typeof body.setupAnalysis === "string";
+    if (!hasScoring && !hasDrafts && !hasSetupAnalysis) {
       return json({ ok: false, error: "bad_body" }, 400);
     }
+
+    // Save setup analysis prompt (independent of scoring/drafts flow)
+    if (hasSetupAnalysis) {
+      const val = body.setupAnalysis!.trim();
+      if (!val) return json({ ok: false, error: "setup_analysis_empty" }, 400);
+      const { setStoredSetupAnalysisPrompt } = await import("../db/appSettings");
+      await setStoredSetupAnalysisPrompt(env.DB, userId, val);
+      await log.info(env, "dashboard", "Setup analysis prompt saved");
+      if (!hasScoring && !hasDrafts) {
+        return json({ ok: true });
+      }
+    }
+
     const previous = await getAiInstructionsForEditor(env.DB, userId);
     if (hasScoring) {
       const err = validateScoringInstructionForSave(body.scoring!);
@@ -1919,6 +2014,70 @@ export async function handleDashboardApi(
     return json({ ok: true, tab: tabRaw, ids, totalMatching: ids.length });
   }
 
+  if (path === "/api/board" && request.method === "GET") {
+    const board = await boardPayloadForUser(env, userId);
+    return json({ ok: true, board });
+  }
+
+  if (path === "/api/board/items" && request.method === "POST") {
+    const body = await request.json().catch(() => null);
+    const obj = body && typeof body === "object" ? (body as Record<string, unknown>) : {};
+    const jobId = typeof obj.jobId === "string" ? obj.jobId.trim() : "";
+    const hasColumnId = Object.prototype.hasOwnProperty.call(obj, "columnId");
+    const columnId = hasColumnId ? normalizeBoardColumnId(obj.columnId) : "new";
+    if (!jobId) return json({ ok: false, error: "bad_job_id" }, 400);
+    if (!columnId) return json({ ok: false, error: "bad_column" }, 400);
+    const now = Math.floor(Date.now() / 1000);
+    const ok = await addBoardItem(env.DB, userId, jobId, columnId, now);
+    if (!ok) return json({ ok: false, error: "not_found" }, 404);
+    const board = await boardPayloadForUser(env, userId);
+    return json({ ok: true, board });
+  }
+
+  const boardItemMatch = path.match(/^\/api\/board\/items\/([^/]+)$/);
+  if (boardItemMatch && request.method === "PATCH") {
+    const jobId = decodeURIComponent(boardItemMatch[1]!);
+    const body = await request.json().catch(() => null);
+    const obj = body && typeof body === "object" ? (body as Record<string, unknown>) : {};
+    const columnId = normalizeBoardColumnId(obj.columnId);
+    if (!columnId) return json({ ok: false, error: "bad_column" }, 400);
+    const now = Math.floor(Date.now() / 1000);
+    const ok = await moveBoardItem(env.DB, userId, jobId, columnId, now);
+    if (!ok) return json({ ok: false, error: "not_found" }, 404);
+    const board = await boardPayloadForUser(env, userId);
+    return json({ ok: true, board });
+  }
+
+  if (boardItemMatch && request.method === "DELETE") {
+    const jobId = decodeURIComponent(boardItemMatch[1]!);
+    const deleted = await removeBoardItem(env.DB, userId, jobId);
+    const board = await boardPayloadForUser(env, userId);
+    return json({ ok: true, deleted, board });
+  }
+
+  if (path === "/api/board/reorder" && request.method === "POST") {
+    const body = await request.json().catch(() => null);
+    const obj = body && typeof body === "object" ? (body as Record<string, unknown>) : {};
+    const columnId = normalizeBoardColumnId(obj.columnId);
+    const rawIds = obj.jobIds;
+    if (!columnId || !Array.isArray(rawIds)) return json({ ok: false, error: "invalid_params" }, 400);
+    const jobIds = rawIds.filter((x): x is string => typeof x === "string");
+    if (jobIds.length === 0) return json({ ok: false, error: "empty_list" }, 400);
+    const now = Math.floor(Date.now() / 1000);
+    await reorderBoardItems(env.DB, userId, columnId, jobIds, now);
+    const board = await boardPayloadForUser(env, userId);
+    return json({ ok: true, board });
+  }
+
+  if (path === "/api/board/import" && request.method === "POST") {
+    const body = await request.json().catch(() => null);
+    const snapshot = body && typeof body === "object" ? (body as Record<string, unknown>).board : null;
+    const now = Math.floor(Date.now() / 1000);
+    const imported = await importBoardSnapshot(env.DB, userId, snapshot, now);
+    const board = await boardPayloadForUser(env, userId);
+    return json({ ok: true, imported, board });
+  }
+
   const favMatch = path.match(/^\/api\/jobs\/([^/]+)\/favorite$/);
   if (favMatch && request.method === "POST") {
     return handleFavorite(env, userId, favMatch[1]!, request);
@@ -1991,7 +2150,134 @@ export async function handleDashboardApi(
   // ── Admin routes (require role=admin) ────────────────────────────────────
   if (path.startsWith("/api/admin/")) {
     if (session.role !== "admin") return json({ ok: false, error: "forbidden" }, 403);
-    return handleAdminApi(env, request, path);
+    return handleAdminApi(env, request, path, session.userId);
+  }
+
+  // ── Setup wizard ──────────────────────────────────────────────────────────
+
+  if (path === "/api/setup/status" && request.method === "GET") {
+    const completedAt = await getSetupWizardCompletedAt(env.DB, userId);
+    return json({ needsSetup: completedAt === null, completedAt });
+  }
+
+  if (path === "/api/setup/analyze-cv" && request.method === "POST") {
+    const contentType = request.headers.get("content-type") ?? "";
+    if (!contentType.includes("multipart/form-data")) {
+      return json({ ok: false, error: "multipart_required" }, 400);
+    }
+    let formData: FormData;
+    try {
+      formData = await request.formData();
+    } catch {
+      return json({ ok: false, error: "invalid_form_data" }, 400);
+    }
+    const file = formData.get("cv") as File | null;
+    if (!file) return json({ ok: false, error: "cv_file_required" }, 400);
+
+    let arrayBuffer: ArrayBuffer;
+    try {
+      arrayBuffer = await file.arrayBuffer();
+    } catch {
+      return json({ ok: false, error: "file_read_error" }, 400);
+    }
+
+    let cvText: string;
+    let cvHtml: string;
+    try {
+      const extracted = await extractCvFromDocxArrayBuffer(arrayBuffer);
+      cvText = extracted.text;
+      cvHtml = extracted.html;
+    } catch (e) {
+      return json({ ok: false, error: "cv_extract_failed", detail: String(e) }, 422);
+    }
+
+    await setCvExtractionCache(env.DB, userId, {
+      text: cvText,
+      html: cvHtml,
+      uploadedAtUnix: Math.floor(Date.now() / 1000),
+    });
+
+    const openaiKey = env.OPENAI_API_KEY;
+    if (!openaiKey) return json({ ok: false, error: "openai_not_configured" }, 503);
+
+    const { getStoredSetupAnalysisPrompt } = await import("../db/appSettings");
+    const setupAnalysisPrompt = await getStoredSetupAnalysisPrompt(env.DB, userId);
+
+    let recs: import("../setup/setupRecommendations").SetupRecommendations;
+    try {
+      const { analyzeCvForSetup } = await import("../setup/setupRecommendations");
+      recs = await analyzeCvForSetup({ OPENAI_API_KEY: openaiKey }, cvText, setupAnalysisPrompt);
+    } catch (e) {
+      return json({ ok: false, error: "ai_analysis_failed", detail: String(e) }, 502);
+    }
+
+    const { chooseRecommendedCountries } = await import("../setup/recommendedCountries");
+    const { DEFAULT_SEARCH_COUNTRIES } = await import("../config/searchCountries");
+    const recommendedCountries = chooseRecommendedCountries(recs.detectedCountryIso2);
+
+    // Build the full list of countries the wizard grid should display.
+    // Always includes all defaults; if the detected country is not in defaults,
+    // prepend it so the user can see it first.
+    const detectedIso2 = recs.detectedCountryIso2;
+    const inDefaults = detectedIso2 && DEFAULT_SEARCH_COUNTRIES.some((c) => c.iso2 === detectedIso2);
+    const allCountries = inDefaults
+      ? [...DEFAULT_SEARCH_COUNTRIES]
+      : [
+          ...recommendedCountries.filter((c) => !DEFAULT_SEARCH_COUNTRIES.some((d) => d.iso2 === c.iso2)),
+          ...DEFAULT_SEARCH_COUNTRIES,
+        ];
+
+    return json({
+      ok: true,
+      detectedCountryIso2: recs.detectedCountryIso2,
+      detectedCountryName: recs.detectedCountryName,
+      suggestedPositions: recs.suggestedPositions,
+      scoringPolicy: recs.scoringPolicy,
+      draftsInstruction: recs.draftsInstruction,
+      recommendedCountries,
+      allCountries,
+    });
+  }
+
+  if (path === "/api/setup/complete" && request.method === "POST") {
+    let body: {
+      positions?: unknown;
+      countries?: unknown;
+      scoringPolicy?: unknown;
+      draftsInstruction?: unknown;
+      skipped?: unknown;
+    };
+    try {
+      body = (await request.json()) as typeof body;
+    } catch {
+      return json({ ok: false, error: "invalid_json" }, 400);
+    }
+
+    if (!body.skipped) {
+      const positions = Array.isArray(body.positions)
+        ? (body.positions as unknown[]).filter((p): p is string => typeof p === "string").map((p) => p.trim()).filter(Boolean)
+        : [];
+      if (positions.length > 0) {
+        await setSearchRoleTiers(env.DB, userId, normalizeSearchRoleTiers({ tier1: positions, tier2: [] }));
+      }
+
+      if (Array.isArray(body.countries) && body.countries.length > 0) {
+        await setSearchCountries(env.DB, userId, normalizeSearchCountries(body.countries as import("../config/searchCountries").SearchCountry[]));
+      }
+
+      if (typeof body.scoringPolicy === "string" && body.scoringPolicy.trim()) {
+        const validated = validateScoringInstructionForSave(body.scoringPolicy.trim());
+        if (validated) await setStoredOpenAiScoringPolicyInstruction(env.DB, userId, validated);
+      }
+
+      if (typeof body.draftsInstruction === "string" && body.draftsInstruction.trim()) {
+        const validated = validateDraftInstructionForSave(body.draftsInstruction.trim());
+        if (validated) await setStoredOpenAiDraftInstruction(env.DB, userId, validated);
+      }
+    }
+
+    await setSetupWizardCompletedAt(env.DB, userId, Math.floor(Date.now() / 1000));
+    return json({ ok: true });
   }
 
   return null;
@@ -2426,7 +2712,12 @@ async function handleDownload(
 
 // ══ ADMIN API ══════════════════════════════════════════════════════════════════
 
-async function handleAdminApi(env: Env, request: Request, path: string): Promise<Response> {
+async function handleAdminApi(
+  env: Env,
+  request: Request,
+  path: string,
+  adminUserId: string,
+): Promise<Response> {
   const now = Math.floor(Date.now() / 1000);
 
   // ── Users list ────────────────────────────────────────────────────────────
@@ -2500,8 +2791,35 @@ async function handleAdminApi(env: Env, request: Request, path: string): Promise
     }
 
     if (request.method === "DELETE") {
-      await setUserStatus(env.DB, targetId, "disabled", now);
-      return json({ ok: true });
+      if (targetId === adminUserId) {
+        return json({ ok: false, error: "cannot_delete_self" }, 400);
+      }
+      if (targetId === BOOTSTRAP_ADMIN_ID) {
+        return json({ ok: false, error: "cannot_delete_bootstrap_admin" }, 400);
+      }
+
+      const existing = await getUserById(env.DB, targetId);
+      if (!existing) return json({ ok: false, error: "user_not_found" }, 404);
+
+      const jobRows = await env.DB.prepare("SELECT id FROM jobs WHERE user_id = ?")
+        .bind(targetId)
+        .all<{ id: string }>();
+      const jobIds = (jobRows.results ?? [])
+        .map((row) => row.id)
+        .filter((id): id is string => typeof id === "string" && id.length > 0);
+      const r2Cleanup = await deleteJobsByIdsWithR2Cleanup(env.DB, env.DOCS_BUCKET, jobIds, targetId);
+      const coordinatorReset = await resetCoordinatorStateForDeletedUser(env, targetId);
+      const deleted = await deleteUserAndOwnedData(env.DB, targetId);
+
+      return json({
+        ok: true,
+        userId: targetId,
+        userDeleted: deleted.userDeleted,
+        deleted: deleted.deleted,
+        jobsDeleted: r2Cleanup.deletedIds.length,
+        r2Deleted: r2Cleanup.r2Deleted,
+        coordinatorReset,
+      });
     }
   }
 

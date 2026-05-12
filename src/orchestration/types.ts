@@ -98,6 +98,11 @@ export type CoordinatorReportResponse = {
   wakeAt: number | null;
 };
 
+export type CoordinatorResetResponse = {
+  ok: true;
+  status: PipelineStatus;
+};
+
 export type ProviderChunkReport = {
   cycleId: string;
   seq: number;

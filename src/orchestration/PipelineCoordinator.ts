@@ -1167,6 +1167,13 @@ export class PipelineCoordinator extends DurableObject<Env> {
     }
   }
 
+  private async handleResetDeletedUser(): Promise<Response> {
+    const now = Math.floor(Date.now() / 1000);
+    await this.ctx.storage.delete(STATE_KEY);
+    await this.ctx.storage.deleteAlarm();
+    return json({ ok: true, status: newState(now).status });
+  }
+
   private async handleClaim(body: {
     cycleId?: string;
     seq?: number;
@@ -1492,6 +1499,9 @@ export class PipelineCoordinator extends DurableObject<Env> {
       }
       if (request.method === "POST" && url.pathname === "/orchestration-error") {
         return this.handleOrchestrationErrorPost((body ?? {}) as { message?: string; phase?: string });
+      }
+      if (request.method === "POST" && url.pathname === "/reset-deleted-user") {
+        return this.handleResetDeletedUser();
       }
       if (request.method === "POST" && url.pathname === "/start") {
         return this.handleStart((body ?? {}) as { reason?: string });

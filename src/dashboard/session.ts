@@ -1,5 +1,6 @@
 import {
   ensureBootstrapAdmin,
+  getUserById,
   getUserHashByUsername,
   touchLastLogin,
   verifyPassword,
@@ -118,6 +119,7 @@ export async function requireDashboardSession(
   request: Request,
   env: Env,
 ): Promise<SessionClaims | Response> {
+  const secure = new URL(request.url).protocol === "https:";
   const secret = env.REVIEW_TOKEN_SECRET;
   if (!secret) {
     return new Response(JSON.stringify({ ok: false, error: "session_not_configured" }), {
@@ -129,10 +131,23 @@ export async function requireDashboardSession(
   if (!claims) {
     return new Response(JSON.stringify({ ok: false, error: "unauthorized" }), {
       status: 401,
-      headers: { "content-type": "application/json" },
+      headers: {
+        "content-type": "application/json",
+        "set-cookie": clearSessionCookie(secure),
+      },
     });
   }
-  return claims;
+  const user = await getUserById(env.DB, claims.userId);
+  if (!user || user.status !== "active") {
+    return new Response(JSON.stringify({ ok: false, error: "unauthorized" }), {
+      status: 401,
+      headers: {
+        "content-type": "application/json",
+        "set-cookie": clearSessionCookie(secure),
+      },
+    });
+  }
+  return { userId: user.id, role: user.role === "admin" ? "admin" : "user" };
 }
 
 /**

@@ -1723,6 +1723,23 @@ async function deleteJobFavoritesForJobIds(
   }
 }
 
+async function deleteJobBoardItemsForJobIds(
+  db: D1Database,
+  userId: string,
+  ids: string[],
+): Promise<void> {
+  if (ids.length === 0) return;
+  const batchSize = 80;
+  for (let i = 0; i < ids.length; i += batchSize) {
+    const slice = ids.slice(i, i + batchSize);
+    const placeholders = slice.map(() => "?").join(",");
+    await db
+      .prepare(`DELETE FROM job_board_items WHERE user_id = ? AND job_id IN (${placeholders})`)
+      .bind(userId, ...slice)
+      .run();
+  }
+}
+
 /** Deletes D1 rows only. Prefer `deleteJobsByIdsWithR2Cleanup` when CV/cover docs may exist in R2. */
 export async function deleteJobsByIds(
   db: D1Database,
@@ -1731,6 +1748,7 @@ export async function deleteJobsByIds(
 ): Promise<void> {
   if (ids.length === 0) return;
   await deleteJobFavoritesForJobIds(db, userId, ids);
+  await deleteJobBoardItemsForJobIds(db, userId, ids);
   const batchSize = 80;
   for (let i = 0; i < ids.length; i += batchSize) {
     const slice = ids.slice(i, i + batchSize);
@@ -1757,6 +1775,7 @@ export async function deleteJobsByIdsWithR2Cleanup(
   if (uniq.length === 0) return { deletedIds: [], r2Deleted: 0 };
   if (userId) {
     await deleteJobFavoritesForJobIds(db, userId, uniq);
+    await deleteJobBoardItemsForJobIds(db, userId, uniq);
   }
   const batchSize = 80;
   const deletedIds: string[] = [];

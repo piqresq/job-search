@@ -1,0 +1,25 @@
+---
+description: Do not use Browserbase or other automated browser/web checks for verification (unless user explicitly requests)
+alwaysApply: true
+---
+
+# No automated browser / web checks (default)
+
+Agents must **not** use **Browserbase** (`user-browserbase`), **Cursor IDE Browser** MCP, **Browse** plugins, or any other **browser automation** or **live web smoke tests** to verify deployments, dashboards, or production URLs.
+
+This applies to **routine post-change verification**, **QA passes**, and **“check that the page loads”** style tasks.
+
+## What to do instead
+
+- **`npm run typecheck`** and **`npm run deploy`** when the change ships.
+- **Code review** of `public/**`, `src/dashboard/**`, and related assets.
+- **D1 / Observability / logs** when debugging runtime behavior (per other project rules).
+- **Ask the user** to sanity-check the UI in their browser if a visual confirmation is needed.
+
+## Exception
+
+Only if the **user explicitly asks** in that conversation for browser-based verification (e.g. “open the site in browser X and screenshot Y”), an agent may use the tooling the user named. Otherwise, **do not** spin up browser sessions or automated web checks.
+
+## Secrets
+
+Never paste dashboard passwords, API keys, or automation session secrets into chat or committed files.

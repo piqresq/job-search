@@ -5,6 +5,7 @@ import type {
   CoordinatorDedupeResponse,
   CoordinatorHeartbeatResponse,
   CoordinatorReportResponse,
+  CoordinatorResetResponse,
   CoordinatorStartResponse,
   CoordinatorStatusResponse,
   PipelineQueueMessage,
@@ -64,6 +65,14 @@ export async function clearExhaustPause(env: Env, userId: string): Promise<{
   cycleId: string | null;
 }> {
   return postJson(env, userId, "/clear-exhaust-pause", {});
+}
+
+/** Clears one user's Durable Object coordinator state after admin hard-delete. */
+export async function resetCoordinatorStateForDeletedUser(
+  env: Env,
+  userId: string,
+): Promise<CoordinatorResetResponse> {
+  return postJson<CoordinatorResetResponse>(env, userId, "/reset-deleted-user", {});
 }
 
 export async function claimQueueMessage(

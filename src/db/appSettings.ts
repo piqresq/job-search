@@ -39,6 +39,7 @@ const PROVIDER_REQUEST_CAPS_KEY = "provider_request_caps";
 const OPENAI_SCORING_INSTRUCTION_KEY = "openai_scoring_instruction";
 const OPENAI_SCORING_POLICY_INSTRUCTION_KEY = "openai_scoring_policy_instruction";
 const OPENAI_DRAFT_INSTRUCTION_KEY = "openai_draft_instruction";
+const SETUP_ANALYSIS_PROMPT_KEY = "setup_analysis_prompt";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Internal helpers — all user-scoped
@@ -543,6 +544,45 @@ export async function setStoredOpenAiDraftInstruction(
   value: string,
 ): Promise<void> {
   await setSettingValue(db, userId, OPENAI_DRAFT_INSTRUCTION_KEY, value);
+}
+
+export async function getStoredSetupAnalysisPrompt(
+  db: D1Database,
+  userId: string,
+): Promise<string | null> {
+  return getSettingValue(db, userId, SETUP_ANALYSIS_PROMPT_KEY);
+}
+
+export async function setStoredSetupAnalysisPrompt(
+  db: D1Database,
+  userId: string,
+  value: string,
+): Promise<void> {
+  await setSettingValue(db, userId, SETUP_ANALYSIS_PROMPT_KEY, value);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Setup wizard completion marker
+// ─────────────────────────────────────────────────────────────────────────────
+
+const SETUP_WIZARD_COMPLETED_AT_KEY = "setup_wizard_completed_at";
+
+export async function getSetupWizardCompletedAt(
+  db: D1Database,
+  userId: string,
+): Promise<number | null> {
+  const raw = await getSettingValue(db, userId, SETUP_WIZARD_COMPLETED_AT_KEY);
+  if (!raw?.trim()) return null;
+  const n = parseInt(raw.trim(), 10);
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
+
+export async function setSetupWizardCompletedAt(
+  db: D1Database,
+  userId: string,
+  ts: number,
+): Promise<void> {
+  await setSettingValue(db, userId, SETUP_WIZARD_COMPLETED_AT_KEY, String(Math.floor(ts)));
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

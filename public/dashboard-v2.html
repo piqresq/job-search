@@ -28,7 +28,9 @@
   --sh-pop:0 8px 24px -8px rgba(11,11,15,0.12),0 2px 6px -2px rgba(11,11,15,0.08);
   --sh-drawer:0 24px 48px -16px rgba(11,11,15,0.18),0 4px 12px -4px rgba(11,11,15,0.08);
   --ease-out:cubic-bezier(0.2,0.8,0.2,1);--ease-spring:cubic-bezier(0.16,1,0.3,1);
+  --motion-ease-enter:cubic-bezier(0.22,1,0.36,1);--motion-ease-move:cubic-bezier(0.25,1,0.5,1);
   --dur-fast:120ms;--dur-base:180ms;--dur-slow:240ms;
+  --motion-skel-enter:420ms;--motion-skel-sweep:1800ms;--motion-skel-stagger:70ms;
   --f-display:'Instrument Serif',Georgia,serif;
   --f-ui:'Switzer',-apple-system,BlinkMacSystemFont,sans-serif;
   --f-mono:'JetBrains Mono','SF Mono',Menlo,monospace;
@@ -44,7 +46,6 @@ ul,ol{margin:0;padding:0;list-style:none}
 img,svg{display:block}
 a{color:inherit;text-decoration:none}
 .sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
-@media(prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.01ms!important;transition-duration:.01ms!important}}
 
 /* LOGIN */
 .login-screen{display:flex;align-items:center;justify-content:center;min-height:100dvh;background:var(--canvas);background-image:radial-gradient(circle at 1px 1px,rgba(11,11,15,.06) 1px,transparent 0);background-size:16px 16px}
@@ -79,11 +80,13 @@ a{color:inherit;text-decoration:none}
 .nav-count{margin-left:auto;font-family:var(--f-mono);font-size:12px;font-weight:500;color:var(--ink-muted);font-variant-numeric:tabular-nums}
 .sidebar-footer{padding:16px 20px 0;border-top:1px solid var(--hairline);display:flex;flex-direction:column;gap:12px}
 .pipeline-pill{display:flex;align-items:center;gap:8px;font-size:12px;font-weight:500;color:var(--ink-muted)}
-.pipeline-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0;background:var(--neutral-600)}
-.pipeline-dot.running{background:var(--success-600);animation:pulse-dot 2s ease-in-out infinite}
-.pipeline-dot.paused,.pipeline-dot.sleeping{background:var(--warning-600)}
-.pipeline-dot.error{background:var(--danger-600)}
-@keyframes pulse-dot{0%,100%{box-shadow:0 0 0 0 rgba(21,128,61,.4)}50%{box-shadow:0 0 0 5px rgba(21,128,61,0)}}
+.pipeline-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0;background:var(--neutral-600);animation:pipeline-dot-idle 4.8s ease-in-out infinite}
+.pipeline-dot.running{background:var(--success-600);animation:pipeline-dot-running 3.8s ease-out infinite}
+.pipeline-dot.paused,.pipeline-dot.sleeping{background:var(--warning-600);animation:pipeline-dot-idle 4.8s ease-in-out infinite}
+.pipeline-dot.error{background:var(--danger-600);animation:pipeline-dot-alert 3.2s ease-in-out infinite}
+@keyframes pipeline-dot-running{0%{box-shadow:0 0 0 0 rgba(21,128,61,.34);opacity:1}42%{box-shadow:0 0 0 6px rgba(21,128,61,0);opacity:1}100%{box-shadow:0 0 0 0 rgba(21,128,61,0);opacity:1}}
+@keyframes pipeline-dot-idle{0%,18%,100%{opacity:1;box-shadow:0 0 0 0 rgba(180,83,9,0)}46%{opacity:.42;box-shadow:0 0 0 4px rgba(180,83,9,.08)}70%{opacity:1;box-shadow:0 0 0 0 rgba(180,83,9,0)}}
+@keyframes pipeline-dot-alert{0%,100%{opacity:1;box-shadow:0 0 0 0 rgba(185,28,28,.2)}44%{opacity:.36;box-shadow:0 0 0 5px rgba(185,28,28,0)}72%{opacity:1;box-shadow:0 0 0 0 rgba(185,28,28,0)}}
 .btn-signout{display:flex;align-items:center;gap:8px;font-size:12px;font-weight:500;color:var(--ink-muted);padding:4px 0;cursor:pointer;background:none;border:none;transition:color var(--dur-base) var(--ease-out)}
 .btn-signout:hover{color:var(--danger-600)}
 
@@ -102,7 +105,7 @@ a{color:inherit;text-decoration:none}
 .content{flex:1;overflow-y:auto;overflow-x:hidden;background-image:radial-gradient(circle at 1px 1px,rgba(11,11,15,.06) 1px,transparent 0);background-size:16px 16px}
 
 /* BUTTONS */
-.btn{display:inline-flex;align-items:center;gap:6px;padding:6px 12px;border-radius:var(--r-sm);font-size:13px;font-weight:500;font-family:var(--f-ui);cursor:pointer;transition:all var(--dur-base) var(--ease-out);border:1px solid transparent;white-space:nowrap;min-height:32px;text-decoration:none;line-height:1}
+.btn{display:inline-flex;align-items:center;gap:6px;padding:6px 12px;border-radius:var(--r-sm);font-size:13px;font-weight:500;font-family:var(--f-ui);cursor:pointer;transition:background-color var(--dur-base) var(--ease-out),border-color var(--dur-base) var(--ease-out),color var(--dur-base) var(--ease-out),opacity var(--dur-base) var(--ease-out),transform var(--dur-fast) var(--ease-out);border:1px solid transparent;white-space:nowrap;min-height:32px;text-decoration:none;line-height:1}
 .btn-primary{background:var(--brand-600);color:#fff;border-color:var(--brand-600)}
 .btn-primary:hover{background:var(--brand-500);border-color:var(--brand-500)}
 .btn-primary:active{background:var(--brand-700)}
@@ -110,17 +113,26 @@ a{color:inherit;text-decoration:none}
 .btn-secondary:hover{border-color:var(--hairline-strong);background:var(--surface-sunken)}
 .btn-ghost{background:transparent;color:var(--ink-body)}
 .btn-ghost:hover{background:var(--surface-sunken)}
+.btn-destructive{background:var(--surface);color:var(--danger-600);border-color:var(--hairline)}
+.btn-destructive:hover{background:var(--danger-50);border-color:#FECACA;color:var(--danger-800)}
+.btn-muted-delete{background:var(--surface);color:var(--ink-muted);border-color:var(--hairline)}
+.btn-muted-delete:hover{background:var(--surface-sunken);border-color:var(--hairline-strong);color:var(--ink-body)}
 .btn-icon{padding:5px;min-width:30px;justify-content:center}
 .btn:disabled{opacity:.45;cursor:not-allowed;pointer-events:none}
 
 /* TOOLBAR */
-.jobs-toolbar{padding:10px 32px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;background:var(--surface);border-bottom:1px solid var(--hairline);flex-shrink:0}
-.jobs-search{display:flex;align-items:center;gap:8px;padding:0 10px;height:32px;border:1px solid var(--hairline);border-radius:var(--r-sm);background:var(--surface);flex:1;max-width:240px;transition:border-color var(--dur-base) var(--ease-out)}
+.jobs-toolbar{padding:10px 32px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;background:var(--surface);border-bottom:1px solid var(--hairline);flex-shrink:0}
+.jobs-search{display:flex;align-items:center;gap:8px;padding:0 12px;height:32px;border:1px solid var(--hairline);border-radius:var(--r-sm);background:var(--surface);flex:0 1 320px;min-width:240px;max-width:320px;transition:border-color var(--dur-base) var(--ease-out)}
 .jobs-search:focus-within{border-color:var(--brand-600)}
 .jobs-search input{border:none;outline:none;background:transparent;font-size:13px;color:var(--ink-strong);width:100%}
 .jobs-search input::placeholder{color:var(--ink-faint)}
-.filter-group{display:flex;gap:6px;flex-wrap:wrap}
-.chip{display:inline-flex;align-items:center;gap:5px;height:28px;padding:0 10px;border-radius:var(--r-sm);border:1px solid var(--hairline);background:var(--surface);font-size:13px;font-weight:500;color:var(--ink-body);cursor:pointer;transition:all var(--dur-base) var(--ease-out);user-select:none;white-space:nowrap}
+.filter-group{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.popover-wrap{display:flex;position:relative}
+.chip{display:inline-flex;align-items:center;justify-content:center;gap:6px;height:32px;min-width:84px;padding:0 12px;border-radius:var(--r-sm);border:1px solid var(--hairline);background:var(--surface);font-size:13px;font-weight:500;color:var(--ink-body);cursor:pointer;transition:background-color var(--dur-base) var(--ease-out),border-color var(--dur-base) var(--ease-out),color var(--dur-base) var(--ease-out);user-select:none;white-space:nowrap}
+#ch-rel{min-width:104px}
+#ch-ct{min-width:98px}
+#ch-ctr{min-width:96px}
+#ch-date,#ch-sort{min-width:86px}
 .chip:hover{border-color:var(--hairline-strong);color:var(--ink-strong)}
 .chip.active{background:var(--brand-50);border-color:var(--brand-200);color:var(--brand-800)}
 .afilters-row{display:flex;align-items:center;gap:6px;padding:6px 32px;background:var(--surface);border-bottom:1px solid var(--hairline);flex-wrap:wrap;flex-shrink:0;min-height:0}
@@ -129,7 +141,6 @@ a{color:inherit;text-decoration:none}
 .afc:hover{background:var(--brand-200)}
 
 /* POPOVER */
-.popover-wrap{position:relative}
 .popover{position:absolute;z-index:110;top:calc(100% + 6px);left:0;background:var(--surface);border:1px solid var(--hairline);border-radius:var(--r-md);box-shadow:var(--sh-pop);padding:8px;min-width:190px;opacity:0;transform:translateY(-4px);pointer-events:none;transition:opacity var(--dur-base) var(--ease-out),transform var(--dur-base) var(--ease-out)}
 .popover.open{opacity:1;transform:translateY(0);pointer-events:auto}
 .pop-item{display:flex;align-items:center;gap:10px;padding:6px 8px;border-radius:var(--r-sm);font-size:13px;color:var(--ink-body);cursor:pointer;transition:background var(--dur-fast) var(--ease-out);user-select:none}
@@ -155,10 +166,13 @@ a{color:inherit;text-decoration:none}
 .jdot{margin:0 5px;color:var(--hairline-strong);font-family:var(--f-mono);flex-shrink:0}
 .jvendor{margin-top:3px;display:flex;align-items:center;gap:6px}
 .jrow-r{display:flex;align-items:center;gap:10px;flex-shrink:0}
+.jrow-r .add-to-board{height:32px;min-width:104px;padding:0 14px;justify-content:center}
+.row-delete-btn{width:32px;height:32px;padding:0;justify-content:center;opacity:0;pointer-events:none;transition:opacity var(--dur-base) var(--ease-out),background-color var(--dur-base) var(--ease-out),border-color var(--dur-base) var(--ease-out),color var(--dur-base) var(--ease-out)}
+.job-row:hover .row-delete-btn,.job-row:focus-within .row-delete-btn{opacity:1;pointer-events:auto}
 
 /* SCORE BLOCK */
 .score{display:inline-flex;align-items:center;justify-content:center;font-family:var(--f-mono);font-weight:700;border-radius:var(--r-sm);border:1px solid;flex-shrink:0;font-variant-numeric:tabular-nums lining-nums}
-.score-inbox{width:46px;height:30px;font-size:14px}
+.score-inbox{width:48px;height:32px;font-size:14px}
 .score-card{width:40px;height:26px;font-size:13px}
 .score-drawer{width:64px;height:44px;font-size:22px;border-radius:8px}
 .score.high{background:#DCFCE7;color:#14532D;border-color:#BBF7D0}
@@ -174,13 +188,15 @@ a{color:inherit;text-decoration:none}
 .vc-other{background:var(--neutral-50);color:var(--neutral-600)}
 
 /* SKELETON / EMPTY */
-.skel-row{display:flex;align-items:center;gap:14px;padding:0 32px;height:66px;border-bottom:1px solid var(--hairline);background:var(--surface)}
-.skel{background:var(--surface-sunken);border-radius:var(--r-xs);animation:shimmer 3.5s ease-in-out infinite}
+.skel-row{display:flex;align-items:center;gap:14px;padding:0 32px;height:66px;border-bottom:1px solid var(--hairline);background:var(--surface);opacity:0;transform:translateY(8px);animation:skel-row-in var(--motion-skel-enter) var(--motion-ease-enter) forwards;animation-delay:calc(var(--skel-i,0) * var(--motion-skel-stagger))}
+.skel{position:relative;overflow:hidden;background:var(--surface-sunken);border:1px solid rgba(232,230,225,.82);border-radius:var(--r-xs)}
+.skel::after{content:'';position:absolute;inset:-20% auto -20% -24px;width:30px;background:rgba(255,255,255,.78);opacity:.86;transform:translateX(-40px) skewX(-14deg);animation:skel-sweep var(--motion-skel-sweep) var(--motion-ease-move) infinite;animation-delay:calc(var(--skel-i,0) * var(--motion-skel-stagger))}
 .skel-logo{width:32px;height:32px;border-radius:var(--r-sm);flex-shrink:0}
 .skel-lines{flex:1;display:flex;flex-direction:column;gap:6px}
 .skel-l1{height:14px;width:55%}.skel-l2{height:12px;width:35%}
 .skel-score{width:44px;height:28px;border-radius:var(--r-sm);flex-shrink:0}
-@keyframes shimmer{0%,100%{opacity:1}50%{opacity:.45}}
+@keyframes skel-row-in{to{opacity:1;transform:translateY(0)}}
+@keyframes skel-sweep{0%{transform:translateX(-40px) skewX(-14deg);opacity:0}18%{opacity:.86}62%,100%{transform:translateX(360px) skewX(-14deg);opacity:0}}
 .jobs-empty{display:flex;flex-direction:column;align-items:center;justify-content:center;padding:80px 32px;text-align:center}
 .je-hero{font-family:var(--f-display);font-size:80px;color:var(--ink-faint);line-height:1;margin-bottom:16px}
 .je-msg{font-size:14px;font-weight:500;color:var(--ink-muted)}
@@ -195,6 +211,8 @@ a{color:inherit;text-decoration:none}
 .bbtn:hover{background:rgba(255,255,255,.12)}
 .bbtn.primary{background:var(--brand-600);border-color:var(--brand-600)}
 .bbtn.primary:hover{background:var(--brand-500)}
+.bbtn.danger{color:#FECACA;border-color:rgba(254,202,202,.55)}
+.bbtn.danger:hover{background:rgba(185,28,28,.24);border-color:#FECACA;color:#fff}
 
 /* KANBAN */
 .board-canvas{display:flex;gap:12px;padding:24px 32px 32px;overflow-x:auto;align-items:flex-start;flex:1;background-image:radial-gradient(circle at 1px 1px,rgba(11,11,15,.06) 1px,transparent 0);background-size:16px 16px}
@@ -219,6 +237,8 @@ a{color:inherit;text-decoration:none}
 .kcard{background:var(--surface);border:1px solid var(--hairline);border-radius:var(--r-md);padding:14px;cursor:grab;transition:border-color var(--dur-base) var(--ease-out),box-shadow var(--dur-base) var(--ease-out),transform var(--dur-base) var(--ease-out)}
 .kcard:hover{border-color:var(--hairline-strong);box-shadow:var(--sh-soft);transform:translateY(-1px)}
 .kcard.drag-src{opacity:.5;transform:scale(.98)}
+.kcard.drag-over-above{box-shadow:0 -3px 0 0 var(--brand-600)!important}
+.kcard.drag-over-below{box-shadow:0 3px 0 0 var(--brand-600)!important}
 .kcard-top{display:flex;align-items:flex-start;gap:10px;margin-bottom:8px}
 .kcard-logo{width:24px;height:24px;flex-shrink:0;border:1px solid var(--hairline);border-radius:var(--r-xs);background:var(--surface-sunken);overflow:hidden;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:700;color:var(--ink-muted)}
 .kcard-logo img{width:100%;height:100%;object-fit:contain}
@@ -229,9 +249,10 @@ a{color:inherit;text-decoration:none}
 .kcard-mono{font-family:var(--f-mono)}
 .kcard-actions{margin-top:10px;display:flex;gap:6px;flex-wrap:wrap}
 .gen-pill{display:inline-flex;align-items:center;gap:6px;height:26px;padding:0 10px;border-radius:var(--r-sm);background:var(--warning-50);border:1px solid #FDE68A;font-size:12px;font-weight:500;color:var(--warning-800)}
-.spin{animation:spin 2.2s linear infinite;display:inline-flex;align-items:center}
+.spin{animation:spin 4.6s linear infinite;display:inline-flex;align-items:center}
 @keyframes spin{to{transform:rotate(360deg)}}
 .rej-cd{font-family:var(--f-mono);font-size:11px;font-weight:500;color:var(--warning-800);margin-bottom:6px}
+.kcard-danger{margin-top:10px;width:100%;justify-content:center}
 
 /* DRAWER */
 .drw-backdrop{position:fixed;inset:0;background:var(--scrim);z-index:200;opacity:0;pointer-events:none;transition:opacity var(--dur-slow) var(--ease-out)}
@@ -416,9 +437,117 @@ a{color:inherit;text-decoration:none}
 .toast.error{background:var(--danger-800)}
 .toast.warning{background:var(--warning-800)}
 @keyframes slide-up{from{transform:translateY(8px);opacity:0}to{transform:translateY(0);opacity:1}}
+
+/* SETUP WIZARD */
+.wiz-overlay{position:fixed;inset:0;z-index:1000;background:var(--canvas);background-image:radial-gradient(circle at 1px 1px,rgba(11,11,15,.095) 1px,transparent 0);background-size:16px 16px;display:flex;align-items:center;justify-content:center;opacity:1;transition:opacity .25s;overflow:hidden}
+.wiz-overlay.hidden{opacity:0;pointer-events:none}
+.wiz-card{position:relative;z-index:1;width:100%;max-width:560px;padding:48px 56px;display:flex;flex-direction:column;gap:0;background:var(--surface);border:1px solid var(--hairline);border-radius:var(--r-lg);box-shadow:var(--sh-drawer)}
+.wiz-progress{display:flex;gap:6px;margin-bottom:36px;justify-content:center}
+.wiz-dot{width:6px;height:6px;border-radius:50%;background:var(--hairline);transition:background .2s,transform .2s}
+.wiz-dot.active{background:var(--brand-600);transform:scale(1.3)}
+.wiz-dot.done{background:var(--ink-faint)}
+.wiz-step{display:none;flex-direction:column;gap:0}
+.wiz-step.active{display:flex}
+.wiz-eyebrow{font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--brand-600);margin-bottom:12px}
+.wiz-title{font-family:'Instrument Serif',serif;font-size:32px;line-height:1.15;color:var(--ink-strong);margin-bottom:10px}
+.wiz-sub{font-size:14px;color:var(--ink-muted);line-height:1.6;margin-bottom:32px}
+.wiz-upload-btn{display:inline-flex;align-items:center;gap:8px;padding:13px 24px;background:var(--brand-600);color:#fff;border:none;border-radius:var(--r-sm);font-size:14px;font-weight:600;cursor:pointer;transition:opacity .15s;align-self:flex-start}
+.wiz-upload-btn:hover{opacity:.88}
+.wiz-upload-btn:disabled{opacity:.45;cursor:default}
+.wiz-skip{margin-top:16px;font-size:12px;color:var(--ink-faint);background:none;border:none;cursor:pointer;padding:0;text-decoration:underline;align-self:flex-start}
+.wiz-skip:hover{color:var(--ink-muted)}
+.wiz-status{font-size:13px;color:var(--ink-muted);margin-top:12px;min-height:20px;line-height:1.5}
+.wiz-status.error{color:var(--danger)}
+.wiz-detected{font-size:12px;color:var(--ink-faint);margin-top:-20px;margin-bottom:24px}
+.wiz-textarea{width:100%;min-height:180px;box-sizing:border-box;font-family:'JetBrains Mono',monospace;font-size:12.5px;line-height:1.7;color:var(--ink-strong);border:1px solid var(--hairline);border-radius:var(--r-sm);padding:12px 14px;resize:vertical;background:#fff;margin-bottom:32px;transition:border-color .15s}
+.wiz-textarea:focus{outline:none;border-color:var(--brand-600)}
+.wiz-countries-grid{display:grid;grid-template-columns:1fr 1fr;gap:4px 16px;margin-bottom:32px;max-height:280px;overflow-y:auto}
+.wiz-countries-grid label{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--ink-strong);padding:3px 0;cursor:pointer}
+.wiz-countries-grid input[type=checkbox]{accent-color:var(--brand-600)}
+.wiz-actions{display:flex;gap:10px;margin-top:8px;align-items:center}
+.wiz-btn-back{padding:11px 22px;border:1px solid var(--hairline);background:#fff;border-radius:var(--r-sm);font-size:14px;color:var(--ink-muted);cursor:pointer;transition:border-color .15s,color .15s}
+.wiz-btn-back:hover{border-color:var(--ink-faint);color:var(--ink-strong)}
+.wiz-btn-next{flex:1;padding:13px 24px;background:var(--brand-600);color:#fff;border:none;border-radius:var(--r-sm);font-size:14px;font-weight:600;cursor:pointer;transition:opacity .15s}
+.wiz-btn-next:hover{opacity:.88}
+.wiz-btn-next:disabled{opacity:.38;cursor:default}
+.wiz-done-icon{font-size:40px;margin-bottom:20px}
+.wiz-done-note{font-size:13px;color:var(--ink-muted);margin-top:8px;margin-bottom:32px;line-height:1.6}
+
+/* SIDEBAR play/pause */
+.sidebar-pipeline-row{display:flex;align-items:center;gap:0;padding:0}
+.sidebar-pipeline-status{display:flex;align-items:center;gap:7px;flex:1;min-width:0}
+.sidebar-pipeline-status .status-dot{width:7px;height:7px;border-radius:50%;flex-shrink:0}
+.sidebar-pipeline-status .status-label{font-size:12px;color:var(--ink-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sidebar-pp-btn{width:28px;height:28px;border-radius:50%;border:none;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:background .15s,opacity .15s}
+.sidebar-pp-btn.play{background:var(--brand-600);color:#fff}
+.sidebar-pp-btn.pause{background:var(--surface-sunken);border:1px solid var(--hairline);color:var(--ink-muted)}
+.sidebar-pp-btn:hover{opacity:.8}
+.sidebar-pp-btn svg{width:13px;height:13px}
 </style>
 </head>
 <body>
+
+<!-- ══ SETUP WIZARD ═══════════════════════════════════════════════════════════ -->
+<div id="setup-wizard" class="wiz-overlay hidden" aria-modal="true" aria-hidden="true" role="dialog" aria-label="Setup wizard">
+  <div class="wiz-card">
+    <div class="wiz-progress" id="wiz-progress">
+      <div class="wiz-dot" data-dot="1"></div>
+      <div class="wiz-dot" data-dot="2"></div>
+      <div class="wiz-dot" data-dot="3"></div>
+      <div class="wiz-dot" data-dot="4"></div>
+    </div>
+
+    <!-- Step 1: Welcome + CV upload -->
+    <div class="wiz-step" data-step="1">
+      <div class="wiz-eyebrow">Getting started</div>
+      <div class="wiz-title">Let's set up your job pipeline</div>
+      <div class="wiz-sub">Upload your CV and we'll automatically suggest job search queries, scoring criteria, and target countries based on your background.</div>
+      <button class="wiz-upload-btn" id="wiz-upload-btn">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" x2="12" y1="3" y2="15"/></svg>
+        Choose CV (.docx)
+      </button>
+      <input type="file" id="wiz-file-input" accept=".docx" style="display:none"/>
+      <div class="wiz-status" id="wiz-step1-status"></div>
+      <button class="wiz-skip" id="wiz-skip-btn">Skip for now — I'll configure manually</button>
+    </div>
+
+    <!-- Step 2: Edit suggested positions -->
+    <div class="wiz-step" data-step="2">
+      <div class="wiz-eyebrow">Step 2 of 3</div>
+      <div class="wiz-title">Suggested job queries</div>
+      <div class="wiz-sub">These queries were generated from your CV. Edit them — one per line — then continue.</div>
+      <textarea class="wiz-textarea" id="wiz-positions-ta" placeholder="Customer Success Manager SaaS&#10;Technical Account Manager B2B&#10;Implementation Consultant" spellcheck="false"></textarea>
+      <div class="wiz-actions">
+        <button class="wiz-btn-back" id="wiz-back-2">Back</button>
+        <button class="wiz-btn-next" id="wiz-next-2">Continue</button>
+      </div>
+    </div>
+
+    <!-- Step 3: Edit countries -->
+    <div class="wiz-step" data-step="3">
+      <div class="wiz-eyebrow">Step 3 of 3</div>
+      <div class="wiz-title">Search countries</div>
+      <div class="wiz-sub">Pre-selected based on your detected location. Adjust as needed.</div>
+      <div class="wiz-detected" id="wiz-detected-loc"></div>
+      <div class="wiz-countries-grid" id="wiz-countries-grid"></div>
+      <div class="wiz-actions">
+        <button class="wiz-btn-back" id="wiz-back-3">Back</button>
+        <button class="wiz-btn-next" id="wiz-next-3">Finish setup</button>
+      </div>
+    </div>
+
+    <!-- Step 4: Done -->
+    <div class="wiz-step" data-step="4">
+      <div class="wiz-done-icon">&#10003;</div>
+      <div class="wiz-eyebrow">All set</div>
+      <div class="wiz-title">Your pipeline is ready</div>
+      <div class="wiz-done-note">Job queries, countries, and AI scoring criteria have been saved. Use the play button in the sidebar to start fetching jobs when you're ready.</div>
+      <div class="wiz-actions">
+        <button class="wiz-btn-next" id="wiz-open-dashboard">Open dashboard</button>
+      </div>
+    </div>
+  </div>
+</div>
 
 <!-- ══ LOGIN ══════════════════════════════════════════════════════════════════ -->
 <div id="login-screen" style="display:none">
@@ -487,9 +616,15 @@ a{color:inherit;text-decoration:none}
       </button>
     </nav>
     <div class="sidebar-footer">
-      <div class="pipeline-pill">
-        <div class="pipeline-dot" id="pipeline-dot" aria-hidden="true"></div>
-        <span id="pipeline-label">Pipeline idle</span>
+      <div class="sidebar-pipeline-row">
+        <div class="sidebar-pipeline-status pipeline-pill">
+          <div class="pipeline-dot status-dot" id="pipeline-dot" aria-hidden="true"></div>
+          <span class="status-label" id="pipeline-label">Pipeline idle</span>
+        </div>
+        <button class="sidebar-pp-btn play" id="sidebar-pp-btn" title="Start pipeline" aria-label="Start pipeline">
+          <!-- icon set by JS -->
+          <svg viewBox="0 0 24 24" fill="currentColor" stroke="none" aria-hidden="true"><polygon points="5,3 19,12 5,21"/></svg>
+        </button>
       </div>
       <div style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--ink-faint);padding:2px 0">
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M20 21a8 8 0 1 0-16 0"/></svg>
@@ -699,6 +834,17 @@ a{color:inherit;text-decoration:none}
             </div>
           </div>
 
+          <!-- Setup analysis instruction -->
+          <div class="stg-section" style="margin-bottom:40px">
+            <div class="stg-section-title">Setup wizard analysis instruction</div>
+            <div class="stg-section-desc">System prompt used when the setup wizard analyzes an uploaded CV and proposes job queries, target countries, scoring policy, and draft instruction. Save here for the admin account; use the template sync below to clone it for future users.</div>
+            <textarea id="admin-setup-analysis-ta" rows="12" class="stg-textarea" placeholder="Loading…" style="font-family:var(--f-mono);font-size:12px"></textarea>
+            <div style="display:flex;gap:8px;margin-top:8px">
+              <button class="btn btn-primary" id="admin-setup-analysis-save-btn">Save</button>
+              <button class="btn btn-secondary" id="admin-setup-analysis-reset-btn">Reset to default</button>
+            </div>
+          </div>
+
           <!-- New-user template -->
           <div class="stg-section" style="margin-bottom:40px">
             <div style="display:flex;align-items:center;gap:12px;margin-bottom:4px">
@@ -735,6 +881,7 @@ a{color:inherit;text-decoration:none}
 <div class="bulk-bar" id="bulk-bar" aria-live="polite">
   <span class="bulk-count" id="bulk-label">0 selected</span>
   <button class="bbtn primary" id="bulk-add">Add to Board</button>
+  <button class="bbtn danger" id="bulk-delete">Delete</button>
   <button class="bbtn" id="bulk-clear">Clear selection</button>
 </div>
 
@@ -762,6 +909,7 @@ const IC = {
   chevR: `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg>`,
   search: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>`,
   sort: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m3 16 4 4 4-4"/><path d="M7 20V4"/><path d="m21 8-4-4-4 4"/><path d="M17 4v16"/></svg>`,
+  trash: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="m19 6-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/></svg>`,
 };
 
 /* ── STATE ───────────────────────────────────────────────────────────────── */
@@ -770,9 +918,10 @@ const S = {
   facets: { countries: [], roleQueries: [] },
   prefs: defaultPrefs(),
   sel: new Set(),
-  board: loadBoard(),
+  board: emptyBoard(),
   drawerJob: null,
   listTab: 'active',
+  listRequestSeq: 0,
 };
 
 function defaultPrefs() {
@@ -786,16 +935,84 @@ function defaultPrefs() {
   };
 }
 
-/* ── LOCAL STORAGE (board state until backend migration) ─────────────────── */
-function loadBoard() {
-  try { const r = localStorage.getItem('jb-board-v3'); if (r) return JSON.parse(r); } catch {}
+/* ── BOARD STATE ───────────────────────────────────────────────────────────
+ * Board state is persisted in D1 via /api/board. localStorage is read only
+ * once to migrate users from the older browser-only board storage.
+ */
+const LEGACY_BOARD_KEY = 'jb-board-v3';
+function emptyBoard() {
   return { new: [], applying: [], applied: [], interview: [], rejected: [] };
 }
-function saveBoard() {
-  try { localStorage.setItem('jb-board-v3', JSON.stringify(S.board)); } catch {}
+function boardKey(userId) {
+  return userId ? `jb-board-v3:${userId}` : null;
+}
+function loadLegacyBoardForUser(userId) {
+  const key = boardKey(userId);
+  if (!key) return null;
+  try { const r = localStorage.getItem(key); if (r) return JSON.parse(r); } catch {}
+  return null;
+}
+function clearLegacyBoardForUser(userId) {
+  const key = boardKey(userId);
+  if (!key) return;
+  try { localStorage.removeItem(key); localStorage.removeItem(LEGACY_BOARD_KEY); } catch {}
+}
+function normalizeBoardShape(board) {
+  const out = emptyBoard();
+  if (!board || typeof board !== 'object') return out;
+  for (const col of Object.keys(out)) out[col] = Array.isArray(board[col]) ? board[col] : [];
+  return out;
+}
+function isBoardEmpty(board) {
+  return Object.values(board || {}).every(arr => !Array.isArray(arr) || arr.length === 0);
+}
+async function loadBoard() {
+  try {
+    const res = await api('/api/board');
+    let board = normalizeBoardShape(res.board);
+    const legacy = loadLegacyBoardForUser(currentUser?.userId);
+    if (isBoardEmpty(board) && legacy && !isBoardEmpty(legacy)) {
+      const imported = await api('/api/board/import', { method:'POST', body: JSON.stringify({ board: legacy }) });
+      board = normalizeBoardShape(imported.board);
+      clearLegacyBoardForUser(currentUser?.userId);
+      toast('Board restored from this browser', 'success');
+    }
+    S.board = board;
+  } catch(e) {
+    S.board = emptyBoard();
+    toast('Failed to load board: ' + e.message, 'error');
+  }
 }
 function boardIds() {
   return new Set(Object.values(S.board).flat().map(j => j.id));
+}
+
+function removeDeletedIdsFromState(ids) {
+  const gone = new Set(ids);
+  if (gone.size === 0) return;
+  S.jobs = S.jobs.filter(j => !gone.has(j.id));
+  for (const id of gone) S.sel.delete(id);
+  for (const col of Object.keys(S.board)) {
+    S.board[col] = (S.board[col] || []).filter(j => !gone.has(j.id));
+  }
+  if (S.drawerJob && gone.has(S.drawerJob.id)) S.drawerJob = null;
+}
+
+async function hardDeleteJobs(ids, opts = {}) {
+  const uniqueIds = [...new Set((ids || []).filter(Boolean))];
+  if (!uniqueIds.length) return null;
+  const res = await api('/api/jobs/bulk-delete', {
+    method: 'POST',
+    body: JSON.stringify({ ids: uniqueIds }),
+  });
+  const deletedIds = Array.isArray(res.affectedLoadedIds) ? res.affectedLoadedIds : uniqueIds;
+  removeDeletedIdsFromState(deletedIds);
+  updateBulkBar();
+  renderBoard();
+  if (opts.closeDrawer) closeDrawer();
+  await loadJobs(true);
+  toast(`${res.deleted ?? deletedIds.length} job${(res.deleted ?? deletedIds.length) === 1 ? '' : 's'} deleted`, 'success');
+  return res;
 }
 
 /* ── API ─────────────────────────────────────────────────────────────────── */
@@ -840,6 +1057,8 @@ async function handleLogin(e) {
 async function doLogout() {
   try { await api('/api/auth/logout', { method: 'POST' }); } catch {}
   currentUser = null;
+  S.board = emptyBoard();
+  S.jobs = []; S.sel.clear(); S.drawerJob = null;
   showLogin();
 }
 
@@ -856,14 +1075,17 @@ function applyRoleGating() {
   const userEl = document.getElementById('sidebar-username');
   if (userEl) userEl.textContent = currentUser?.username || '';
 }
-function showApp() {
+async function showApp() {
   document.getElementById('login-screen').style.display = 'none';
   document.getElementById('app').style.display = '';
   applyRoleGating();
+  await loadBoard();
   switchView('jobs');
   loadPipelineStatus();
   setInterval(loadPipelineStatus, 30000);
   purgeExpiredRejected();
+  // Show setup wizard if this is a first-time user
+  await checkSetupWizard();
 }
 function switchView(name) {
   const isFiltered = name === 'filtered';
@@ -1027,7 +1249,6 @@ function renderOpsSwitches(settings) {
   const el = document.getElementById('ops-switches-rows');
   if (!el) return;
   const switches = [
-    { id: 'ops-tog-extraction',    key: 'apiExtractionEnabled',          label: 'API Extraction',                   sub: 'Fetch and score jobs from enabled vendors', val: settings.apiExtractionEnabled },
     { id: 'ops-tog-verbose',       key: 'verboseLoggingEnabled',         label: 'Verbose logging',                  sub: 'Extra detail in the pipeline log',          val: settings.verboseLoggingEnabled },
     { id: 'ops-tog-params',        key: 'dashboardShowJobPipelineParams', label: 'Show pipeline params in job detail', sub: '',                                        val: settings.dashboardShowJobPipelineParams },
     { id: 'ops-tog-api-raw',       key: 'dashboardShowJobApiRaw',        label: 'Show received API data in job detail', sub: '',                                      val: settings.dashboardShowJobApiRaw },
@@ -1049,7 +1270,7 @@ function renderOpsSwitches(settings) {
   }
   el.querySelectorAll('.ops-sw-input').forEach(inp => {
     inp.addEventListener('change', async e => {
-      try { await patchSettings({ [e.target.dataset.key]: e.target.checked }); if (e.target.dataset.key === 'apiExtractionEnabled') loadPipelineStatus(); }
+      try { await patchSettings({ [e.target.dataset.key]: e.target.checked }); }
       catch { e.target.checked = !e.target.checked; }
     });
   });
@@ -1207,14 +1428,16 @@ function renderSettings(d) {
     : 'No CV uploaded';
 
   inner.innerHTML = `
+    <!-- Re-run setup -->
+    <div style="padding:0 0 20px">
+      <button class="btn btn-ghost" id="settings-rerun-wizard" style="font-size:13px;color:var(--ink-muted);padding:4px 0">
+        ↩ Re-run setup wizard
+      </button>
+    </div>
     <!-- Pipeline -->
     <div class="stg-sec">
       <div class="stg-sec-title">Pipeline</div>
       ${d.pipelineHardKillActive ? `<div class="stg-row" style="background:var(--danger-50)"><div class="stg-label"><div class="stg-label-main" style="color:var(--danger-700)">Hard kill active</div><div class="stg-label-sub">PIPELINE_FETCH_ENABLED=false in wrangler.toml overrides the extraction toggle</div></div></div>` : ''}
-      <div class="stg-row">
-        <div class="stg-label"><div class="stg-label-main">API Extraction</div><div class="stg-label-sub">Fetch and score jobs from enabled vendors</div></div>
-        <label class="toggle-wrap"><input type="checkbox" class="toggle-input" id="tog-extraction" ${d.apiExtractionEnabled ? 'checked' : ''}/><span class="toggle-track"></span></label>
-      </div>
       <div class="stg-row">
         <div class="stg-label"><div class="stg-label-main">Verbose logging</div><div class="stg-label-sub">Extra detail in the Operations log</div></div>
         <label class="toggle-wrap"><input type="checkbox" class="toggle-input" id="tog-verbose" ${d.verboseLoggingEnabled ? 'checked' : ''}/><span class="toggle-track"></span></label>
@@ -1314,6 +1537,22 @@ function renderSettings(d) {
         <div style="font-size:11px;font-weight:600;color:var(--ink-muted);letter-spacing:.06em;text-transform:uppercase;margin-bottom:2px">Revision history</div>
         <div id="ai-rev-rows" style="font-size:12px;color:var(--ink-faint)">Loading…</div>
       </div>
+    </div>
+    <!-- Setup wizard analysis prompt -->
+    <div class="stg-sec">
+      <div class="stg-sec-title">Setup wizard — CV analysis prompt</div>
+      <div style="padding:0 18px 8px;font-size:12px;color:var(--ink-muted);line-height:1.4">
+        System prompt sent to the AI when analyzing an uploaded CV during the setup wizard. It instructs the model how to detect home country, suggest job search queries, and personalize scoring &amp; drafts instructions.
+        Changes take effect on the next wizard run. Resetting reverts to the built-in default.
+      </div>
+      <div class="stg-text-block">
+        <div class="stg-sublbl">Analysis system prompt</div>
+        <textarea class="stg-textarea" id="ai-setup-analysis" rows="8" placeholder="Loading…"></textarea>
+      </div>
+      <div class="stg-save-row">
+        <button class="btn btn-secondary" id="reset-setup-analysis-btn">Reset to default</button>
+        <button class="btn btn-primary" id="save-setup-analysis-btn">Save prompt</button>
+      </div>
     </div>`;
 
   bindSettingsEvents();
@@ -1321,10 +1560,7 @@ function renderSettings(d) {
 }
 
 function bindSettingsEvents() {
-  document.getElementById('tog-extraction')?.addEventListener('change', async e => {
-    await patchSettings({ apiExtractionEnabled: e.target.checked });
-    loadPipelineStatus();
-  });
+  document.getElementById('settings-rerun-wizard')?.addEventListener('click', () => openWizard());
   document.getElementById('tog-verbose')?.addEventListener('change', async e => {
     await patchSettings({ verboseLoggingEnabled: e.target.checked });
   });
@@ -1414,8 +1650,10 @@ async function loadAiPrompts() {
     ]);
     const scoringEl = document.getElementById('ai-scoring');
     const draftsEl = document.getElementById('ai-drafts');
+    const setupEl = document.getElementById('ai-setup-analysis');
     if (scoringEl) scoringEl.value = current.scoring || '';
     if (draftsEl) draftsEl.value = current.drafts || '';
+    if (setupEl) setupEl.value = current.setupAnalysis || '';
     renderAiRevHistory(history.revisions || []);
     bindAiPromptEvents();
   } catch(e) { /* silently skip if view not visible */ }
@@ -1487,6 +1725,27 @@ function bindAiPromptEvents() {
       loadAiPrompts();
     } catch(e) { toast('Failed: ' + e.message, 'error'); }
   });
+
+  document.getElementById('save-setup-analysis-btn')?.addEventListener('click', async () => {
+    const val = document.getElementById('ai-setup-analysis')?.value || '';
+    if (!val.trim()) { toast('Prompt cannot be empty', 'warning'); return; }
+    try {
+      await api('/api/ai-instructions', { method: 'PATCH', body: JSON.stringify({ setupAnalysis: val }) });
+      toast('Setup analysis prompt saved', 'success');
+    } catch(e) { toast('Failed: ' + e.message, 'error'); }
+  });
+
+  document.getElementById('reset-setup-analysis-btn')?.addEventListener('click', async () => {
+    if (!confirm('Reset to built-in default prompt?')) return;
+    try {
+      const r = await api('/api/ai-instructions', { method: 'PATCH', body: JSON.stringify({ resetSetupAnalysis: true }) });
+      if (r.setupAnalysis) {
+        const el = document.getElementById('ai-setup-analysis');
+        if (el) el.value = r.setupAnalysis;
+      }
+      toast('Setup analysis prompt reset to default', 'success');
+    } catch(e) { toast('Failed: ' + e.message, 'error'); }
+  });
 }
 
 /* ── HELPERS ─────────────────────────────────────────────────────────────── */
@@ -1531,8 +1790,10 @@ function navCount(view, n) {
 
 /* ── JOB LIST ────────────────────────────────────────────────────────────── */
 async function loadJobs(reset = false) {
-  if (S.loading) return;
+  if (S.loading && !reset) return;
   if (!reset && !S.hasMore) return;
+  const requestedTab = S.listTab;
+  const requestSeq = ++S.listRequestSeq;
   S.loading = true;
   if (reset) {
     S.jobs = []; S.cursor = null; S.hasMore = true;
@@ -1540,8 +1801,9 @@ async function loadJobs(reset = false) {
     document.getElementById('jobs-sub').textContent = 'Loading…';
   }
   try {
-    const body = { tab: S.listTab, prefs: S.prefs, limit: 25, ...(S.cursor ? { cursor: S.cursor } : {}) };
+    const body = { tab: requestedTab, prefs: S.prefs, limit: 25, ...(S.cursor ? { cursor: S.cursor } : {}) };
     const data = await api('/api/jobs/query', { method: 'POST', body: JSON.stringify(body) });
+    if (requestSeq !== S.listRequestSeq || requestedTab !== S.listTab) return;
     const bids = boardIds();
     const fresh = (data.jobs || []).filter(j => !bids.has(j.id));
     S.jobs = reset ? fresh : [...S.jobs, ...fresh];
@@ -1556,14 +1818,20 @@ async function loadJobs(reset = false) {
       if (reset) list.innerHTML = S.jobs.map(renderRow).join('');
       else list.insertAdjacentHTML('beforeend', fresh.map(renderRow).join(''));
     }
-    const subSuffix = S.listTab === 'filtered' ? 'filtered by hard rules' : 'sorted by relevance';
+    const subSuffix = requestedTab === 'filtered' ? 'filtered by hard rules' : 'sorted by relevance';
     document.getElementById('jobs-sub').textContent = `${S.total} job${S.total === 1 ? '' : 's'} · ${subSuffix}`;
-    if (S.listTab === 'filtered') navCount('filtered', S.total);
+    if (requestedTab === 'filtered') navCount('filtered', S.total);
     else navCount('jobs', S.total);
     renderActiveFilters();
     setupScrollObs();
-  } catch (e) { toast('Failed to load jobs: ' + e.message, 'error'); }
-  finally { S.loading = false; }
+  } catch (e) {
+    if (requestSeq === S.listRequestSeq && requestedTab === S.listTab) {
+      toast('Failed to load jobs: ' + e.message, 'error');
+    }
+  }
+  finally {
+    if (requestSeq === S.listRequestSeq) S.loading = false;
+  }
 }
 
 function renderRow(job) {
@@ -1591,12 +1859,13 @@ function renderRow(job) {
     <div class="jrow-r">
       <span class="score score-inbox ${sc}" aria-label="Score ${esc(String(job.fitScore||0))}, ${sc}">${scoreLbl(job.fitScore)}</span>
       <button class="btn btn-primary add-to-board" data-id="${esc(job.id)}" aria-label="Add to board">Add to board</button>
+      <button class="btn btn-muted-delete btn-icon row-delete-btn" data-delete-job="${esc(job.id)}" aria-label="Delete job">${IC.trash}</button>
     </div>
   </div>`;
 }
 
 function skels(n) {
-  return Array.from({length:n},()=>`<div class="skel-row"><div class="skel skel-logo"></div><div class="skel-lines"><div class="skel skel-l1"></div><div class="skel skel-l2"></div></div><div class="skel skel-score"></div></div>`).join('');
+  return Array.from({length:n},(_,i)=>`<div class="skel-row" style="--skel-i:${i}"><div class="skel skel-logo"></div><div class="skel-lines"><div class="skel skel-l1"></div><div class="skel skel-l2"></div></div><div class="skel skel-score"></div></div>`).join('');
 }
 
 let scrollObs = null;
@@ -1739,6 +2008,11 @@ function handleRowClick(e, id) {
   if (e.target.classList.contains('add-to-board') || e.target.closest('.add-to-board')) {
     e.stopPropagation(); addToBoard(job); return;
   }
+  if (e.target.closest('[data-delete-job]')) {
+    e.stopPropagation();
+    hardDeleteJobs([id]).catch(err => toast('Delete failed: ' + err.message, 'error'));
+    return;
+  }
   if (e.target.classList.contains('jcheck')) {
     S.sel.has(id) ? S.sel.delete(id) : S.sel.add(id);
     const row = document.querySelector(`.job-row[data-id="${id}"]`);
@@ -1807,6 +2081,9 @@ function renderKCard(job, colId) {
     const rem = (job.kanban_at + 3*86400) - Math.floor(Date.now()/1000);
     if (rem > 0) { const d=Math.floor(rem/86400),h=Math.floor((rem%86400)/3600); rejCd=`<div class="rej-cd">Auto-clears in ${d}d ${h}h</div>`; }
   }
+  const deleteAction = colId === 'rejected'
+    ? `<button class="btn btn-muted-delete kcard-danger" data-board-delete="${esc(job.id)}" aria-label="Delete job">${IC.trash} Delete job</button>`
+    : '';
   return `<div class="kcard" draggable="true" data-id="${esc(job.id)}" data-col="${esc(colId)}" role="article" aria-label="${esc(job.title)} at ${esc(job.company)}">
     <div class="kcard-top">
       <div class="kcard-logo"><img src="${srcImg}" alt="${esc(vLbl)}" loading="lazy" style="width:100%;height:100%;object-fit:contain;padding:3px"/></div>
@@ -1818,12 +2095,31 @@ function renderKCard(job, colId) {
     <div class="kcard-meta">
       ${esc(job.countryName||'')}${job.employmentType?` · ${esc(job.employmentType)}`:''}${date?` · <span class="kcard-mono">${date}</span>`:''}${job.salaryEur&&job.salaryEur!=='N/A'?` · <span class="kcard-mono">${esc(job.salaryEur)}</span>`:''}
     </div>
-    ${rejCd}${actions}
+    ${rejCd}${actions}${deleteAction}
   </div>`;
 }
 
 /* ── DRAG AND DROP ───────────────────────────────────────────────────────── */
 let dragId = null, dragFrom = null;
+// Tracks which card is highlighted and whether the insertion is above it
+let _dndOverCard = null, _dndBefore = false;
+
+function dndClearIndicator() {
+  if (_dndOverCard) {
+    _dndOverCard.classList.remove('drag-over-above', 'drag-over-below');
+    _dndOverCard = null;
+  }
+  document.querySelectorAll('.drop-zone.dragover').forEach(z => z.classList.remove('dragover'));
+}
+
+function dndMarkCard(card, before) {
+  if (_dndOverCard === card && _dndBefore === before) return; // no change
+  dndClearIndicator();
+  _dndOverCard = card;
+  _dndBefore = before;
+  card.classList.add(before ? 'drag-over-above' : 'drag-over-below');
+}
+
 function initDnD() {
   document.querySelectorAll('.kcard').forEach(card => {
     card.addEventListener('dragstart', e => {
@@ -1832,29 +2128,92 @@ function initDnD() {
     });
     card.addEventListener('dragend', () => {
       card.classList.remove('drag-src');
-      document.querySelectorAll('.drop-zone.dragover').forEach(z=>z.classList.remove('dragover'));
+      dndClearIndicator();
       dragId = null; dragFrom = null;
     });
-    card.addEventListener('click', () => {
+    card.addEventListener('click', e => {
+      const boardDeleteBtn = e.target.closest('[data-board-delete]');
+      if (boardDeleteBtn) {
+        e.stopPropagation();
+        hardDeleteJobs([boardDeleteBtn.dataset.boardDelete]).catch(err => toast('Delete failed: ' + err.message, 'error'));
+        return;
+      }
       const job = boardFind(card.dataset.id); if (job) openDrawer(job);
     });
+    // Hovering over a card during drag — show insert position indicator
+    card.addEventListener('dragover', e => {
+      if (!dragId || card.dataset.id === dragId) return; // skip the card being dragged
+      e.preventDefault(); e.stopPropagation();
+      e.dataTransfer.dropEffect = 'move';
+      const rect = card.getBoundingClientRect();
+      const before = e.clientY < rect.top + rect.height / 2;
+      dndMarkCard(card, before);
+    });
+    // Drop onto a specific card position
+    card.addEventListener('drop', async e => {
+      e.preventDefault(); e.stopPropagation();
+      if (!dragId) return;
+      const targetId = card.dataset.id;
+      const targetCol = card.dataset.col;
+      const insertBefore = _dndBefore;
+      dndClearIndicator();
+      if (dragId === targetId) return;
+      if (dragFrom === targetCol) {
+        await reorderInColumn(targetCol, dragId, targetId, insertBefore);
+      } else {
+        await moveToCol(dragId, targetCol);
+      }
+    });
   });
+
   document.querySelectorAll('.col-cards').forEach(col => {
+    const zone = col.querySelector('.drop-zone');
     col.addEventListener('dragover', e => {
-      e.preventDefault(); e.dataTransfer.dropEffect = 'move';
-      col.querySelector('.drop-zone')?.classList.add('dragover');
+      if (!dragId) return;
+      if (e.target.closest('.kcard')) return; // handled by card listener
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+      dndClearIndicator();
+      zone?.classList.add('dragover');
     });
     col.addEventListener('dragleave', e => {
-      if (!col.contains(e.relatedTarget)) col.querySelector('.drop-zone')?.classList.remove('dragover');
+      if (!col.contains(e.relatedTarget)) dndClearIndicator();
     });
     col.addEventListener('drop', async e => {
       e.preventDefault();
-      col.querySelector('.drop-zone')?.classList.remove('dragover');
+      dndClearIndicator();
+      if (!dragId || e.target.closest('.kcard')) return;
       const target = col.dataset.col;
-      if (!dragId || !target || target === dragFrom) return;
+      if (!target || target === dragFrom) return;
       await moveToCol(dragId, target);
     });
   });
+}
+
+async function reorderInColumn(colId, movedId, targetId, insertBefore) {
+  const col = S.board[colId];
+  if (!col) return;
+  const moved = col.find(j => j.id === movedId);
+  if (!moved) return;
+  const withoutMoved = col.filter(j => j.id !== movedId);
+  const targetIdx = withoutMoved.findIndex(j => j.id === targetId);
+  if (targetIdx === -1) return;
+  const newOrder = [...withoutMoved];
+  newOrder.splice(insertBefore ? targetIdx : targetIdx + 1, 0, moved);
+  S.board[colId] = newOrder;
+  renderBoard();
+  try {
+    const res = await api('/api/board/reorder', {
+      method: 'POST',
+      body: JSON.stringify({ columnId: colId, jobIds: newOrder.map(j => j.id) }),
+    });
+    S.board = normalizeBoardShape(res.board);
+    renderBoard();
+  } catch (err) {
+    toast('Reorder failed: ' + err.message, 'error');
+    await loadBoard();
+    renderBoard();
+  }
 }
 function boardFind(id) {
   for (const arr of Object.values(S.board)) { const j = arr.find(x=>x.id===id); if (j) return j; }
@@ -1865,18 +2224,25 @@ function boardColOf(id) {
   return null;
 }
 async function moveToCol(id, col) {
-  let job = null;
-  for (const [c, arr] of Object.entries(S.board)) { const i = arr.findIndex(x=>x.id===id); if (i!==-1) { job=arr.splice(i,1)[0]; break; } }
+  const before = S.board;
+  let job = boardFind(id);
   if (!job) return;
-  job.kanban_at = Math.floor(Date.now()/1000); job.generating = false;
-  S.board[col].push(job); saveBoard(); renderBoard();
+  try {
+    const moved = await api(`/api/board/items/${encodeURIComponent(id)}`, { method:'PATCH', body: JSON.stringify({ columnId: col }) });
+    S.board = normalizeBoardShape(moved.board);
+  } catch(e) {
+    S.board = before; renderBoard(); toast('Move failed: ' + e.message, 'error'); return;
+  }
+  job = boardFind(id);
+  if (!job) return;
+  renderBoard();
   if (col === 'applying') {
-    job.generating = true; saveBoard(); renderBoard();
+    job.generating = true; renderBoard();
     try {
       const d = await api(`/api/jobs/${id}/generate`, { method:'POST' });
       job.generating = false; job.hasDocx = true; job.downloadCv = d.downloadCv; job.downloadCover = d.downloadCover;
-      saveBoard(); renderBoard(); toast('CV and cover letter generated!', 'success');
-    } catch(e) { job.generating = false; saveBoard(); renderBoard(); toast('Generation failed: ' + e.message, 'error'); }
+      renderBoard(); toast('CV and cover letter generated!', 'success');
+    } catch(e) { job.generating = false; renderBoard(); toast('Generation failed: ' + e.message, 'error'); }
   }
   if (col === 'rejected') scheduleRejectClean(job);
 }
@@ -1888,26 +2254,29 @@ function scheduleRejectClean(job) {
 function purgeExpiredRejected() {
   const now = Math.floor(Date.now()/1000);
   S.board.rejected = S.board.rejected.filter(j => !j.kanban_at || (j.kanban_at + 3*86400) > now);
-  saveBoard();
+  renderBoard();
 }
-function removeFromBoard(id) {
-  for (const col of Object.keys(S.board)) S.board[col] = S.board[col].filter(j=>j.id!==id);
-  saveBoard(); if (document.getElementById('view-board').classList.contains('active')) renderBoard();
+async function removeFromBoard(id) {
+  try {
+    const res = await api(`/api/board/items/${encodeURIComponent(id)}`, { method:'DELETE' });
+    S.board = normalizeBoardShape(res.board);
+  } catch(e) {
+    toast('Board remove failed: ' + e.message, 'error');
+  }
+  if (document.getElementById('view-board').classList.contains('active')) renderBoard();
 }
-function addToBoard(job) {
+async function addToBoard(job) {
   if (boardFind(job.id)) { toast('Already on the board', 'warning'); return; }
-  const bj = { id:job.id, title:job.title, company:job.company, jobUrl:job.jobUrl, applyUrl:job.applyUrl,
-    countryName:job.countryName, employmentType:job.employmentType, fitScore:job.fitScore,
-    recommendation:job.recommendation, positionSummary:job.positionSummary, positives:job.positives,
-    negatives:job.negatives, salaryEur:job.salaryEur, logo:job.logo, hasDocx:job.hasDocx,
-    downloadCv:job.downloadCv, downloadCover:job.downloadCover,
-    ingestedAtUnix:job.ingestedAtUnix, postedAtUnix:job.postedAtUnix,
-    kanban_at: Math.floor(Date.now()/1000), generating:false };
-  S.board.new.push(bj); saveBoard();
-  S.jobs = S.jobs.filter(j => j.id !== job.id);
-  document.querySelector(`.job-row[data-id="${job.id}"]`)?.remove();
-  navCount('board', Object.values(S.board).reduce((a,arr)=>a+arr.length,0));
-  toast(`"${job.title}" added to Board → New`, 'success');
+  try {
+    const res = await api('/api/board/items', { method:'POST', body: JSON.stringify({ jobId: job.id, columnId: 'new' }) });
+    S.board = normalizeBoardShape(res.board);
+    S.jobs = S.jobs.filter(j => j.id !== job.id);
+    document.querySelector(`.job-row[data-id="${job.id}"]`)?.remove();
+    navCount('board', Object.values(S.board).reduce((a,arr)=>a+arr.length,0));
+    toast(`"${job.title}" added to Board → New`, 'success');
+  } catch(e) {
+    toast('Add to board failed: ' + e.message, 'error');
+  }
 }
 
 /* ── DRAWER ──────────────────────────────────────────────────────────────── */
@@ -2001,29 +2370,72 @@ function fillDrawer(job) {
            <button class="btn btn-primary" id="drw-add-btn">Add to Board</button>
          </div>`
     }`;
+  document.getElementById('drw-footer').insertAdjacentHTML(
+    'beforeend',
+    `<div class="drw-footer-row"><button class="btn btn-destructive" id="drw-delete-btn">${IC.trash} Delete job</button></div>`,
+  );
 
   document.getElementById('drw-move-btn')?.addEventListener('click', async () => {
     const sel = document.getElementById('drw-move-sel')?.value;
     if (sel) { await moveToCol(job.id, sel); closeDrawer(); }
   });
   document.getElementById('drw-rm-btn')?.addEventListener('click', () => {
-    removeFromBoard(job.id); closeDrawer(); toast('Removed from board', 'success');
+    removeFromBoard(job.id).then(() => { closeDrawer(); toast('Removed from board', 'success'); });
   });
   document.getElementById('drw-add-btn')?.addEventListener('click', () => {
-    addToBoard(job); closeDrawer();
+    addToBoard(job).then(() => closeDrawer());
+  });
+  document.getElementById('drw-delete-btn')?.addEventListener('click', () => {
+    hardDeleteJobs([job.id], { closeDrawer: true }).catch(e => toast('Delete failed: ' + e.message, 'error'));
   });
 }
 
-/* ── PIPELINE STATUS ─────────────────────────────────────────────────────── */
+/* ── PIPELINE STATUS + play/pause ───────────────────────────────────────── */
+let _extractionEnabled = false;
+
 async function loadPipelineStatus() {
   try {
-    const d = await api('/api/pipeline-status');
+    const [d, settings] = await Promise.all([
+      api('/api/pipeline-status'),
+      api('/api/settings').catch(() => null),
+    ]);
     const st = (d.status && ['running','sleeping','paused','idle'].includes(d.status)) ? d.status : 'idle';
-    const dot = document.getElementById('pipeline-dot'); if (dot) dot.className = 'pipeline-dot ' + st;
+    const dot = document.getElementById('pipeline-dot');
+    if (dot) dot.className = 'pipeline-dot status-dot ' + st;
     const lbl = document.getElementById('pipeline-label');
-    const labels = { running:'Pipeline running', sleeping:'Pipeline sleeping', paused:'Pipeline paused', idle:'Pipeline idle' };
-    if (lbl) lbl.textContent = labels[st] || 'Pipeline idle';
+    const labels = { running:'Running', sleeping:'Sleeping', paused:'Paused', idle:'Idle' };
+    if (lbl) lbl.textContent = labels[st] || 'Idle';
+
+    _extractionEnabled = !!(settings?.apiExtractionEnabled);
+    const ppBtn = document.getElementById('sidebar-pp-btn');
+    if (ppBtn) {
+      if (_extractionEnabled) {
+        ppBtn.className = 'sidebar-pp-btn pause';
+        ppBtn.title = 'Pause pipeline';
+        ppBtn.setAttribute('aria-label', 'Pause pipeline');
+        ppBtn.innerHTML = `<svg viewBox="0 0 24 24" fill="currentColor" stroke="none" aria-hidden="true"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>`;
+      } else {
+        ppBtn.className = 'sidebar-pp-btn play';
+        ppBtn.title = 'Start pipeline';
+        ppBtn.setAttribute('aria-label', 'Start pipeline');
+        ppBtn.innerHTML = `<svg viewBox="0 0 24 24" fill="currentColor" stroke="none" aria-hidden="true"><polygon points="5,3 19,12 5,21"/></svg>`;
+      }
+    }
   } catch {}
+}
+
+async function toggleExtraction() {
+  const btn = document.getElementById('sidebar-pp-btn');
+  if (btn) btn.disabled = true;
+  try {
+    await patchSettings({ apiExtractionEnabled: !_extractionEnabled });
+    await loadPipelineStatus();
+    toast(_extractionEnabled ? 'Pipeline paused' : 'Pipeline started', 'success');
+  } catch(e) {
+    toast('Failed: ' + e.message, 'error');
+  } finally {
+    if (btn) btn.disabled = false;
+  }
 }
 
 /* ── TOAST ───────────────────────────────────────────────────────────────── */
@@ -2032,7 +2444,7 @@ function toast(msg, type='info') {
   const el = document.createElement('div');
   el.className = `toast${type==='success'?' success':type==='error'?' error':type==='warning'?' warning':''}`;
   el.textContent = msg; c.appendChild(el);
-  setTimeout(() => { el.style.transition='all .2s'; el.style.opacity='0'; el.style.transform='translateY(4px)'; setTimeout(()=>el.remove(),200); }, 4000);
+  setTimeout(() => { el.style.transition='opacity .2s var(--ease-out), transform .2s var(--ease-out)'; el.style.opacity='0'; el.style.transform='translateY(4px)'; setTimeout(()=>el.remove(),200); }, 4000);
 }
 
 /* ── ADMIN ───────────────────────────────────────────────────────────────── */
@@ -2040,7 +2452,7 @@ let _adminUserCache = {};
 
 async function loadAdmin() {
   if (currentUser?.role !== 'admin') return;
-  await Promise.all([loadAdminUsers(), loadAdminPipelines(), loadAdminContract(), loadAdminTemplate()]);
+  await Promise.all([loadAdminUsers(), loadAdminPipelines(), loadAdminContract(), loadAdminSetupAnalysis(), loadAdminTemplate()]);
 }
 
 async function loadAdminUsers() {
@@ -2060,6 +2472,7 @@ async function loadAdminUsers() {
         <td style="text-align:right;white-space:nowrap">
           <button class="btn btn-ghost" style="font-size:12px;padding:2px 8px" onclick="openEditUser('${esc(u.id)}')">Edit</button>
           ${u.status === 'active' ? `<button class="btn btn-ghost" style="font-size:12px;padding:2px 8px;color:var(--danger-600)" onclick="disableUser('${esc(u.id)}')">Disable</button>` : `<button class="btn btn-ghost" style="font-size:12px;padding:2px 8px;color:var(--success-600)" onclick="enableUser('${esc(u.id)}')">Enable</button>`}
+          <button class="btn btn-ghost" style="font-size:12px;padding:2px 8px;color:var(--danger-600)" onclick="openDeleteUser('${esc(u.id)}')">Delete</button>
         </td>
       </tr>`).join('');
     el.innerHTML = `<table class="admin-table"><thead><tr><th>Username</th><th>Role</th><th>Status</th><th>Last login</th><th>Caps</th><th></th></tr></thead><tbody>${rows}</tbody></table>`;
@@ -2104,6 +2517,14 @@ async function loadAdminContract() {
     const hint = document.getElementById('admin-contract-hint');
     if (hint) { hint.textContent = isDefault ? 'Currently using in-code default' : 'Custom contract stored in D1'; hint.style.display = ''; }
   } catch(e) { toast('Failed to load contract: ' + e.message, 'error'); }
+}
+
+async function loadAdminSetupAnalysis() {
+  try {
+    const current = await api('/api/ai-instructions');
+    const ta = document.getElementById('admin-setup-analysis-ta');
+    if (ta) ta.value = current.setupAnalysis || '';
+  } catch(e) { toast('Failed to load setup analysis instruction: ' + e.message, 'error'); }
 }
 
 async function loadAdminTemplate() {
@@ -2247,7 +2668,241 @@ async function enableUser(id) {
   } catch(e) { toast('Failed: ' + e.message, 'error'); }
 }
 
+function openDeleteUser(userId) {
+  const u = _adminUserCache[userId];
+  if (!u) { toast('User not found in cache — refresh the page', 'error'); return; }
+  const isSelf = currentUser?.userId === u.id;
+  openModal(`
+    <div style="font-size:16px;font-weight:600;color:var(--danger-600);margin-bottom:4px">Delete user permanently</div>
+    <div style="font-family:var(--f-mono);font-size:13px;color:var(--ink-muted);margin-bottom:16px">${esc(u.username)}</div>
+    <div style="font-size:13px;color:var(--ink-body);line-height:1.45;margin-bottom:12px">
+      This hard-deletes the user, their jobs, Applied/Reject/Favorites state, settings, logs, prompt and role revisions, provider cursors, pipeline state, and statistics from D1.
+      Generated CV/cover documents in R2 are also removed best-effort.
+    </div>
+    <div style="font-size:12px;color:var(--ink-muted);line-height:1.45;margin-bottom:12px">
+      The kanban board in Dashboard v2 is currently stored in that user's browser localStorage, so it cannot be erased from this admin session.
+    </div>
+    ${isSelf ? `<div style="color:var(--danger-600);font-size:13px;margin-bottom:12px">You cannot delete the account you are currently using.</div>` : ''}
+    <div class="field">
+      <label for="du-confirm">Type <span style="font-family:var(--f-mono)">${esc(u.username)}</span> to confirm</label>
+      <input type="text" id="du-confirm" autocomplete="off" ${isSelf ? 'disabled' : ''}/>
+    </div>
+    <div id="du-err" style="display:none;color:var(--danger-600);font-size:13px;margin-bottom:12px"></div>
+    <div style="display:flex;gap:8px;margin-top:16px">
+      <button class="btn btn-ghost" id="du-submit-btn" style="color:var(--danger-600)" ${isSelf ? 'disabled' : ''}>Delete permanently</button>
+      <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+    </div>
+  `);
+  document.getElementById('du-submit-btn')?.addEventListener('click', async () => {
+    const btn = document.getElementById('du-submit-btn');
+    const errEl = document.getElementById('du-err');
+    const confirmText = document.getElementById('du-confirm')?.value.trim() || '';
+    errEl.style.display = 'none';
+    if (confirmText !== u.username) {
+      errEl.textContent = 'Username confirmation does not match.';
+      errEl.style.display = '';
+      return;
+    }
+    btn.disabled = true; btn.textContent = 'Deleting…';
+    try {
+      const result = await api(`/api/admin/users/${encodeURIComponent(u.id)}`, { method: 'DELETE' });
+      closeModal();
+      toast(`User "${u.username}" deleted (${result.jobsDeleted ?? 0} jobs, ${result.r2Deleted ?? 0} docs)`, 'success');
+      await Promise.all([loadAdminUsers(), loadAdminPipelines()]);
+    } catch(e) {
+      errEl.textContent = e.message; errEl.style.display = '';
+      btn.disabled = false; btn.textContent = 'Delete permanently';
+    }
+  });
+}
+
 /* ── INIT ────────────────────────────────────────────────────────────────── */
+/* ── SETUP WIZARD ────────────────────────────────────────────────────────── */
+const WIZ = {
+  step: 1,
+  recs: null,          // analysis results from /api/setup/analyze-cv
+  countries: [],       // all available countries from recs.recommendedCountries
+  selectedCountries: [],
+};
+
+function wizSetStep(n) {
+  WIZ.step = n;
+  document.querySelectorAll('.wiz-step').forEach(el => {
+    el.classList.toggle('active', parseInt(el.dataset.step) === n);
+  });
+  document.querySelectorAll('.wiz-dot').forEach(el => {
+    const d = parseInt(el.dataset.dot);
+    el.className = 'wiz-dot' + (d === n ? ' active' : d < n ? ' done' : '');
+  });
+}
+
+function openWizard() {
+  const ov = document.getElementById('setup-wizard');
+  ov.classList.remove('hidden');
+  ov.removeAttribute('aria-hidden');
+  wizSetStep(1);
+  document.getElementById('wiz-step1-status').textContent = '';
+  document.getElementById('wiz-step1-status').className = 'wiz-status';
+  const uploadBtn = document.getElementById('wiz-upload-btn');
+  if (uploadBtn) {
+    uploadBtn.disabled = false;
+    uploadBtn.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" x2="12" y1="3" y2="15"/></svg> Choose CV (.docx)`;
+  }
+  // Reset stale wizard state from previous run
+  WIZ.recs = null; WIZ.countries = []; WIZ.selectedCountries = [];
+}
+
+function closeWizard() {
+  const ov = document.getElementById('setup-wizard');
+  ov.classList.add('hidden');
+  ov.setAttribute('aria-hidden', 'true');
+}
+
+async function checkSetupWizard() {
+  try {
+    const { needsSetup } = await api('/api/setup/status');
+    if (needsSetup) openWizard();
+  } catch {}
+}
+
+async function wizAnalyzeCv(file) {
+  const statusEl = document.getElementById('wiz-step1-status');
+  const uploadBtn = document.getElementById('wiz-upload-btn');
+  const skipBtn = document.getElementById('wiz-skip-btn');
+  statusEl.className = 'wiz-status';
+  statusEl.textContent = 'Reading your CV…';
+  uploadBtn.disabled = true;
+  skipBtn.disabled = true;
+
+  const fd = new FormData();
+  fd.append('cv', file);
+
+  // After 2 s the upload is done and we're waiting on the AI — update the status text.
+  const progressTimer = setTimeout(() => {
+    if (statusEl.className === 'wiz-status') statusEl.textContent = 'Asking AI for recommendations… (may take up to 30 s)';
+  }, 2000);
+
+  let res;
+  try {
+    const raw = await fetch('/api/setup/analyze-cv', { method: 'POST', body: fd });
+    res = await raw.json();
+  } catch(e) {
+    clearTimeout(progressTimer);
+    statusEl.className = 'wiz-status error';
+    statusEl.textContent = 'Upload failed: ' + e.message;
+    uploadBtn.disabled = false; skipBtn.disabled = false;
+    return;
+  }
+  clearTimeout(progressTimer);
+
+  if (!res.ok) {
+    statusEl.className = 'wiz-status error';
+    statusEl.textContent = 'Error: ' + (res.error || 'unknown');
+    uploadBtn.disabled = false; skipBtn.disabled = false;
+    return;
+  }
+
+  statusEl.textContent = '';
+  WIZ.recs = res;
+  // allCountries = full list shown in the grid; recommendedCountries = pre-checked subset
+  WIZ.countries = res.allCountries || res.recommendedCountries || [];
+  WIZ.selectedCountries = (res.recommendedCountries || []).filter(rc =>
+    WIZ.countries.some(c => c.iso2 === rc.iso2)
+  );
+
+  // Pre-fill positions textarea
+  const ta = document.getElementById('wiz-positions-ta');
+  if (ta) ta.value = (res.suggestedPositions || []).join('\n');
+
+  // Pre-fill countries grid (step 3)
+  wizRenderCountriesGrid();
+
+  // Detected location sub-line
+  const detEl = document.getElementById('wiz-detected-loc');
+  if (detEl && res.detectedCountryName) detEl.textContent = 'Detected location: ' + res.detectedCountryName;
+  else if (detEl) detEl.textContent = '';
+
+  wizSetStep(2);
+  uploadBtn.disabled = false; skipBtn.disabled = false;
+}
+
+function wizRenderCountriesGrid() {
+  const grid = document.getElementById('wiz-countries-grid');
+  if (!grid) return;
+  grid.innerHTML = WIZ.countries.map(c => {
+    const checked = WIZ.selectedCountries.some(x => x.iso2 === c.iso2);
+    return `<label><input type="checkbox" data-iso2="${esc(c.iso2)}" ${checked ? 'checked' : ''}/>${esc(c.fullName)}</label>`;
+  }).join('');
+  grid.querySelectorAll('input[type=checkbox]').forEach(cb => {
+    cb.addEventListener('change', () => {
+      const iso2 = cb.dataset.iso2;
+      if (cb.checked) {
+        if (!WIZ.selectedCountries.some(x => x.iso2 === iso2)) {
+          const country = WIZ.countries.find(x => x.iso2 === iso2);
+          if (country) WIZ.selectedCountries.push(country);
+        }
+      } else {
+        WIZ.selectedCountries = WIZ.selectedCountries.filter(x => x.iso2 !== iso2);
+      }
+    });
+  });
+}
+
+async function wizComplete(skipped) {
+  const btn = document.getElementById('wiz-next-3') || document.getElementById('wiz-open-dashboard');
+  if (btn) btn.disabled = true;
+  try {
+    const body = skipped ? { skipped: true } : {
+      positions: (document.getElementById('wiz-positions-ta')?.value || '').split('\n').map(s => s.trim()).filter(Boolean),
+      countries: WIZ.selectedCountries,
+      scoringPolicy: WIZ.recs?.scoringPolicy,
+      draftsInstruction: WIZ.recs?.draftsInstruction,
+    };
+    await api('/api/setup/complete', { method: 'POST', body: JSON.stringify(body) });
+    wizSetStep(4);
+  } catch(e) {
+    toast('Setup failed: ' + e.message, 'error');
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
+function bindWizardEvents() {
+  const fileInput = document.getElementById('wiz-file-input');
+  const uploadBtn = document.getElementById('wiz-upload-btn');
+  if (uploadBtn && fileInput) {
+    uploadBtn.addEventListener('click', () => fileInput.click());
+    fileInput.addEventListener('change', () => {
+      const file = fileInput.files?.[0];
+      if (file) wizAnalyzeCv(file);
+      fileInput.value = '';
+    });
+  }
+
+  document.getElementById('wiz-skip-btn')?.addEventListener('click', async () => {
+    await api('/api/setup/complete', { method: 'POST', body: JSON.stringify({ skipped: true }) }).catch(() => {});
+    closeWizard();
+    if (document.getElementById('app').style.display === 'none') showApp();
+  });
+
+  document.getElementById('wiz-back-2')?.addEventListener('click', () => wizSetStep(1));
+  document.getElementById('wiz-next-2')?.addEventListener('click', () => {
+    const ta = document.getElementById('wiz-positions-ta');
+    const positions = (ta?.value || '').split('\n').map(s => s.trim()).filter(Boolean);
+    if (!positions.length) { toast('Add at least one job query to continue', 'warning'); ta?.focus(); return; }
+    wizSetStep(3);
+  });
+  document.getElementById('wiz-back-3')?.addEventListener('click', () => wizSetStep(2));
+  document.getElementById('wiz-next-3')?.addEventListener('click', () => {
+    if (!WIZ.selectedCountries.length) { toast('Select at least one country to continue', 'warning'); return; }
+    wizComplete(false);
+  });
+  document.getElementById('wiz-open-dashboard')?.addEventListener('click', () => {
+    closeWizard();
+    if (document.getElementById('app').style.display === 'none') showApp();
+  });
+}
+
 async function init() {
   document.getElementById('login-form')?.addEventListener('submit', handleLogin);
   document.querySelectorAll('.nav-item').forEach(btn => btn.addEventListener('click', () => switchView(btn.dataset.view)));
@@ -2259,10 +2914,18 @@ async function init() {
   document.getElementById('jobs-list')?.addEventListener('click', e => {
     const row = e.target.closest('.job-row'); if (row) handleRowClick(e, row.dataset.id);
   });
-  document.getElementById('bulk-add')?.addEventListener('click', () => {
+  document.getElementById('bulk-add')?.addEventListener('click', async () => {
     if (S.listTab === 'filtered') return;
-    S.sel.forEach(id => { const j = S.jobs.find(x=>x.id===id); if(j) addToBoard(j); });
+    for (const id of [...S.sel]) {
+      const j = S.jobs.find(x=>x.id===id);
+      if (j) await addToBoard(j);
+    }
     S.sel.clear(); updateBulkBar();
+  });
+  document.getElementById('bulk-delete')?.addEventListener('click', async () => {
+    try {
+      await hardDeleteJobs([...S.sel]);
+    } catch(e) { toast('Delete failed: ' + e.message, 'error'); }
   });
   document.getElementById('bulk-clear')?.addEventListener('click', () => {
     S.sel.clear();
@@ -2345,6 +3008,24 @@ async function init() {
       loadAdminContract();
     } catch(e) { toast('Failed: ' + e.message, 'error'); }
   });
+  document.getElementById('admin-setup-analysis-save-btn')?.addEventListener('click', async () => {
+    const setupAnalysis = document.getElementById('admin-setup-analysis-ta')?.value || '';
+    if (!setupAnalysis.trim()) { toast('Prompt cannot be empty', 'warning'); return; }
+    try {
+      await api('/api/ai-instructions', { method: 'PATCH', body: JSON.stringify({ setupAnalysis }) });
+      toast('Setup analysis instruction saved', 'success');
+      loadAdminSetupAnalysis();
+    } catch(e) { toast('Failed: ' + e.message, 'error'); }
+  });
+  document.getElementById('admin-setup-analysis-reset-btn')?.addEventListener('click', async () => {
+    if (!confirm('Reset setup analysis instruction to built-in default?')) return;
+    try {
+      const r = await api('/api/ai-instructions', { method: 'PATCH', body: JSON.stringify({ resetSetupAnalysis: true }) });
+      const ta = document.getElementById('admin-setup-analysis-ta');
+      if (ta) ta.value = r.setupAnalysis || '';
+      toast('Setup analysis instruction reset', 'success');
+    } catch(e) { toast('Failed: ' + e.message, 'error'); }
+  });
   document.getElementById('admin-template-sync-btn')?.addEventListener('click', async () => {
     if (!confirm('Sync template from admin\'s current settings?')) return;
     try {
@@ -2362,6 +3043,10 @@ async function init() {
       toast('Template saved', 'success');
     } catch(e) { toast('Failed: ' + e.message, 'error'); }
   });
+
+  bindWizardEvents();
+
+  document.getElementById('sidebar-pp-btn')?.addEventListener('click', toggleExtraction);
 
   const authed = await checkAuth();
   if (authed) showApp(); else showLogin();

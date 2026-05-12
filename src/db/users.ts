@@ -28,6 +28,7 @@ export const USER_SETTINGS_TEMPLATE_KEYS: readonly string[] = [
   "provider_request_caps",
   "openai_scoring_instruction",
   "openai_draft_instruction",
+  "setup_analysis_prompt",
   "api_extraction_enabled",
 ];
 
@@ -43,6 +44,11 @@ export type UserRow = {
 
 export type UserWithCaps = UserRow & {
   caps: Partial<Record<string, number>>;
+};
+
+export type DeleteUserOwnedDataResult = {
+  userDeleted: boolean;
+  deleted: Record<string, number>;
 };
 
 function generateSalt(): string {
@@ -280,6 +286,51 @@ export async function updatePassword(
 
 export async function touchLastLogin(db: D1Database, id: string, now: number): Promise<void> {
   await db.prepare("UPDATE users SET last_login_at = ? WHERE id = ?").bind(now, id).run();
+}
+
+/**
+ * Hard-delete one user and every D1 row scoped by that user's `user_id`.
+ *
+ * Keep this list aligned with `migrations/0022_multiuser.sql`, which introduced the
+ * multi-user ownership columns. Delete the `users` row last so a partial failure
+ * never leaves user-owned data without an account row.
+ */
+export async function deleteUserAndOwnedData(
+  db: D1Database,
+  userId: string,
+): Promise<DeleteUserOwnedDataResult> {
+  const tables = [
+    "job_board_items",
+    "job_favorites",
+    "jobs",
+    "app_logs",
+    "ai_instruction_revisions",
+    "search_role_revisions",
+    "app_settings",
+    "pipeline_state",
+    "provider_scheduler_state",
+    "provider_country_state",
+    "provider_query_unit_state",
+    "provider_unit_schedule_state",
+    "linkedin_country_offset",
+    "jsearch_rotation",
+    "statistics_daily_provider",
+    "statistics_daily_variant",
+  ] as const;
+
+  const deleted: Record<string, number> = {};
+  const statements = tables.map((table) => db.prepare(`DELETE FROM ${table} WHERE user_id = ?`).bind(userId));
+  statements.push(db.prepare("DELETE FROM users WHERE id = ?").bind(userId));
+
+  const results = await db.batch(statements);
+  for (let i = 0; i < tables.length; i++) {
+    deleted[tables[i]!] = results[i]?.meta?.changes ?? 0;
+  }
+
+  return {
+    userDeleted: (results[tables.length]?.meta?.changes ?? 0) > 0,
+    deleted,
+  };
 }
 
 /**

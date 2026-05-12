@@ -1,0 +1,47 @@
+---
+description: Job Board Design System v3 — Otl Aicher / Braun precision tool aesthetic. Mandatory for all UI/UX work on dashboard.html, dashboard-v2.html, or any public/ asset.
+alwaysApply: true
+---
+
+# Job Board — Design System v3
+
+**Before writing any UI code for this project, read the full spec:**
+
+`.cursor/design-system/v3.md`
+
+This is the single source of truth for colors, typography, spacing, radius, motion, components, and the "no" list.
+
+## Hard Rules (memorise these — the full spec has the rationale)
+
+- **Fonts:** Switzer (UI) + Instrument Serif (display) + JetBrains Mono (tabular). Never Inter, Roboto, Arial, Fraunces, Geist, or Space Grotesk.
+- **Orange budget:** `--brand-600` (#FF5C28) appears ONLY on primary CTAs, focus rings, the active sidebar bar, and the Applying column accent. Nothing else.
+- **Shadows by exception:** default = no shadow. `--shadow-soft` on hover only. `--shadow-pop` for popovers. `--shadow-drawer` for drawer/modal only.
+- **Motion:** `transform` and `opacity` only — never `width`, `height`, `top`, `left`. Durations: fast 120ms / base 180ms / slow 240ms / slower 320ms.
+- **Icons:** Lucide inline SVG, stroke 1.5px, `currentColor`, outline only, no filled icons.
+- **Score bands:** HIGH ≥ 85 · MEDIUM 75–84 · LOW 60–74 · FAILED < 60. Score block is rectangular (≈1.55:1), never circular.
+- **Paper grid:** `.with-paper-grid` behind inbox/board content only — not behind sidebar, drawer, or modal.
+- **No:** gradients, glass-morphism, gradient backgrounds, purple/violet/indigo, emoji icons, left-border accent cards, `scrollIntoView`, `const styles = {}` global.
+
+## Skills to Load for UI Work
+
+When doing **any** UI/UX task on this project, read the skill files below. The order matters: start with the design-system spec (`v3.md`), then load whichever skills apply to the work at hand.
+
+| When to load | Skill | What it covers |
+|---|---|---|
+| Always (UI work) | **`/web-design-engineer`** | Production HTML/CSS standards, animation approach, placeholder discipline, variant philosophy |
+| New components / layout / visual direction | **`/bencium-innovative-ux-designer`** | Anti-cliché design thinking protocol, bold direction commitment, atmosphere over decoration |
+| Accessibility, touch, motion, forms, charts | **`/ui-ux-pro-max`** | 99-rule UX checklist — §1 accessibility, §2 touch targets, §7 motion, §8 form feedback, §10 charts |
+| New pages / hero sections / design system choices | **`/premium-frontend-design`** | Wow + Clarity framework, animation patterns, template selection guide, component patterns |
+| Dashboard / data-heavy UI / component refinement | **`/design-taste-frontend`** | Design variance / motion intensity / density dials, Bento 2.0 paradigm, anti-slop directives |
+| Any animation creation / tuning / review | **`/ui-animation`** | Animation decision framework, transform/opacity rules, easing, interruption, performance checks |
+| Motion tokens / duration scale / reduced-motion strategy | **`/motion-scale`** | Consistent duration/easing/delay tokens and reduced-motion patterns |
+
+### Loading Instructions for Agents
+
+- **Read `v3.md` first** — it overrides any conflicting guidance in the skills below.
+- **`/bencium-innovative-ux-designer` and `/premium-frontend-design`** cover creative direction; load both when building anything new.
+- **`/ui-ux-pro-max`** is the accessibility and UX-quality authority; run its §1–§3 checklist before delivering any UI.
+- **`/design-taste-frontend`** governs motion and density; use it when calibrating animation timing or visual density on the dashboard.
+- **`/ui-animation` is mandatory before adding or changing animations**. Prefer CSS transitions for interruptible interactions; use keyframes only for predetermined/loading/status sequences; animate `transform` and `opacity` only.
+- **`/motion-scale` is mandatory when creating or changing motion tokens**, duration scales, looping loaders, or reduced-motion behavior. Avoid blanket reduced-motion overrides that turn infinite animations into rapid flicker.
+- Skills **do not override** the v3.md hard rules — the No List in v3.md is always authoritative (no gradients, no purple, Switzer/Instrument Serif/JetBrains Mono only, etc.).
