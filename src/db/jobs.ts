@@ -42,6 +42,7 @@ export type DashboardListRow = {
   status: string | null;
   hard_reject_reasons: string | null;
   scoring_notes: string | null;
+  content_dedupe_hash: string | null;
   /** From normalized_json (LinkedIn/JSearch). */
   country_name: string | null;
   employment_type: string | null;
@@ -148,7 +149,11 @@ export type DashboardJobListPage = {
 
 type DashboardJobListQueryOptions = {
   excludeBoardItems?: boolean;
+  /** When true, list search also matches `jobs.id` (debug mode). */
+  debugSearchByJobId?: boolean;
 };
+
+export type DashboardJobListQueryContext = Pick<DashboardJobListQueryOptions, "debugSearchByJobId">;
 
 export function defaultDashboardJobListPrefs(): DashboardJobListPrefs {
   return {
@@ -556,7 +561,7 @@ export async function getJobFull(db: D1Database, userId: string, id: string) {
 const DASHBOARD_LIST_COLUMNS = `id, source, title, company, job_url, apply_url, salary_raw, salary_min, salary_max,
               salary_currency, salary_monthly_eur, salary_display_eur, fit_score, recommendation,
               reasons_to_apply, risks, r2_cv_key, r2_cover_key, status, hard_reject_reasons,
-              scoring_notes,
+              scoring_notes, content_dedupe_hash,
               created_at,
               json_extract(normalized_json, '$.country') AS country_name,
               json_extract(normalized_json, '$.employmentType') AS employment_type,
@@ -575,6 +580,7 @@ const DASHBOARD_LIST_COLUMNS_ALIASED = `j.id AS id, j.source AS source, j.title 
               j.fit_score AS fit_score, j.recommendation AS recommendation, j.reasons_to_apply AS reasons_to_apply,
               j.risks AS risks, j.r2_cv_key AS r2_cv_key, j.r2_cover_key AS r2_cover_key, j.status AS status,
               j.hard_reject_reasons AS hard_reject_reasons, j.scoring_notes AS scoring_notes,
+              j.content_dedupe_hash AS content_dedupe_hash,
               j.created_at AS created_at,
               json_extract(j.normalized_json, '$.country') AS country_name,
               json_extract(j.normalized_json, '$.employmentType') AS employment_type,
@@ -855,6 +861,11 @@ END`;
 
 const DASHBOARD_JOB_SEARCH_HAYSTACK_EXPR = `LOWER(COALESCE(j.title, '') || ' ' || COALESCE(j.company, ''))`;
 
+function dashboardJobSearchHaystackExpr(options?: DashboardJobListQueryOptions): string {
+  if (!options?.debugSearchByJobId) return DASHBOARD_JOB_SEARCH_HAYSTACK_EXPR;
+  return `${DASHBOARD_JOB_SEARCH_HAYSTACK_EXPR} || ' ' || LOWER(COALESCE(j.id, ''))`;
+}
+
 const DASHBOARD_JOB_INGEST_SORT_EXPR = `CASE
   WHEN CAST(json_extract(j.normalized_json, '$.apiFetchedAtUnix') AS INTEGER) > 0
     THEN CAST(json_extract(j.normalized_json, '$.apiFetchedAtUnix') AS INTEGER)
@@ -1094,7 +1105,7 @@ function buildDashboardJobListQuerySpec(
     .split(/\s+/)
     .filter(Boolean);
   for (const term of searchTerms) {
-    whereClauses.push(`${DASHBOARD_JOB_SEARCH_HAYSTACK_EXPR} LIKE ?`);
+    whereClauses.push(`${dashboardJobSearchHaystackExpr(options)} LIKE ?`);
     params.push(`%${term}%`);
   }
 
@@ -1499,18 +1510,24 @@ export async function queryDashboardJobListPage(
   prefs: DashboardJobListPrefs,
   cursor: DashboardJobListCursor | null,
   limit: number,
+  context: DashboardJobListQueryContext = {},
 ): Promise<DashboardJobListPage> {
   if (tab === "active" || tab === "favorites" || tab === "filtered") {
     const surfaced = await surfaceStaleImportedJobsAsFiltered(db, userId);
     if (surfaced > 0) invalidateDashboardListMemoCaches();
   }
   const scope = dashboardJobListScope(tab, userId);
-  const filteredQuery = buildDashboardJobListQuerySpec(tab, prefs, undefined, userId);
+  const queryOpts = { debugSearchByJobId: context.debugSearchByJobId === true };
+  const filteredQuery = buildDashboardJobListQuerySpec(tab, prefs, undefined, userId, queryOpts);
   const visibleQuery = buildDashboardJobListQuerySpec(tab, prefs, undefined, userId, {
     excludeBoardItems: true,
+    ...queryOpts,
   });
   const pageQuery = cursor
-    ? buildDashboardJobListQuerySpec(tab, prefs, cursor, userId, { excludeBoardItems: true })
+    ? buildDashboardJobListQuerySpec(tab, prefs, cursor, userId, {
+        excludeBoardItems: true,
+        ...queryOpts,
+      })
     : visibleQuery;
   const safeLimit = Math.min(100, Math.max(1, Math.floor(limit)));
   const cursorSelectSql = buildDashboardJobListCursorSelectSql(pageQuery.orderFields);
@@ -1556,6 +1573,7 @@ export async function queryDashboardJobListIds(
   userId: string,
   tab: DashboardJobListTab,
   prefs: DashboardJobListPrefs,
+  context: DashboardJobListQueryContext = {},
 ): Promise<string[]> {
   if (tab === "active" || tab === "favorites" || tab === "filtered") {
     const surfaced = await surfaceStaleImportedJobsAsFiltered(db, userId);
@@ -1563,6 +1581,7 @@ export async function queryDashboardJobListIds(
   }
   const query = buildDashboardJobListQuerySpec(tab, prefs, undefined, userId, {
     excludeBoardItems: true,
+    debugSearchByJobId: context.debugSearchByJobId === true,
   });
   const { results } = await db
     .prepare(
@@ -1583,9 +1602,11 @@ export async function countDashboardJobListVisibleRows(
   userId: string,
   tab: DashboardJobListTab,
   prefs: DashboardJobListPrefs,
+  context: DashboardJobListQueryContext = {},
 ): Promise<number> {
   const query = buildDashboardJobListQuerySpec(tab, prefs, undefined, userId, {
     excludeBoardItems: true,
+    debugSearchByJobId: context.debugSearchByJobId === true,
   });
   return countDashboardJobListRows(db, query);
 }
@@ -1595,8 +1616,11 @@ export async function countDashboardJobListMatchingRows(
   userId: string,
   tab: DashboardJobListTab,
   prefs: DashboardJobListPrefs,
+  context: DashboardJobListQueryContext = {},
 ): Promise<number> {
-  const query = buildDashboardJobListQuerySpec(tab, prefs, undefined, userId);
+  const query = buildDashboardJobListQuerySpec(tab, prefs, undefined, userId, {
+    debugSearchByJobId: context.debugSearchByJobId === true,
+  });
   return countDashboardJobListRows(db, query);
 }
 

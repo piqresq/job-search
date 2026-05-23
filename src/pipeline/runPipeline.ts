@@ -25,7 +25,7 @@ import {
 } from "../db/jobs";
 import { log, observabilityLog } from "../logging/appLog";
 import { getEnabledProviders } from "../providers";
-import { computeContentDedupeHash, computeCountryInclusiveContentDedupeHash } from "./contentDedupeHash";
+import { computeContentDedupeHash, computeCountryInclusiveContentDedupeHash, duplicateListingHardRejectReasons } from "./contentDedupeHash";
 import { dedupeJobs } from "./dedupe";
 import { applyHardFilters, fetchUsdGbpToEurRates, getSalaryBelowFloorReasons } from "./hardFilters";
 import { stableJobId } from "./ids";
@@ -485,9 +485,7 @@ export async function processFetchedJobs(
             phase: "content_hash_dedupe",
             action: "markHardRejectedDuplicate",
             run: () =>
-              markHardRejected(env.DB, userId, id, [
-                `Duplicate listing (content-hash dedupe; fingerprint ${contentDedupeHash.slice(0, 8)}… matches an earlier saved job)`,
-              ], now),
+              markHardRejected(env.DB, userId, id, duplicateListingHardRejectReasons(dupOf, contentDedupeHash), now),
           });
         } catch (e) {
           const msg = e instanceof Error ? e.message : String(e);

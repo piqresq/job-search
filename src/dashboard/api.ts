@@ -29,6 +29,10 @@ import {
 } from "../db/jobs";
 import { fetchUsdGbpToEurRates } from "../pipeline/hardFilters";
 import { rescoreJobBypassingHardFilters, retryFailedJobProcessing } from "../pipeline/debugAiRescore";
+import {
+  DUPLICATE_LISTING_JOB_ID_LINE_PREFIX,
+  isDuplicateListingRejectText,
+} from "../pipeline/contentDedupeHash";
 import { generateTailoredDrafts } from "../pipeline/generateDrafts";
 import { getCvExtractionFromDb, setCvExtractionCache } from "../db/cvCache";
 import { extractCvFromDocxArrayBuffer } from "../profile/extractCvFromDocx";
@@ -47,9 +51,7 @@ import { DEFAULT_SEARCH_COUNTRIES, normalizeSearchCountries } from "../config/se
 import { listingLogoFromUrls } from "./listingLogo";
 import {
   getApiExtractionEnabled,
-  getDashboardAiDebugRescoreEnabled,
-  getDashboardShowJobApiRaw,
-  getDashboardShowJobPipelineParams,
+  getDashboardDebugModeEnabled,
   getEnabledJobSourceIdsFromDb,
   getPipelineFetchAllowed,
   getSearchCountries,
@@ -436,18 +438,27 @@ async function buildDashboardJobListResponse(
   // favorite ids and FX lookup ran serially (adding ~2× D1 round trips + any Frankfurter delay).
   // FX is now gone from the list path entirely — salary display/sort use `jobs.salary_monthly_eur`
   // and `jobs.salary_display_eur` populated at ingest time / via the backfill cron.
-  const [page, favSet, showPipelineParams, showApiRaw, aiDebugRescore] = await Promise.all([
-    queryDashboardJobListPage(env.DB, userId, query.tab, query.prefs, query.cursor, query.limit),
+  const [debugMode, favSet] = await Promise.all([
+    getDashboardDebugModeEnabled(env.DB, userId),
     getFavoriteJobIdsSet(env.DB, userId),
-    getDashboardShowJobPipelineParams(env.DB, userId),
-    getDashboardShowJobApiRaw(env.DB, userId),
-    getDashboardAiDebugRescoreEnabled(env.DB, userId),
   ]);
+  const listContext = { debugSearchByJobId: debugMode };
+  const page = await queryDashboardJobListPage(
+    env.DB,
+    userId,
+    query.tab,
+    query.prefs,
+    query.cursor,
+    query.limit,
+    listContext,
+  );
+  const filterReasonsByJobId = await buildFilterReasonsByJobId(env.DB, userId, page.rows);
   const jobs = page.rows.map((r) =>
     dashboardJobPayloadFromRow(r, {
       favoriteIds: favSet,
-      showPipelineParams,
-      showApiRaw,
+      showPipelineParams: debugMode,
+      showApiRaw: debugMode,
+      filterReasons: filterReasonsByJobId.get(r.id) ?? filterOutExplanationLines(r),
     }),
   );
 
@@ -462,9 +473,10 @@ async function buildDashboardJobListResponse(
     nextCursor: page.nextCursor,
     facets: page.facets,
     jobExpandUi: {
-      showPipelineRequestParams: showPipelineParams,
-      showApiRawFields: showApiRaw,
-      aiDebugRescore,
+      debugMode,
+      showPipelineRequestParams: debugMode,
+      showApiRawFields: debugMode,
+      aiDebugRescore: debugMode,
     },
     prefs: query.prefs,
   });
@@ -474,6 +486,7 @@ type DashboardJobPayloadOptions = {
   favoriteIds?: Set<string>;
   showPipelineParams?: boolean;
   showApiRaw?: boolean;
+  filterReasons?: string[];
 };
 
 function parsedNormalizedJobJson(raw: string | null): Record<string, unknown> | null {
@@ -553,7 +566,7 @@ function dashboardJobPayloadFromRow(
     hasDocx: Boolean(r.r2_cv_key && r.r2_cover_key),
     downloadCv: `/api/jobs/${r.id}/download/cv`,
     downloadCover: `/api/jobs/${r.id}/download/cover`,
-    filterReasons: filterOutExplanationLines(r),
+    filterReasons: opts.filterReasons ?? filterOutExplanationLines(r),
     isFavorite: opts.favoriteIds?.has(r.id) ?? false,
     ingestionFacts: showPipelineParams ? buildIngestionFactsFromNormalizedJson(r.normalized_json) : [],
     ingestionRequestParamsStored: showPipelineParams ? hasStoredIngestionRequestParams(r.normalized_json) : false,
@@ -602,12 +615,11 @@ function buildBoardPayload(
 async function boardPayloadForUser(env: Env, userId: string): Promise<Record<JobBoardColumnId, BoardJobPayload[]>> {
   const now = Math.floor(Date.now() / 1000);
   await purgeExpiredRejectedBoardItems(env.DB, userId, now);
-  const [rows, showPipelineParams, showApiRaw] = await Promise.all([
+  const [rows, debugMode] = await Promise.all([
     listBoardItems(env.DB, userId),
-    getDashboardShowJobPipelineParams(env.DB, userId),
-    getDashboardShowJobApiRaw(env.DB, userId),
+    getDashboardDebugModeEnabled(env.DB, userId),
   ]);
-  return buildBoardPayload(rows, { showPipelineParams, showApiRaw });
+  return buildBoardPayload(rows, { showPipelineParams: debugMode, showApiRaw: debugMode });
 }
 
 const VENDOR_LABELS: Record<JobSourceId, string> = {
@@ -1025,6 +1037,69 @@ function filterOutExplanationLines(row: {
   return [];
 }
 
+type FilterReasonSourceRow = {
+  id: string;
+  status: string | null;
+  hard_reject_reasons: string | null;
+  hard_filter_passed?: number | null;
+  recommendation: string | null;
+  fit_score: number | null;
+  scoring_notes: string | null;
+  content_dedupe_hash?: string | null;
+};
+
+async function buildFilterReasonsByJobId(
+  db: D1Database,
+  userId: string,
+  rows: FilterReasonSourceRow[],
+): Promise<Map<string, string[]>> {
+  const out = new Map<string, string[]>();
+  const needsLookup: string[] = [];
+
+  for (const row of rows) {
+    const lines = filterOutExplanationLines(row);
+    out.set(row.id, lines);
+    if (
+      row.status === "hard_rejected" &&
+      lines.some(isDuplicateListingRejectText) &&
+      !lines.some((line) => line.startsWith(DUPLICATE_LISTING_JOB_ID_LINE_PREFIX)) &&
+      row.content_dedupe_hash
+    ) {
+      needsLookup.push(row.id);
+    }
+  }
+
+  if (needsLookup.length === 0) return out;
+
+  const chunkSize = 80;
+  for (let i = 0; i < needsLookup.length; i += chunkSize) {
+    const chunk = needsLookup.slice(i, i + chunkSize);
+    const placeholders = chunk.map(() => "?").join(",");
+    const { results } = await db
+      .prepare(
+        `SELECT j.id AS job_id,
+                (SELECT o.id FROM jobs o
+                 WHERE o.user_id = j.user_id
+                   AND o.content_dedupe_hash = j.content_dedupe_hash
+                   AND o.id != j.id
+                 ORDER BY o.created_at ASC, o.id ASC
+                 LIMIT 1) AS duplicate_of
+         FROM jobs j
+         WHERE j.user_id = ? AND j.id IN (${placeholders})`,
+      )
+      .bind(userId, ...chunk)
+      .all<{ job_id: string; duplicate_of: string | null }>();
+
+    for (const hit of results ?? []) {
+      if (!hit.duplicate_of) continue;
+      const lines = out.get(hit.job_id) ?? [];
+      out.set(hit.job_id, [...lines, `${DUPLICATE_LISTING_JOB_ID_LINE_PREFIX}${hit.duplicate_of}`]);
+    }
+  }
+
+  return out;
+}
+
 export async function handleDashboardApi(
   env: Env,
   request: Request,
@@ -1051,9 +1126,7 @@ export async function handleDashboardApi(
     const [
       apiExtractionEnabled,
       verboseLoggingEnabled,
-      dashboardShowJobPipelineParams,
-      dashboardShowJobApiRaw,
-      dashboardAiDebugRescoreEnabled,
+      dashboardDebugModeEnabled,
       roleTiers,
       vendors,
       countries,
@@ -1070,9 +1143,7 @@ export async function handleDashboardApi(
     ] = await Promise.all([
       getApiExtractionEnabled(env.DB, userId),
       getVerboseLoggingEnabled(env.DB),
-      getDashboardShowJobPipelineParams(env.DB, userId),
-      getDashboardShowJobApiRaw(env.DB, userId),
-      getDashboardAiDebugRescoreEnabled(env.DB, userId),
+      getDashboardDebugModeEnabled(env.DB, userId),
       getSearchRoleTiers(env.DB, userId),
       buildVendorsPayload(env, userId),
       getSearchCountries(env.DB, userId),
@@ -1119,12 +1190,10 @@ export async function handleDashboardApi(
       expirationScanSummary,
       jobListPrefs,
       filteredJobListPrefs,
+      dashboardDebugModeEnabled,
     };
     if (isAdmin) {
       payload.verboseLoggingEnabled = verboseLoggingEnabled;
-      payload.dashboardShowJobPipelineParams = dashboardShowJobPipelineParams;
-      payload.dashboardShowJobApiRaw = dashboardShowJobApiRaw;
-      payload.dashboardAiDebugRescoreEnabled = dashboardAiDebugRescoreEnabled;
       payload.requestCapsPerDay = capsPayload.requestCapsPerDay;
       payload.requestCapsDetail = capsPayload.requestCapsDetail;
       payload.vendors = vendors;
@@ -1700,9 +1769,7 @@ export async function handleDashboardApi(
     }
     const strayAdminFields = [
       "verboseLoggingEnabled",
-      "dashboardShowJobPipelineParams",
-      "dashboardShowJobApiRaw",
-      "dashboardAiDebugRescoreEnabled",
+      "dashboardDebugModeEnabled",
       "enabledJobSources",
       "requestCapOverrides",
       "linkedinLiAt",
@@ -1930,18 +1997,10 @@ export async function handleDashboardApi(
       pipelineHardKillActive: isPipelineHardKillActive(env),
       boardAutoExpirationCheckEnabled: await getBoardAutoExpirationCheckEnabled(env.DB, userId),
       expirationScanSummary: rawScanSummaryPatch?.date === todayUtcPatch ? rawScanSummaryPatch : null,
+      dashboardDebugModeEnabled: await getDashboardDebugModeEnabled(env.DB, userId),
     };
     if (isAdmin) {
       patchPayload.verboseLoggingEnabled = await getVerboseLoggingEnabled(env.DB);
-      patchPayload.dashboardShowJobPipelineParams = await getDashboardShowJobPipelineParams(
-        env.DB,
-        userId,
-      );
-      patchPayload.dashboardShowJobApiRaw = await getDashboardShowJobApiRaw(env.DB, userId);
-      patchPayload.dashboardAiDebugRescoreEnabled = await getDashboardAiDebugRescoreEnabled(
-        env.DB,
-        userId,
-      );
       patchPayload.requestCapsPerDay = capsPayload.requestCapsPerDay;
       patchPayload.requestCapsDetail = capsPayload.requestCapsDetail;
       patchPayload.vendors = await buildVendorsPayload(env, userId);
@@ -2034,15 +2093,18 @@ export async function handleDashboardApi(
     const normalizedPrefs = tabRaw === "filtered"
       ? normalizeDashboardFilteredJobListPrefs(bodyObj.prefs)
       : normalizeDashboardJobListPrefs(bodyObj.prefs);
+    const debugSearchByJobId = await getDashboardDebugModeEnabled(env.DB, userId);
+    const listContext = { debugSearchByJobId };
     const ids = await queryDashboardJobListIds(
       env.DB,
       userId,
       tabRaw as DashboardJobListTab,
       normalizedPrefs,
+      listContext,
     );
     const [totalMatching, totalVisible] = await Promise.all([
-      countDashboardJobListMatchingRows(env.DB, userId, tabRaw as DashboardJobListTab, normalizedPrefs),
-      countDashboardJobListVisibleRows(env.DB, userId, tabRaw as DashboardJobListTab, normalizedPrefs),
+      countDashboardJobListMatchingRows(env.DB, userId, tabRaw as DashboardJobListTab, normalizedPrefs, listContext),
+      countDashboardJobListVisibleRows(env.DB, userId, tabRaw as DashboardJobListTab, normalizedPrefs, listContext),
     ]);
     return json({ ok: true, tab: tabRaw, ids, totalMatching, totalVisible });
   }
@@ -2340,7 +2402,7 @@ export async function handleDashboardApi(
 }
 
 async function handleDebugAiRescore(env: Env, userId: string, id: string): Promise<Response> {
-  if (!(await getDashboardAiDebugRescoreEnabled(env.DB, userId))) {
+  if (!(await getDashboardDebugModeEnabled(env.DB, userId))) {
     return json({ ok: false, error: "feature_disabled", code: "feature_disabled" }, 403);
   }
   const r = await rescoreJobBypassingHardFilters(env, userId, id);
@@ -2625,7 +2687,8 @@ async function resolveBulkSelectionIds(
   selection: DashboardBulkSelection,
 ): Promise<{ ids: string[]; affectedLoadedIds: string[] }> {
   if (selection.mode === "all_matching") {
-    const ids = await queryDashboardJobListIds(db, userId, selection.tab, selection.prefs);
+    const listContext = { debugSearchByJobId: await getDashboardDebugModeEnabled(db, userId) };
+    const ids = await queryDashboardJobListIds(db, userId, selection.tab, selection.prefs, listContext);
     return {
       ids,
       affectedLoadedIds: intersectIdsPreservingOrder(selection.loadedIds, ids),
@@ -3255,22 +3318,13 @@ async function handleAdminApi(
 
     if (request.method === "GET") {
       const capsPayload = await buildRequestCapsPayload(env, targetId);
-      const [
-        dashboardShowJobPipelineParams,
-        dashboardShowJobApiRaw,
-        dashboardAiDebugRescoreEnabled,
-        vendors,
-      ] = await Promise.all([
-        getDashboardShowJobPipelineParams(env.DB, targetId),
-        getDashboardShowJobApiRaw(env.DB, targetId),
-        getDashboardAiDebugRescoreEnabled(env.DB, targetId),
+      const [dashboardDebugModeEnabled, vendors] = await Promise.all([
+        getDashboardDebugModeEnabled(env.DB, targetId),
         buildVendorsPayload(env, targetId),
       ]);
       return json({
         ok: true,
-        dashboardShowJobPipelineParams,
-        dashboardShowJobApiRaw,
-        dashboardAiDebugRescoreEnabled,
+        dashboardDebugModeEnabled,
         vendors,
         requestCapsDetail: capsPayload.requestCapsDetail,
         requestCapsPerDay: capsPayload.requestCapsPerDay,
@@ -3279,9 +3333,7 @@ async function handleAdminApi(
 
     if (request.method === "PATCH") {
       let body: {
-        dashboardShowJobPipelineParams?: boolean;
-        dashboardShowJobApiRaw?: boolean;
-        dashboardAiDebugRescoreEnabled?: boolean;
+        dashboardDebugModeEnabled?: boolean;
         enabledJobSources?: string[];
         requestCapOverrides?: Record<string, unknown>;
       };
@@ -3290,22 +3342,14 @@ async function handleAdminApi(
       } catch {
         return json({ ok: false, error: "invalid_json" }, 400);
       }
-      const hasShowPipelineParams = typeof body.dashboardShowJobPipelineParams === "boolean";
-      const hasShowApiRaw = typeof body.dashboardShowJobApiRaw === "boolean";
-      const hasAiDebugRescore = typeof body.dashboardAiDebugRescoreEnabled === "boolean";
+      const hasDebugMode = typeof body.dashboardDebugModeEnabled === "boolean";
       const hasVendors = Array.isArray(body.enabledJobSources);
       const hasRequestCaps =
         body.requestCapOverrides !== undefined &&
         body.requestCapOverrides !== null &&
         typeof body.requestCapOverrides === "object" &&
         !Array.isArray(body.requestCapOverrides);
-      if (
-        !hasShowPipelineParams &&
-        !hasShowApiRaw &&
-        !hasAiDebugRescore &&
-        !hasVendors &&
-        !hasRequestCaps
-      ) {
+      if (!hasDebugMode && !hasVendors && !hasRequestCaps) {
         return json({ ok: false, error: "bad_body" }, 400);
       }
       if (hasRequestCaps && Object.keys(body.requestCapOverrides!).length === 0) {
@@ -3373,33 +3417,15 @@ async function handleAdminApi(
       }
 
       await patchAdminUserPreferences(env.DB, targetId, {
-        dashboardShowJobPipelineParams: hasShowPipelineParams
-          ? body.dashboardShowJobPipelineParams
-          : undefined,
-        dashboardShowJobApiRaw: hasShowApiRaw ? body.dashboardShowJobApiRaw : undefined,
-        dashboardAiDebugRescoreEnabled: hasAiDebugRescore
-          ? body.dashboardAiDebugRescoreEnabled
-          : undefined,
+        dashboardDebugModeEnabled: hasDebugMode ? body.dashboardDebugModeEnabled : undefined,
         enabledJobSources: enabledIdsValidated ?? undefined,
         requestCapOverrides: capPatchValidated ?? undefined,
       });
 
-      if (hasShowPipelineParams) {
-        await log.info(env, "dashboard", "Admin: job list pipeline params visibility updated", {
+      if (hasDebugMode) {
+        await log.info(env, "dashboard", "Admin: debug mode updated", {
           targetUserId: targetId,
-          show: body.dashboardShowJobPipelineParams,
-        });
-      }
-      if (hasShowApiRaw) {
-        await log.info(env, "dashboard", "Admin: API raw fields visibility updated", {
-          targetUserId: targetId,
-          show: body.dashboardShowJobApiRaw,
-        });
-      }
-      if (hasAiDebugRescore) {
-        await log.info(env, "dashboard", "Admin: AI debug re-score visibility updated", {
-          targetUserId: targetId,
-          enabled: body.dashboardAiDebugRescoreEnabled,
+          enabled: body.dashboardDebugModeEnabled,
         });
       }
 
@@ -3487,9 +3513,7 @@ async function handleAdminApi(
       const vendors = await buildVendorsPayload(env, targetId);
       return json({
         ok: true,
-        dashboardShowJobPipelineParams: await getDashboardShowJobPipelineParams(env.DB, targetId),
-        dashboardShowJobApiRaw: await getDashboardShowJobApiRaw(env.DB, targetId),
-        dashboardAiDebugRescoreEnabled: await getDashboardAiDebugRescoreEnabled(env.DB, targetId),
+        dashboardDebugModeEnabled: await getDashboardDebugModeEnabled(env.DB, targetId),
         vendors,
         requestCapsDetail: capsPayload.requestCapsDetail,
         requestCapsPerDay: capsPayload.requestCapsPerDay,

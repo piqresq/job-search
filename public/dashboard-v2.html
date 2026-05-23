@@ -833,7 +833,7 @@ a{color:inherit;text-decoration:none}
           <!-- Pipeline debug toggles (global verbose + site-wide pipeline kill notice) -->
           <div class="stg-section" style="margin-bottom:40px">
             <div class="stg-section-title">Pipeline debug</div>
-            <div class="stg-section-desc">Verbose logging affects log verbosity for everyone. Job-detail debug toggles are set per user under Edit.</div>
+            <div class="stg-section-desc">Verbose logging affects log verbosity for everyone. Per-user Debug mode is set under Edit user.</div>
             <div id="admin-pipeline-debug-inner">
               <div style="padding:16px;text-align:center;font-size:13px;color:var(--ink-faint)">Loading…</div>
             </div>
@@ -1006,6 +1006,7 @@ const S = {
   drawerJob: null,
   listTab: 'active',
   listRequestSeq: 0,
+  debugMode: false,
 };
 
 function defaultPrefs() {
@@ -1231,6 +1232,8 @@ async function showApp() {
     if (s.filteredJobListPrefs) {
       S.filteredPrefs = Object.assign(defaultPrefs(), s.filteredJobListPrefs);
     }
+    S.debugMode = !!s.dashboardDebugModeEnabled;
+    syncJobSearchPlaceholder();
     renderToolbar();
     if (s.expirationScanSummary) {
       renderExpirationBanner(s.expirationScanSummary);
@@ -1904,6 +1907,12 @@ function navCount(view, n) {
 }
 
 /* ── JOB LIST ────────────────────────────────────────────────────────────── */
+function syncJobSearchPlaceholder() {
+  const srch = document.getElementById('srch');
+  if (!srch) return;
+  srch.placeholder = S.debugMode ? 'Search title, company, or job ID…' : 'Search jobs…';
+}
+
 async function loadJobs(reset = false) {
   if (S.loading && !reset) return;
   if (!reset && !S.hasMore) return;
@@ -1922,6 +1931,10 @@ async function loadJobs(reset = false) {
     const pageJobs = data.jobs || [];
     S.jobs = reset ? pageJobs : [...S.jobs, ...pageJobs];
     S.cursor = data.nextCursor; S.hasMore = data.hasMore;
+    if (data.jobExpandUi && typeof data.jobExpandUi.debugMode === 'boolean') {
+      S.debugMode = data.jobExpandUi.debugMode;
+      syncJobSearchPlaceholder();
+    }
     S.total = typeof data.totalVisible === 'number' ? data.totalVisible : data.totalMatching;
     const prevFacets = JSON.stringify(S.facets);
     S.facets = data.facets || { countries: [], roleQueries: [], filterReasons: [] };
@@ -2059,9 +2072,10 @@ function renderToolbar() {
   const relSortGrpCls = (prefs.sortSalary !== 'off' || prefs.sortDate !== 'off') ? 'opacity:.45;' : '';
   const salSortGrpCls = (prefs.sortRel !== 'as-fetched' || prefs.sortDate !== 'off') ? 'opacity:.45;' : '';
   const dateSortGrpCls = (prefs.sortRel !== 'as-fetched' || prefs.sortSalary !== 'off') ? 'opacity:.45;' : '';
+  const searchPlaceholder = S.debugMode ? 'Search title, company, or job ID…' : 'Search jobs…';
 
   tb.innerHTML = `
-    <div class="jobs-search">${IC.search}<input type="text" id="srch" placeholder="Search jobs…" value="${esc(prefs.listSearch)}" aria-label="Search jobs"/></div>
+    <div class="jobs-search">${IC.search}<input type="text" id="srch" placeholder="${esc(searchPlaceholder)}" value="${esc(prefs.listSearch)}" aria-label="Search jobs"/></div>
     <div class="filter-group">
       <div class="popover-wrap">
         <button class="chip${relActive?' active':''}" id="ch-rel">Relevance ${IC.chevD}</button>
@@ -3143,6 +3157,7 @@ function fillDrawer(job) {
       <span class="drw-footer-job-actions">
         ${openBtn}
         <button class="btn btn-secondary" type="button" id="drw-refresh-btn">${IC.refresh} Check active</button>
+        ${S.debugMode ? `<button class="btn btn-secondary" type="button" id="drw-debug-rescore-btn">AI debug: new copy</button>` : ''}
       </span>
       ${colOn === null ? `<button class="btn btn-primary" id="drw-add-btn" style="margin-left:auto">${IC.plus} Add to Board</button>` : ''}
     </div>
@@ -3154,6 +3169,27 @@ function fillDrawer(job) {
 
   document.getElementById('drw-refresh-btn')?.addEventListener('click', () => {
     checkJobExpired(job.id, job);
+  });
+  document.getElementById('drw-debug-rescore-btn')?.addEventListener('click', async () => {
+    const btn = document.getElementById('drw-debug-rescore-btn');
+    if (!btn || btn.disabled) return;
+    btn.disabled = true;
+    const prev = btn.textContent;
+    btn.textContent = 'Scoring…';
+    try {
+      const res = await api(`/api/jobs/${encodeURIComponent(job.id)}/debug-ai-rescore`, { method: 'POST', body: '{}' });
+      const nid = res.newJobId ? String(res.newJobId) : '';
+      toast(
+        `New row ${nid ? nid.slice(0, 10) + '…' : ''} — fit ${res.fit_score ?? '?'}`,
+        'success',
+      );
+      await loadJobs(true);
+    } catch (e) {
+      toast('Debug re-score failed: ' + (e instanceof Error ? e.message : String(e)), 'error');
+    } finally {
+      btn.disabled = false;
+      btn.textContent = prev;
+    }
   });
   document.getElementById('drw-regen-btn')?.addEventListener('click', () => regenerateJobDocs(job));
   document.getElementById('drw-rm-btn')?.addEventListener('click', () => {
@@ -3543,7 +3579,7 @@ function openEditUser(userId) {
         <option value="admin" ${u.role==='admin'?'selected':''}>Admin</option>
       </select>
     </div>
-    <div style="font-size:13px;font-weight:500;color:var(--ink-body);margin-bottom:8px;margin-top:8px">Pipeline debug (job detail)</div>
+    <div style="font-size:13px;font-weight:500;color:var(--ink-body);margin-bottom:8px;margin-top:8px">Debug mode</div>
     <div id="eu-debug-inner"><div style="font-size:12px;color:var(--ink-muted)">Loading…</div></div>
     <div style="font-size:13px;font-weight:500;color:var(--ink-body);margin-bottom:8px;margin-top:12px">Vendors</div>
     <div id="eu-vendors-inner"><div style="font-size:12px;color:var(--ink-muted)">Loading…</div></div>
@@ -3561,17 +3597,12 @@ function openEditUser(userId) {
       const dbg = document.getElementById('eu-debug-inner');
       if (dbg) {
         dbg.innerHTML = `
-          <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:10px">
-            <span style="font-size:13px;color:var(--ink-body)">Show pipeline params in job detail</span>
-            <label class="toggle-wrap"><input type="checkbox" class="toggle-input" id="eu-tog-pipeline-params" ${pref.dashboardShowJobPipelineParams ? 'checked' : ''}/><span class="toggle-track"></span></label>
-          </div>
-          <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:10px">
-            <span style="font-size:13px;color:var(--ink-body)">Show received API data in job detail</span>
-            <label class="toggle-wrap"><input type="checkbox" class="toggle-input" id="eu-tog-api-raw" ${pref.dashboardShowJobApiRaw ? 'checked' : ''}/><span class="toggle-track"></span></label>
-          </div>
           <div style="display:flex;align-items:center;justify-content:space-between;gap:12px">
-            <span style="font-size:13px;color:var(--ink-body)">AI debug re-score button</span>
-            <label class="toggle-wrap"><input type="checkbox" class="toggle-input" id="eu-tog-ai-debug" ${pref.dashboardAiDebugRescoreEnabled ? 'checked' : ''}/><span class="toggle-track"></span></label>
+            <div>
+              <div style="font-size:13px;color:var(--ink-body)">Debug mode</div>
+              <div style="font-size:12px;color:var(--ink-muted);margin-top:2px;line-height:1.4">Pipeline params, received API data, and AI re-score in job detail</div>
+            </div>
+            <label class="toggle-wrap"><input type="checkbox" class="toggle-input" id="eu-tog-debug-mode" ${pref.dashboardDebugModeEnabled ? 'checked' : ''}/><span class="toggle-track"></span></label>
           </div>`;
       }
       const vend = document.getElementById('eu-vendors-inner');
@@ -3633,7 +3664,7 @@ function openEditUser(userId) {
       body.role = document.getElementById('eu-role')?.value;
       await api(`/api/admin/users/${encodeURIComponent(u.id)}`, { method: 'PATCH', body: JSON.stringify(body) });
 
-      const togglesReady = !!document.getElementById('eu-tog-pipeline-params');
+      const togglesReady = !!document.getElementById('eu-tog-debug-mode');
       if (togglesReady) {
         const overrides = {};
         document.querySelectorAll('input[id^="eu-cap-"]').forEach((inp) => {
@@ -3647,9 +3678,7 @@ function openEditUser(userId) {
         await api(`/api/admin/users/${encodeURIComponent(u.id)}/preferences`, {
           method: 'PATCH',
           body: JSON.stringify({
-            dashboardShowJobPipelineParams: !!document.getElementById('eu-tog-pipeline-params')?.checked,
-            dashboardShowJobApiRaw: !!document.getElementById('eu-tog-api-raw')?.checked,
-            dashboardAiDebugRescoreEnabled: !!document.getElementById('eu-tog-ai-debug')?.checked,
+            dashboardDebugModeEnabled: !!document.getElementById('eu-tog-debug-mode')?.checked,
             enabledJobSources: enabled,
             requestCapOverrides: overrides,
           }),

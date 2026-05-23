@@ -224,6 +224,30 @@ export async function setDashboardAiDebugRescoreEnabled(
   await setSettingValue(db, userId, DASHBOARD_AI_DEBUG_RESCORE_ENABLED_KEY, enabled ? "1" : "0");
 }
 
+/** Per-user debug mode: pipeline params, API raw fields, and AI re-score — all on or all off. */
+export async function getDashboardDebugModeEnabled(db: D1Database, userId: string): Promise<boolean> {
+  const [pipeline, apiRaw, rescore] = await Promise.all([
+    getDashboardShowJobPipelineParams(db, userId),
+    getDashboardShowJobApiRaw(db, userId),
+    getDashboardAiDebugRescoreEnabled(db, userId),
+  ]);
+  // OR preserves legacy rows where only some flags were set; writes always set all three together.
+  return pipeline || apiRaw || rescore;
+}
+
+export async function setDashboardDebugModeEnabled(
+  db: D1Database,
+  userId: string,
+  enabled: boolean,
+): Promise<void> {
+  const value = enabled ? "1" : "0";
+  await db.batch([
+    setSettingStatement(db, userId, DASHBOARD_SHOW_JOB_PIPELINE_PARAMS_KEY, value),
+    setSettingStatement(db, userId, DASHBOARD_SHOW_JOB_API_RAW_KEY, value),
+    setSettingStatement(db, userId, DASHBOARD_AI_DEBUG_RESCORE_ENABLED_KEY, value),
+  ]);
+}
+
 /** Auto-check expired board listings daily (default: true). */
 export async function getBoardAutoExpirationCheckEnabled(
   db: D1Database,
@@ -522,9 +546,7 @@ export async function setEnabledJobSourceIds(
 }
 
 export type AdminUserPreferencePatch = {
-  dashboardShowJobPipelineParams?: boolean;
-  dashboardShowJobApiRaw?: boolean;
-  dashboardAiDebugRescoreEnabled?: boolean;
+  dashboardDebugModeEnabled?: boolean;
   enabledJobSources?: readonly JobSourceId[];
   requestCapOverrides?: Partial<Record<JobSourceId, number | null>>;
 };
@@ -616,29 +638,12 @@ export async function patchAdminUserPreferences(
   patch: AdminUserPreferencePatch,
 ): Promise<void> {
   const statements: D1PreparedStatement[] = [];
-  if (typeof patch.dashboardShowJobPipelineParams === "boolean") {
+  if (typeof patch.dashboardDebugModeEnabled === "boolean") {
+    const value = patch.dashboardDebugModeEnabled ? "1" : "0";
     statements.push(
-      setSettingStatement(
-        db,
-        userId,
-        DASHBOARD_SHOW_JOB_PIPELINE_PARAMS_KEY,
-        patch.dashboardShowJobPipelineParams ? "1" : "0",
-      ),
-    );
-  }
-  if (typeof patch.dashboardShowJobApiRaw === "boolean") {
-    statements.push(
-      setSettingStatement(db, userId, DASHBOARD_SHOW_JOB_API_RAW_KEY, patch.dashboardShowJobApiRaw ? "1" : "0"),
-    );
-  }
-  if (typeof patch.dashboardAiDebugRescoreEnabled === "boolean") {
-    statements.push(
-      setSettingStatement(
-        db,
-        userId,
-        DASHBOARD_AI_DEBUG_RESCORE_ENABLED_KEY,
-        patch.dashboardAiDebugRescoreEnabled ? "1" : "0",
-      ),
+      setSettingStatement(db, userId, DASHBOARD_SHOW_JOB_PIPELINE_PARAMS_KEY, value),
+      setSettingStatement(db, userId, DASHBOARD_SHOW_JOB_API_RAW_KEY, value),
+      setSettingStatement(db, userId, DASHBOARD_AI_DEBUG_RESCORE_ENABLED_KEY, value),
     );
   }
   // Non-empty only: `[]` is truthy in JS — never persist an empty vendor list from this helper.

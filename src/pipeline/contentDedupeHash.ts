@@ -68,3 +68,18 @@ export async function computeCountryInclusiveContentDedupeHash(job: NormalizedJo
   if (!isContentDedupeHashable(job)) return null;
   return sha256Hex32Utf8(buildContentDedupeFingerprintInternal(job, true));
 }
+
+/** Shown in dashboard filtered-job reject copy when content-hash dedupe hard-rejects a row. */
+export const DUPLICATE_LISTING_JOB_ID_LINE_PREFIX = "Duplicate of DB job ID: ";
+
+export function isDuplicateListingRejectText(text: string): boolean {
+  return /duplicate listing|content-hash dedupe/i.test(text);
+}
+
+export function duplicateListingHardRejectReasons(dupOf: string, contentDedupeHash: string): string[] {
+  const prefix = contentDedupeHash.slice(0, 8);
+  return [
+    `Duplicate listing (content-hash dedupe; fingerprint ${prefix}… matches an earlier saved job)`,
+    `${DUPLICATE_LISTING_JOB_ID_LINE_PREFIX}${dupOf}`,
+  ];
+}
