@@ -8,6 +8,9 @@
     },
     "cloudflare": {
       "enabled": true
+    },
+    "bright-data": {
+      "enabled": true
     }
   }
 }

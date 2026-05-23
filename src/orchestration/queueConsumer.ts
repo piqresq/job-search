@@ -11,6 +11,7 @@ import {
   heartbeatQueueMessage,
   reportOrchestrationErrorToCoordinator,
   reportProviderChunk,
+  resetCoordinatorStateForInactiveUser,
 } from "./client";
 import type { PipelineQueueMessage } from "./types";
 
@@ -107,6 +108,7 @@ function createChunkHeartbeater(env: Env, msg: PipelineQueueMessage): {
             "orchestrator",
             "Queue chunk heartbeat failed to extend lease",
             {
+              userId: msg.userId,
               cycleId: msg.cycleId,
               providerId: msg.providerId,
               seq: msg.seq,
@@ -115,6 +117,7 @@ function createChunkHeartbeater(env: Env, msg: PipelineQueueMessage): {
               leaseExpiresAt: heartbeat.leaseExpiresAt,
             },
             {
+              userId: msg.userId,
               category: "queue",
               eventType: "queue_chunk_heartbeat_failed",
               providerId: msg.providerId,
@@ -130,6 +133,7 @@ function createChunkHeartbeater(env: Env, msg: PipelineQueueMessage): {
           "orchestrator",
           "Queue chunk heartbeat request failed",
           {
+            userId: msg.userId,
             cycleId: msg.cycleId,
             providerId: msg.providerId,
             seq: msg.seq,
@@ -137,6 +141,7 @@ function createChunkHeartbeater(env: Env, msg: PipelineQueueMessage): {
             error: errMsg(error).slice(0, 500),
           },
           {
+            userId: msg.userId,
             category: "queue",
             eventType: "queue_chunk_heartbeat_request_failed",
             providerId: msg.providerId,
@@ -170,11 +175,13 @@ async function runProviderChunk(
       "orchestrator",
       "Queue referenced unknown provider",
       {
+        userId: msg.userId,
         cycleId: msg.cycleId,
         providerId: msg.providerId,
         seq: msg.seq,
       },
       {
+        userId: msg.userId,
         category: "queue",
         eventType: "queue_unknown_provider",
         cycleId: msg.cycleId,
@@ -259,12 +266,14 @@ async function runProviderChunk(
       "orchestrator",
       "Provider chunk failed",
       {
+        userId: msg.userId,
         cycleId: msg.cycleId,
         providerId: msg.providerId,
         seq: msg.seq,
         error: error.slice(0, 500),
       },
       {
+        userId: msg.userId,
         category: "vendor",
         eventType: "provider_chunk_failed",
         providerId: msg.providerId,
@@ -306,12 +315,14 @@ async function runProviderChunk(
         "orchestrator",
         "Cycle dedupe failed",
         {
+          userId: msg.userId,
           cycleId: msg.cycleId,
           providerId: msg.providerId,
           seq: msg.seq,
           error: error.slice(0, 500),
         },
         {
+          userId: msg.userId,
           category: "orchestration",
           eventType: "cycle_dedupe_failed",
           providerId: msg.providerId,
@@ -350,11 +361,13 @@ async function runProviderChunk(
       "statistics",
       "Statistics intake write failed",
       {
+        userId: msg.userId,
         providerId: msg.providerId,
         cycleId: msg.cycleId,
         error: msgText.slice(0, 400),
       },
       {
+        userId: msg.userId,
         category: "system",
         eventType: "statistics_intake_write_failed",
         providerId: msg.providerId,
@@ -496,6 +509,7 @@ export async function handlePipelineQueue(
           providerId: body.providerId,
           seq: body.seq,
         });
+        await resetCoordinatorStateForInactiveUser(env, body.userId);
         continue;
       }
 
@@ -525,6 +539,7 @@ export async function handlePipelineQueue(
           providerId: body.providerId,
           seq: body.seq,
         });
+        await resetCoordinatorStateForInactiveUser(env, body.userId);
         continue;
       }
       if (result.errors.length > 0) {
@@ -533,6 +548,7 @@ export async function handlePipelineQueue(
           "orchestrator",
           "Pipeline chunk finished with per-job processing errors",
           {
+            userId: body.userId,
             cycleId: body.cycleId,
             providerId: body.providerId,
             seq: body.seq,
@@ -540,6 +556,7 @@ export async function handlePipelineQueue(
             sample: result.errors.slice(0, 12).join(" | ").slice(0, 1800),
           },
           {
+            userId: body.userId,
             category: "system",
             eventType: "pipeline_processing_errors",
             providerId: body.providerId,
@@ -633,12 +650,14 @@ export async function handlePipelineQueue(
           "orchestrator",
           "Coordinator /report failed after chunk; awaiting pending-lease recovery",
           {
+            userId: body.userId,
             cycleId: body.cycleId,
             providerId: body.providerId,
             seq: body.seq,
             error: error.slice(0, 500),
           },
           {
+            userId: body.userId,
             category: "orchestration",
             eventType: "provider_chunk_report_failed",
             providerId: body.providerId,
@@ -663,10 +682,12 @@ export async function handlePipelineQueue(
         "orchestrator",
         "Queue consumer failed",
         {
+          userId: isPipelineQueueMessage(body) ? body.userId : BOOTSTRAP_ADMIN_ID,
           error: errMsg(e).slice(0, 500),
           body,
         },
         {
+          userId: isPipelineQueueMessage(body) ? body.userId : BOOTSTRAP_ADMIN_ID,
           category: "queue",
           eventType: "queue_consumer_failed",
           providerId: isPipelineQueueMessage(body) ? body.providerId : null,

@@ -15,6 +15,8 @@ import {
   getFavoriteJobIdsSet,
   getJobR2Keys,
   invalidateDashboardListMemoCaches,
+  countDashboardJobListMatchingRows,
+  countDashboardJobListVisibleRows,
   queryDashboardJobListIds,
   queryDashboardJobListPage,
   loadNormalizedJob,
@@ -57,30 +59,55 @@ import {
   getProviderRequestCapOverrides,
   getResolvedProviderDailyRequestCap,
   isPipelineHardKillActive,
-  patchProviderRequestCapOverrides,
+  patchAdminUserPreferences,
   setApiExtractionEnabled,
-  setDashboardAiDebugRescoreEnabled,
-  setDashboardShowJobApiRaw,
-  setDashboardShowJobPipelineParams,
-  setEnabledJobSourceIds,
   setSearchCountries,
   setSearchRoleTiers,
   setStoredOpenAiDraftInstruction,
   setStoredOpenAiScoringPolicyInstruction,
   setVerboseLoggingEnabled,
+  getDashboardFilteredJobListPrefs,
+  getDashboardJobListPrefs,
+  setDashboardFilteredJobListPrefs,
+  setDashboardJobListPrefs,
   getSetupWizardCompletedAt,
   setSetupWizardCompletedAt,
+  getBoardAutoExpirationCheckEnabled,
+  setBoardAutoExpirationCheckEnabled,
+  getLastExpirationScanSummary,
+  setLastExpirationScanSummary,
+  clearLastExpirationScanSummary,
+  type ExpirationScanSummary,
+  getLinkedinManualCookie,
+  getLinkedinManualCookieSavedAt,
+  setLinkedinManualCookie,
 } from "../db/appSettings";
+import { fetchPublicListingHtml, normalizeLinkedinJobUrl } from "../lib/listingExpirationFetch";
+import { fetchViaBrightdataIsp } from "../lib/brightdataIspFetch";
+import { detectExpiration } from "../lib/listingExpirationDetect";
+import { getPhrasesForCountry } from "../lib/listingExpirationPhrases";
+import {
+  getActiveSession,
+  isBrightdataFallbackActive,
+  activateBrightdataFallback,
+  invalidateSession,
+  ensureFresh,
+} from "../lib/linkedinSessionService";
+import { BrightdataScrapeSession } from "../lib/brightdataScraper";
+import { getLinkedinSession } from "../db/linkedinSession";
 import {
   addBoardItem,
+  claimBoardItemGenerating,
   importBoardSnapshot,
   reorderBoardItems,
   JOB_BOARD_COLUMNS,
   listBoardItems,
   moveBoardItem,
+  moveBoardItemToExpired,
   normalizeBoardColumnId,
   purgeExpiredRejectedBoardItems,
   removeBoardItem,
+  setBoardItemGenerating,
   type JobBoardColumnId,
   type JobBoardRow,
 } from "../db/jobBoard";
@@ -91,6 +118,7 @@ import {
   validateScoringInstructionForSave,
 } from "../pipeline/aiInstructions";
 import { getRegisteredProviderIds } from "../providers";
+import { pickJsearchApplyUrl, pickJsearchJobUrl } from "../providers/jsearchLinks";
 import type { JobSourceId, NormalizedJob } from "../types/job";
 import { resolveWorkplaceType } from "../providers/lib/workplaceTypeCanonical";
 import {
@@ -128,12 +156,13 @@ import {
   getProviderUtcDayRequestCount,
   utcYmdFromUnix,
 } from "../db/pipelineState";
-import { log } from "../logging/appLog";
+import { log, observabilityLog } from "../logging/appLog";
 import {
   clearExhaustPause,
   clearRequestCapPauseForProviders,
   getCoordinatorStatus,
   resetCoordinatorStateForDeletedUser,
+  resetCoordinatorStateForInactiveUser,
   startOrResumeCoordinator,
 } from "../orchestration/client";
 import { getOperationalHoursState } from "../orchestration/operationalHours";
@@ -151,7 +180,6 @@ import {
   getUserProviderCaps,
   listUsers,
   normalizeUsername,
-  setUserProviderCaps,
   setUserRole,
   setUserStatus,
   syncNewUserTemplateFromAdmin,
@@ -339,6 +367,8 @@ function normalizeDashboardJobListPrefs(raw: unknown): DashboardJobListPrefs {
     obj.filterFetchAge === "24h" ||
     obj.filterFetchAge === "2d" ||
     obj.filterFetchAge === "3d" ||
+    obj.filterFetchAge === "4d" ||
+    obj.filterFetchAge === "5d" ||
     obj.filterFetchAge === "7d" ||
     obj.filterFetchAge === "14d" ||
     obj.filterFetchAge === "21d"
@@ -347,6 +377,14 @@ function normalizeDashboardJobListPrefs(raw: unknown): DashboardJobListPrefs {
   }
   if (typeof obj.listSearch === "string") {
     prefs.listSearch = obj.listSearch;
+  }
+  return prefs;
+}
+
+function normalizeDashboardFilteredJobListPrefs(raw: unknown): DashboardJobListPrefs {
+  const prefs = normalizeDashboardJobListPrefs(raw);
+  if (raw && typeof raw === "object") {
+    prefs.filterReasons = copyDashboardBooleanRecord((raw as Record<string, unknown>).filterReasons);
   }
   return prefs;
 }
@@ -418,6 +456,7 @@ async function buildDashboardJobListResponse(
     tab: query.tab,
     jobs,
     totalMatching: page.totalMatching,
+    totalVisible: page.totalVisible,
     totalUnfiltered: page.totalUnfiltered,
     hasMore: page.hasMore,
     nextCursor: page.nextCursor,
@@ -427,6 +466,7 @@ async function buildDashboardJobListResponse(
       showApiRawFields: showApiRaw,
       aiDebugRescore,
     },
+    prefs: query.prefs,
   });
 }
 
@@ -436,12 +476,40 @@ type DashboardJobPayloadOptions = {
   showApiRaw?: boolean;
 };
 
+function parsedNormalizedJobJson(raw: string | null): Record<string, unknown> | null {
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === "object" ? (parsed as Record<string, unknown>) : null;
+  } catch {
+    return null;
+  }
+}
+
+function dashboardJobLinksFromRow(r: DashboardJobListPage["rows"][number]): {
+  jobUrl: string;
+  applyUrl: string;
+} {
+  const storedJobUrl = r.job_url ?? "";
+  const storedApplyUrl = r.apply_url ?? "";
+  const normalized = parsedNormalizedJobJson(r.normalized_json);
+  const raw = normalized?.raw;
+  if (normalized?.source !== "jsearch" || !raw || typeof raw !== "object") {
+    return { jobUrl: storedJobUrl, applyUrl: storedApplyUrl };
+  }
+
+  const jsearchRaw = raw as Record<string, unknown>;
+  return {
+    jobUrl: pickJsearchJobUrl(jsearchRaw) ?? storedJobUrl,
+    applyUrl: pickJsearchApplyUrl(jsearchRaw) ?? storedApplyUrl,
+  };
+}
+
 function dashboardJobPayloadFromRow(
   r: DashboardJobListPage["rows"][number],
   opts: DashboardJobPayloadOptions = {},
 ) {
-  const jobUrl = r.job_url ?? "";
-  const applyUrl = r.apply_url ?? "";
+  const { jobUrl, applyUrl } = dashboardJobLinksFromRow(r);
   const logo = listingLogoFromUrls(jobUrl, applyUrl);
   const apiFetched = numOrNull(r.api_fetched_at_unix);
   const createdAt = typeof r.created_at === "number" ? r.created_at : 0;
@@ -457,6 +525,7 @@ function dashboardJobPayloadFromRow(
 
   return {
     id: r.id,
+    source: r.source ?? "",
     status: r.status ?? "",
     title: r.title ?? "",
     company: r.company ?? "",
@@ -488,7 +557,9 @@ function dashboardJobPayloadFromRow(
     isFavorite: opts.favoriteIds?.has(r.id) ?? false,
     ingestionFacts: showPipelineParams ? buildIngestionFactsFromNormalizedJson(r.normalized_json) : [],
     ingestionRequestParamsStored: showPipelineParams ? hasStoredIngestionRequestParams(r.normalized_json) : false,
-    apiRawFields: showApiRaw ? buildRawApiFieldsFromNormalizedJson(r.normalized_json) : [],
+    apiRawFields: showApiRaw
+      ? [{ label: "DB job id", value: r.id }, ...buildRawApiFieldsFromNormalizedJson(r.normalized_json)]
+      : [],
     apiRawFieldsStored: showApiRaw ? hasStoredApiRawFields(r.normalized_json) : false,
   };
 }
@@ -506,16 +577,20 @@ function emptyBoardPayload(): Record<JobBoardColumnId, BoardJobPayload[]> {
     applied: [],
     interview: [],
     rejected: [],
+    expired: [],
   };
 }
 
-function buildBoardPayload(rows: JobBoardRow[]): Record<JobBoardColumnId, BoardJobPayload[]> {
+function buildBoardPayload(
+  rows: JobBoardRow[],
+  opts?: Pick<DashboardJobPayloadOptions, "showPipelineParams" | "showApiRaw">,
+): Record<JobBoardColumnId, BoardJobPayload[]> {
   const board = emptyBoardPayload();
   for (const row of rows) {
     const col = normalizeBoardColumnId(row.board_column_id);
     if (!col) continue;
     board[col].push({
-      ...dashboardJobPayloadFromRow(row),
+      ...dashboardJobPayloadFromRow(row, opts),
       kanban_at: row.board_entered_at,
       boardUpdatedAtUnix: row.board_updated_at,
       generating: row.board_generating === 1,
@@ -527,7 +602,12 @@ function buildBoardPayload(rows: JobBoardRow[]): Record<JobBoardColumnId, BoardJ
 async function boardPayloadForUser(env: Env, userId: string): Promise<Record<JobBoardColumnId, BoardJobPayload[]>> {
   const now = Math.floor(Date.now() / 1000);
   await purgeExpiredRejectedBoardItems(env.DB, userId, now);
-  return buildBoardPayload(await listBoardItems(env.DB, userId));
+  const [rows, showPipelineParams, showApiRaw] = await Promise.all([
+    listBoardItems(env.DB, userId),
+    getDashboardShowJobPipelineParams(env.DB, userId),
+    getDashboardShowJobApiRaw(env.DB, userId),
+  ]);
+  return buildBoardPayload(rows, { showPipelineParams, showApiRaw });
 }
 
 const VENDOR_LABELS: Record<JobSourceId, string> = {
@@ -964,7 +1044,8 @@ export async function handleDashboardApi(
 
   const session = await requireDashboardSession(request, env);
   if (session instanceof Response) return session;
-  const { userId } = session;
+  const { userId, role } = session;
+  const isAdmin = role === "admin";
 
   if (path === "/api/settings" && request.method === "GET") {
     const [
@@ -979,6 +1060,13 @@ export async function handleDashboardApi(
       searchPolicy,
       capsPayload,
       cvCache,
+      boardAutoExpirationCheckEnabled,
+      rawScanSummary,
+      savedPrefsStr,
+      savedFilteredPrefsStr,
+      linkedinSessionRow,
+      linkedinManualCookieRaw,
+      linkedinManualCookieSavedAt,
     ] = await Promise.all([
       getApiExtractionEnabled(env.DB, userId),
       getVerboseLoggingEnabled(env.DB),
@@ -991,14 +1079,34 @@ export async function handleDashboardApi(
       getSearchRuntimePolicy(env.DB, userId),
       buildRequestCapsPayload(env, userId),
       getCvCacheStatus(env.DB, userId),
+      getBoardAutoExpirationCheckEnabled(env.DB, userId),
+      getLastExpirationScanSummary(env.DB, userId),
+      getDashboardJobListPrefs(env.DB, userId),
+      getDashboardFilteredJobListPrefs(env.DB, userId),
+      getLinkedinSession(env.DB),
+      getLinkedinManualCookie(env.DB),
+      getLinkedinManualCookieSavedAt(env.DB),
     ]);
-    return json({
+    const todayUtc = new Date().toISOString().slice(0, 10);
+    const expirationScanSummary: ExpirationScanSummary | null =
+      rawScanSummary?.date === todayUtc ? rawScanSummary : null;
+
+    let jobListPrefs = defaultDashboardJobListPrefs();
+    if (savedPrefsStr) {
+      try {
+        jobListPrefs = normalizeDashboardJobListPrefs(JSON.parse(savedPrefsStr));
+      } catch {}
+    }
+    let filteredJobListPrefs = defaultDashboardJobListPrefs();
+    if (savedFilteredPrefsStr) {
+      try {
+        filteredJobListPrefs = normalizeDashboardFilteredJobListPrefs(JSON.parse(savedFilteredPrefsStr));
+      } catch {}
+    }
+
+    const payload: Record<string, unknown> = {
       ok: true,
       apiExtractionEnabled,
-      verboseLoggingEnabled,
-      dashboardShowJobPipelineParams,
-      dashboardShowJobApiRaw,
-      dashboardAiDebugRescoreEnabled,
       roleTiers,
       searchConfig: {
         countries,
@@ -1006,11 +1114,34 @@ export async function handleDashboardApi(
         policy: searchPolicy,
       },
       pipelineHardKillActive: isPipelineHardKillActive(env),
-      requestCapsPerDay: capsPayload.requestCapsPerDay,
-      requestCapsDetail: capsPayload.requestCapsDetail,
-      vendors,
       cvCache,
-    });
+      boardAutoExpirationCheckEnabled,
+      expirationScanSummary,
+      jobListPrefs,
+      filteredJobListPrefs,
+    };
+    if (isAdmin) {
+      payload.verboseLoggingEnabled = verboseLoggingEnabled;
+      payload.dashboardShowJobPipelineParams = dashboardShowJobPipelineParams;
+      payload.dashboardShowJobApiRaw = dashboardShowJobApiRaw;
+      payload.dashboardAiDebugRescoreEnabled = dashboardAiDebugRescoreEnabled;
+      payload.requestCapsPerDay = capsPayload.requestCapsPerDay;
+      payload.requestCapsDetail = capsPayload.requestCapsDetail;
+      payload.vendors = vendors;
+      payload.linkedinSession = linkedinSessionRow
+        ? {
+            lastStatus: linkedinSessionRow.lastStatus,
+            lastError: linkedinSessionRow.lastError,
+            lastErrorAt: linkedinSessionRow.lastErrorAt,
+            liAtExpiresAt: linkedinSessionRow.liAtExpiresAt,
+            disabledUntilNextCron: linkedinSessionRow.disabledUntilNextCron,
+            cookieCount: Object.keys(linkedinSessionRow.cookies).length,
+          }
+        : null;
+      payload.linkedinManualCookieSet = !!linkedinManualCookieRaw;
+      payload.linkedinManualCookieSavedAt = linkedinManualCookieSavedAt ?? null;
+    }
+    return json(payload);
   }
 
   if (path === "/api/settings/cv-upload" && request.method === "POST") {
@@ -1543,46 +1674,43 @@ export async function handleDashboardApi(
   if (path === "/api/settings" && request.method === "PATCH") {
     let body: {
       apiExtractionEnabled?: boolean;
-      verboseLoggingEnabled?: boolean;
-      dashboardShowJobPipelineParams?: boolean;
-      dashboardShowJobApiRaw?: boolean;
-      dashboardAiDebugRescoreEnabled?: boolean;
-      enabledJobSources?: string[];
       roleTiers?: {
         tier1?: unknown[];
         tier2?: unknown[];
       };
       roleTiersReset?: boolean;
       revisionNote?: string;
-      requestCapOverrides?: Record<string, unknown>;
       searchCountries?: unknown[];
+      boardAutoExpirationCheckEnabled?: boolean;
     };
     try {
       body = (await request.json()) as {
         apiExtractionEnabled?: boolean;
-        verboseLoggingEnabled?: boolean;
-        dashboardShowJobPipelineParams?: boolean;
-        dashboardShowJobApiRaw?: boolean;
-        dashboardAiDebugRescoreEnabled?: boolean;
-        enabledJobSources?: string[];
         roleTiers?: {
           tier1?: unknown[];
           tier2?: unknown[];
         };
         roleTiersReset?: boolean;
         revisionNote?: string;
-        requestCapOverrides?: Record<string, unknown>;
         searchCountries?: unknown[];
+        boardAutoExpirationCheckEnabled?: boolean;
       };
     } catch {
       return json({ ok: false, error: "invalid_json" }, 400);
     }
+    const strayAdminFields = [
+      "verboseLoggingEnabled",
+      "dashboardShowJobPipelineParams",
+      "dashboardShowJobApiRaw",
+      "dashboardAiDebugRescoreEnabled",
+      "enabledJobSources",
+      "requestCapOverrides",
+      "linkedinLiAt",
+    ].some((k) => Object.prototype.hasOwnProperty.call(body as object, k));
+    if (strayAdminFields) {
+      return json({ ok: false, error: "admin_only_fields_use_admin_api" }, 400);
+    }
     const hasApi = typeof body.apiExtractionEnabled === "boolean";
-    const hasVerbose = typeof body.verboseLoggingEnabled === "boolean";
-    const hasShowPipelineParams = typeof body.dashboardShowJobPipelineParams === "boolean";
-    const hasShowApiRaw = typeof body.dashboardShowJobApiRaw === "boolean";
-    const hasAiDebugRescore = typeof body.dashboardAiDebugRescoreEnabled === "boolean";
-    const hasVendors = Array.isArray(body.enabledJobSources);
     const hasRoleTiersReset = body.roleTiersReset === true;
     const hasRoleTiers =
       !hasRoleTiersReset &&
@@ -1590,23 +1718,14 @@ export async function handleDashboardApi(
       typeof body.roleTiers === "object" &&
       (Array.isArray(body.roleTiers.tier1) || Array.isArray(body.roleTiers.tier2));
     const roleRevisionNoteRaw = typeof body.revisionNote === "string" ? body.revisionNote : "";
-    const hasRequestCaps =
-      body.requestCapOverrides !== undefined &&
-      body.requestCapOverrides !== null &&
-      typeof body.requestCapOverrides === "object" &&
-      !Array.isArray(body.requestCapOverrides);
     const hasSearchCountries = Array.isArray(body.searchCountries);
+    const hasBoardAutoExpirationCheck = typeof body.boardAutoExpirationCheckEnabled === "boolean";
     if (
       !hasApi &&
-      !hasVerbose &&
-      !hasShowPipelineParams &&
-      !hasShowApiRaw &&
-      !hasAiDebugRescore &&
-      !hasVendors &&
       !hasRoleTiers &&
       !hasRoleTiersReset &&
-      !hasRequestCaps &&
-      !hasSearchCountries
+      !hasSearchCountries &&
+      !hasBoardAutoExpirationCheck
     ) {
       return json({ ok: false, error: "bad_body" }, 400);
     }
@@ -1615,7 +1734,6 @@ export async function handleDashboardApi(
       if (rnErr) return json({ ok: false, error: rnErr }, 400);
     }
     const apiBefore = await getApiExtractionEnabled(env.DB, userId);
-    const verboseBefore = await getVerboseLoggingEnabled(env.DB);
 
     if (hasApi && body.apiExtractionEnabled !== apiBefore) {
       await setApiExtractionEnabled(env.DB, userId, body.apiExtractionEnabled!);
@@ -1624,73 +1742,6 @@ export async function handleDashboardApi(
         "dashboard",
         body.apiExtractionEnabled ? "API extraction enabled" : "API extraction disabled",
       );
-    }
-    if (hasVerbose && body.verboseLoggingEnabled !== verboseBefore) {
-      await setVerboseLoggingEnabled(env.DB, body.verboseLoggingEnabled!);
-      await log.info(
-        env,
-        "dashboard",
-        body.verboseLoggingEnabled ? "Verbose logging enabled" : "Verbose logging disabled",
-      );
-    }
-
-    if (hasShowPipelineParams) {
-      await setDashboardShowJobPipelineParams(env.DB, userId, body.dashboardShowJobPipelineParams!);
-      await log.info(env, "dashboard", "Job list: pipeline request params visibility updated", {
-        show: body.dashboardShowJobPipelineParams,
-      });
-    }
-    if (hasShowApiRaw) {
-      await setDashboardShowJobApiRaw(env.DB, userId, body.dashboardShowJobApiRaw!);
-      await log.info(env, "dashboard", "Job list: API raw fields visibility updated", {
-        show: body.dashboardShowJobApiRaw,
-      });
-    }
-    if (hasAiDebugRescore) {
-      await setDashboardAiDebugRescoreEnabled(env.DB, userId, body.dashboardAiDebugRescoreEnabled!);
-      await log.info(env, "dashboard", "AI debug new-copy button visibility updated", {
-        enabled: body.dashboardAiDebugRescoreEnabled,
-      });
-    }
-
-    if (hasVendors) {
-      const valid = new Set(getRegisteredProviderIds());
-      const next: JobSourceId[] = [];
-      for (const x of body.enabledJobSources!) {
-        if (typeof x !== "string") continue;
-        const id = x as JobSourceId;
-        if (valid.has(id)) {
-          next.push(id);
-        }
-      }
-      await setEnabledJobSourceIds(env.DB, userId, next, getRegisteredProviderIds());
-      await log.info(env, "dashboard", "Pipeline vendors updated", { enabledJobSources: next });
-      if (ctx) {
-        ctx.waitUntil(
-          (async () => {
-            try {
-              const r = await startOrResumeCoordinator(env, userId, { reason: "dashboard_vendors" });
-              await log.info(env, "dashboard", "Coordinator start requested after vendor list change", r);
-            } catch (e) {
-              const msg = e instanceof Error ? e.message : String(e);
-              await log.critical(
-                env,
-                "dashboard",
-                "Coordinator start failed (after vendor list change)",
-                {
-                  error: msg.slice(0, 500),
-                },
-                {
-                  category: "dashboard",
-                  eventType: "coordinator_start_failed",
-                  phase: "dashboard_vendors",
-                  statusKind: "failed",
-                },
-              );
-            }
-          })(),
-        );
-      }
     }
 
     if (hasRoleTiersReset) {
@@ -1784,79 +1835,6 @@ export async function handleDashboardApi(
       }
     }
 
-    if (hasRequestCaps) {
-      const valid = new Set(getRegisteredProviderIds());
-      const raw = body.requestCapOverrides!;
-      const patch: Partial<Record<JobSourceId, number | null>> = {};
-      for (const key of Object.keys(raw)) {
-        if (!valid.has(key as JobSourceId)) {
-          return json({ ok: false, error: "bad_request_cap_key" }, 400);
-        }
-      }
-      for (const id of valid) {
-        if (!Object.prototype.hasOwnProperty.call(raw, id)) continue;
-        const v = raw[id as string];
-        if (v === null) {
-          patch[id] = null;
-        } else if (typeof v === "number" && Number.isFinite(v)) {
-          const n = Math.floor(v as number);
-          if (n < 0 || n > MAX_REQUEST_CAP_PER_DAY) {
-            return json({ ok: false, error: "bad_request_cap" }, 400);
-          }
-          patch[id] = n;
-        } else {
-          return json({ ok: false, error: "bad_request_cap" }, 400);
-        }
-      }
-      const patchedIds = Object.keys(patch) as JobSourceId[];
-      const effectiveCapsBefore: Partial<Record<JobSourceId, number>> = {};
-      for (const id of patchedIds) {
-        effectiveCapsBefore[id] = await getResolvedProviderDailyRequestCap(env.DB, env, userId, id);
-      }
-      await patchProviderRequestCapOverrides(env.DB, userId, patch);
-      const capRaisedIds: JobSourceId[] = [];
-      for (const id of patchedIds) {
-        const before = effectiveCapsBefore[id] ?? 0;
-        const after = await getResolvedProviderDailyRequestCap(env.DB, env, userId, id);
-        const raised = after > before || (before > 0 && after === 0);
-        if (raised) capRaisedIds.push(id);
-      }
-      await log.info(env, "dashboard", "Provider request caps updated", {
-        patchedIds,
-        capRaisedIds,
-      });
-      if (capRaisedIds.length && ctx) {
-        ctx.waitUntil(
-          (async () => {
-            try {
-              const r = await clearRequestCapPauseForProviders(env, userId, { providerIds: capRaisedIds });
-              await log.info(env, "dashboard", "Coordinator cleared request-cap pause after cap raise", {
-                cleared: r.cleared,
-                status: r.status,
-              });
-            } catch (e) {
-              const msg = e instanceof Error ? e.message : String(e);
-              await log.moderate(
-                env,
-                "dashboard",
-                "clearRequestCapPauseForProviders failed",
-                {
-                  error: msg.slice(0, 500),
-                  providerIds: capRaisedIds,
-                },
-                {
-                  category: "dashboard",
-                  eventType: "clear_request_cap_pause_failed",
-                  phase: "request_cap_overrides",
-                  statusKind: "degraded",
-                },
-              );
-            }
-          })(),
-        );
-      }
-    }
-
     if (hasSearchCountries) {
       const raw = body.searchCountries!;
       const items: { iso2: string; fullName: string }[] = [];
@@ -1927,14 +1905,22 @@ export async function handleDashboardApi(
       );
     }
 
+    if (hasBoardAutoExpirationCheck) {
+      await setBoardAutoExpirationCheckEnabled(env.DB, userId, body.boardAutoExpirationCheckEnabled!);
+      await log.info(env, "dashboard", body.boardAutoExpirationCheckEnabled
+        ? "Auto-check expired board listings enabled"
+        : "Auto-check expired board listings disabled",
+      );
+    }
+
     const capsPayload = await buildRequestCapsPayload(env, userId);
-    return json({
+    const todayUtcPatch = new Date().toISOString().slice(0, 10);
+    const rawScanSummaryPatch = await getLastExpirationScanSummary(env.DB, userId);
+    const linkedinManualCookieRaw = await getLinkedinManualCookie(env.DB);
+    const patchedManualCookieSavedAt = await getLinkedinManualCookieSavedAt(env.DB);
+    const patchPayload: Record<string, unknown> = {
       ok: true,
       apiExtractionEnabled: await getApiExtractionEnabled(env.DB, userId),
-      verboseLoggingEnabled: await getVerboseLoggingEnabled(env.DB),
-      dashboardShowJobPipelineParams: await getDashboardShowJobPipelineParams(env.DB, userId),
-      dashboardShowJobApiRaw: await getDashboardShowJobApiRaw(env.DB, userId),
-      dashboardAiDebugRescoreEnabled: await getDashboardAiDebugRescoreEnabled(env.DB, userId),
       roleTiers: await getSearchRoleTiers(env.DB, userId),
       searchConfig: {
         countries: await getSearchCountries(env.DB, userId),
@@ -1942,10 +1928,27 @@ export async function handleDashboardApi(
         policy: await getSearchRuntimePolicy(env.DB, userId),
       },
       pipelineHardKillActive: isPipelineHardKillActive(env),
-      requestCapsPerDay: capsPayload.requestCapsPerDay,
-      requestCapsDetail: capsPayload.requestCapsDetail,
-      vendors: await buildVendorsPayload(env, userId),
-    });
+      boardAutoExpirationCheckEnabled: await getBoardAutoExpirationCheckEnabled(env.DB, userId),
+      expirationScanSummary: rawScanSummaryPatch?.date === todayUtcPatch ? rawScanSummaryPatch : null,
+    };
+    if (isAdmin) {
+      patchPayload.verboseLoggingEnabled = await getVerboseLoggingEnabled(env.DB);
+      patchPayload.dashboardShowJobPipelineParams = await getDashboardShowJobPipelineParams(
+        env.DB,
+        userId,
+      );
+      patchPayload.dashboardShowJobApiRaw = await getDashboardShowJobApiRaw(env.DB, userId);
+      patchPayload.dashboardAiDebugRescoreEnabled = await getDashboardAiDebugRescoreEnabled(
+        env.DB,
+        userId,
+      );
+      patchPayload.requestCapsPerDay = capsPayload.requestCapsPerDay;
+      patchPayload.requestCapsDetail = capsPayload.requestCapsDetail;
+      patchPayload.vendors = await buildVendorsPayload(env, userId);
+      patchPayload.linkedinManualCookieSet = !!linkedinManualCookieRaw;
+      patchPayload.linkedinManualCookieSavedAt = patchedManualCookieSavedAt ?? null;
+    }
+    return json(patchPayload);
   }
 
   if (path === "/api/logs" && request.method === "GET") {
@@ -1964,11 +1967,23 @@ export async function handleDashboardApi(
   if (path === "/api/jobs" && request.method === "GET") {
     const tab = url.searchParams.get("tab") || "active";
     if (!TAB_RE.test(tab)) return json({ ok: false, error: "bad_tab" }, 400);
+    const isFilteredTab = tab === "filtered";
+    const savedPrefsStr = isFilteredTab
+      ? await getDashboardFilteredJobListPrefs(env.DB, userId)
+      : await getDashboardJobListPrefs(env.DB, userId);
+    let prefs = defaultDashboardJobListPrefs();
+    if (savedPrefsStr) {
+      try {
+        prefs = isFilteredTab
+          ? normalizeDashboardFilteredJobListPrefs(JSON.parse(savedPrefsStr))
+          : normalizeDashboardJobListPrefs(JSON.parse(savedPrefsStr));
+      } catch {}
+    }
     return buildDashboardJobListResponse(env, userId, {
       tab: tab as DashboardJobListTab,
       cursor: null,
       limit: clampDashboardJobListLimit(url.searchParams.get("limit")),
-      prefs: defaultDashboardJobListPrefs(),
+      prefs,
     });
   }
 
@@ -1984,6 +1999,17 @@ export async function handleDashboardApi(
     if (hasCursor && bodyObj.cursor != null && cursor == null) {
       return json({ ok: false, error: "bad_cursor" }, 400);
     }
+    const isFilteredTab = tabRaw === "filtered";
+    const normalizedPrefs = isFilteredTab
+      ? normalizeDashboardFilteredJobListPrefs(bodyObj.prefs)
+      : normalizeDashboardJobListPrefs(bodyObj.prefs);
+    if (!hasCursor) {
+      if (isFilteredTab) {
+        await setDashboardFilteredJobListPrefs(env.DB, userId, JSON.stringify(normalizedPrefs));
+      } else {
+        await setDashboardJobListPrefs(env.DB, userId, JSON.stringify(normalizedPrefs));
+      }
+    }
     scheduleSalaryCacheBackfillNudge(env, ctx);
     return buildDashboardJobListResponse(
       env,
@@ -1992,7 +2018,7 @@ export async function handleDashboardApi(
         tab: tabRaw as DashboardJobListTab,
         cursor,
         limit: clampDashboardJobListLimit(bodyObj.limit),
-        prefs: normalizeDashboardJobListPrefs(bodyObj.prefs),
+        prefs: normalizedPrefs,
       },
       ctx,
     );
@@ -2005,13 +2031,20 @@ export async function handleDashboardApi(
       return json({ ok: false, error: "bad_tab" }, 400);
     }
     const bodyObj = (body && typeof body === "object" ? body : {}) as Record<string, unknown>;
+    const normalizedPrefs = tabRaw === "filtered"
+      ? normalizeDashboardFilteredJobListPrefs(bodyObj.prefs)
+      : normalizeDashboardJobListPrefs(bodyObj.prefs);
     const ids = await queryDashboardJobListIds(
       env.DB,
       userId,
       tabRaw as DashboardJobListTab,
-      normalizeDashboardJobListPrefs(bodyObj.prefs),
+      normalizedPrefs,
     );
-    return json({ ok: true, tab: tabRaw, ids, totalMatching: ids.length });
+    const [totalMatching, totalVisible] = await Promise.all([
+      countDashboardJobListMatchingRows(env.DB, userId, tabRaw as DashboardJobListTab, normalizedPrefs),
+      countDashboardJobListVisibleRows(env.DB, userId, tabRaw as DashboardJobListTab, normalizedPrefs),
+    ]);
+    return json({ ok: true, tab: tabRaw, ids, totalMatching, totalVisible });
   }
 
   if (path === "/api/board" && request.method === "GET") {
@@ -2140,6 +2173,29 @@ export async function handleDashboardApi(
     return handleDownload(env, userId, dlCover[1]!, "cover");
   }
 
+  // ── /api/jobs/:id/check-expired ──────────────────────────────────────────
+  const checkExpiredMatch = path.match(/^\/api\/jobs\/([^/]+)\/check-expired$/);
+  if (checkExpiredMatch && request.method === "POST") {
+    return handleCheckExpired(env, userId, checkExpiredMatch[1]!);
+  }
+
+  // ── /api/notifications/expiration-scan-summary ───────────────────────────
+  if (path === "/api/notifications/expiration-scan-summary" && request.method === "POST") {
+    const body = await request.json<{ scanned?: number; expired?: number; failed?: number }>();
+    const scanned = typeof body.scanned === "number" ? Math.max(0, Math.round(body.scanned)) : 0;
+    const expired = typeof body.expired === "number" ? Math.max(0, Math.round(body.expired)) : 0;
+    const failed = typeof body.failed === "number" ? Math.max(0, Math.round(body.failed)) : 0;
+    const today = new Date().toISOString().slice(0, 10);
+    await setLastExpirationScanSummary(env.DB, userId, { date: today, scanned, expired, failed });
+    return json({ ok: true });
+  }
+
+  // ── /api/notifications/dismiss-expiration-scan-notice ────────────────────
+  if (path === "/api/notifications/dismiss-expiration-scan-notice" && request.method === "POST") {
+    await clearLastExpirationScanSummary(env.DB, userId);
+    return json({ ok: true });
+  }
+
   // ── /api/me ─────────────────────────────────────────────────────────────
   if (path === "/api/me" && request.method === "GET") {
     const user = await getUserById(env.DB, userId);
@@ -2150,7 +2206,7 @@ export async function handleDashboardApi(
   // ── Admin routes (require role=admin) ────────────────────────────────────
   if (path.startsWith("/api/admin/")) {
     if (session.role !== "admin") return json({ ok: false, error: "forbidden" }, 403);
-    return handleAdminApi(env, request, path, session.userId);
+    return handleAdminApi(env, request, path, session.userId, ctx);
   }
 
   // ── Setup wizard ──────────────────────────────────────────────────────────
@@ -2384,107 +2440,119 @@ async function handleGenerate(env: Env, userId: string, id: string): Promise<Res
   const scoring = await loadScoringResult(env.DB, userId, id);
   if (!job || !scoring) return json({ ok: false, error: "not_found" }, 404);
 
-  let drafts;
-  try {
-    drafts = await generateTailoredDrafts(env.DB, env, userId, job, scoring);
-  } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e);
-    await log.moderate(
-      env,
-      "dashboard",
-      "Generate drafts failed",
-      { id, err: msg },
-      {
-        category: "ai_drafts",
-        eventType: "generate_drafts_failed",
-        providerId: job.source,
-        jobId: id,
-        phase: "handleGenerate",
-        statusKind: "degraded",
-      },
-    );
-    return json({ ok: false, error: msg }, 500);
-  }
-  if (!drafts) {
-    await log.moderate(
-      env,
-      "dashboard",
-      "Generate drafts returned no output",
-      { id },
-      {
-        category: "ai_drafts",
-        eventType: "generate_drafts_empty",
-        providerId: job.source,
-        jobId: id,
-        phase: "handleGenerate",
-        statusKind: "degraded",
-      },
-    );
-    return json({ ok: false, error: "draft_failed" }, 500);
-  }
-
   const now = Math.floor(Date.now() / 1000);
-  const cvKey = `jobs/${id}/cv.docx`;
-  const coverKey = `jobs/${id}/cover.docx`;
+  const generatingClaim = await claimBoardItemGenerating(env.DB, userId, id, now);
+  if (generatingClaim === "already") {
+    return json({ ok: false, error: "already_generating" }, 409);
+  }
+  const clearBoardGenerating = generatingClaim === "claimed";
 
   try {
-    const cvBuf = drafts.cvHtml.trim()
-      ? await htmlToDocxArrayBuffer(drafts.cvHtml, drafts.referenceCvHtml)
-      : await textToDocxArrayBuffer(drafts.cvDraft);
-    const coverBuf = await textToDocxArrayBuffer(drafts.coverLetter);
-    await env.DOCS_BUCKET.put(cvKey, cvBuf, {
-      httpMetadata: { contentType: DOCX_MIME, cacheControl: "private, max-age=3600" },
-    });
-    await env.DOCS_BUCKET.put(coverKey, coverBuf, {
-      httpMetadata: { contentType: DOCX_MIME, cacheControl: "private, max-age=3600" },
-    });
-  } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e);
-    await log.moderate(
-      env,
-      "dashboard",
-      "Persist generated documents failed",
-      { id, err: msg },
-      {
-        category: "storage",
-        eventType: "generated_docs_persist_failed",
-        providerId: job.source,
-        jobId: id,
-        phase: "handleGenerate",
-        statusKind: "degraded",
-      },
-    );
-    return json(
-      { ok: false, error: msg },
-      500,
-    );
-  }
+    let drafts;
+    try {
+      drafts = await generateTailoredDrafts(env.DB, env, userId, job, scoring);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      await log.moderate(
+        env,
+        "dashboard",
+        "Generate drafts failed",
+        { id, err: msg },
+        {
+          category: "ai_drafts",
+          eventType: "generate_drafts_failed",
+          providerId: job.source,
+          jobId: id,
+          phase: "handleGenerate",
+          statusKind: "degraded",
+        },
+      );
+      return json({ ok: false, error: msg }, 500);
+    }
+    if (!drafts) {
+      await log.moderate(
+        env,
+        "dashboard",
+        "Generate drafts returned no output",
+        { id },
+        {
+          category: "ai_drafts",
+          eventType: "generate_drafts_empty",
+          providerId: job.source,
+          jobId: id,
+          phase: "handleGenerate",
+          statusKind: "degraded",
+        },
+      );
+      return json({ ok: false, error: "draft_failed" }, 500);
+    }
 
-  try {
-    await saveGeneratedDrafts(env.DB, userId, id, drafts, cvKey, coverKey, now);
-  } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e);
-    await log.moderate(
-      env,
-      "dashboard",
-      "Persist generated draft metadata failed",
-      { id, err: msg, cvKey, coverKey },
-      {
-        category: "storage",
-        eventType: "generated_draft_metadata_save_failed",
-        providerId: job.source,
-        jobId: id,
-        phase: "handleGenerate",
-        statusKind: "degraded",
-      },
-    );
-    return json({ ok: false, error: msg }, 500);
+    const cvKey = `jobs/${id}/cv.docx`;
+    const coverKey = `jobs/${id}/cover.docx`;
+
+    try {
+      const cvBuf = drafts.cvHtml.trim()
+        ? await htmlToDocxArrayBuffer(drafts.cvHtml, drafts.referenceCvHtml)
+        : await textToDocxArrayBuffer(drafts.cvDraft);
+      const coverBuf = await textToDocxArrayBuffer(drafts.coverLetter);
+      await env.DOCS_BUCKET.put(cvKey, cvBuf, {
+        httpMetadata: { contentType: DOCX_MIME, cacheControl: "private, max-age=3600" },
+      });
+      await env.DOCS_BUCKET.put(coverKey, coverBuf, {
+        httpMetadata: { contentType: DOCX_MIME, cacheControl: "private, max-age=3600" },
+      });
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      await log.moderate(
+        env,
+        "dashboard",
+        "Persist generated documents failed",
+        { id, err: msg },
+        {
+          category: "storage",
+          eventType: "generated_docs_persist_failed",
+          providerId: job.source,
+          jobId: id,
+          phase: "handleGenerate",
+          statusKind: "degraded",
+        },
+      );
+      return json(
+        { ok: false, error: msg },
+        500,
+      );
+    }
+
+    try {
+      await saveGeneratedDrafts(env.DB, userId, id, drafts, cvKey, coverKey, now);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      await log.moderate(
+        env,
+        "dashboard",
+        "Persist generated draft metadata failed",
+        { id, err: msg, cvKey, coverKey },
+        {
+          category: "storage",
+          eventType: "generated_draft_metadata_save_failed",
+          providerId: job.source,
+          jobId: id,
+          phase: "handleGenerate",
+          statusKind: "degraded",
+        },
+      );
+      return json({ ok: false, error: msg }, 500);
+    }
+    return json({
+      ok: true,
+      downloadCv: `/api/jobs/${id}/download/cv`,
+      downloadCover: `/api/jobs/${id}/download/cover`,
+    });
+  } finally {
+    if (clearBoardGenerating) {
+      await setBoardItemGenerating(env.DB, userId, id, false, Math.floor(Date.now() / 1000));
+    }
   }
-  return json({
-    ok: true,
-    downloadCv: `/api/jobs/${id}/download/cv`,
-    downloadCover: `/api/jobs/${id}/download/cover`,
-  });
 }
 
 async function handleFavorite(env: Env, userId: string, id: string, request: Request): Promise<Response> {
@@ -2536,7 +2604,9 @@ function parseBulkSelectionBody(requestBody: unknown): DashboardBulkSelection | 
     return {
       mode: "all_matching",
       tab: tabRaw as DashboardJobListTab,
-      prefs: normalizeDashboardJobListPrefs(body.prefs),
+      prefs: tabRaw === "filtered"
+        ? normalizeDashboardFilteredJobListPrefs(body.prefs)
+        : normalizeDashboardJobListPrefs(body.prefs),
       loadedIds: parseLoadedIdListBody(body),
     };
   }
@@ -2710,6 +2780,232 @@ async function handleDownload(
   return new Response(obj.body, { status: 200, headers });
 }
 
+/**
+ * Log the outcome of a single expiration check to both Cloudflare Observability
+ * (always, via console) and the dashboard Textbot (D1, conditionally):
+ *   • expired  → log.info  — always persisted so it shows in Textbot
+ *   • all else → log.verbose — persisted only when verbose logging is enabled
+ *
+ * The observabilityLog call fires synchronously and never touches D1, so it
+ * adds negligible latency and is always queryable via the Observability MCP.
+ */
+async function logCheckExpiredResult(
+  env: Env,
+  jobId: string,
+  title: string,
+  company: string,
+  source: string,
+  fetchUrl: string,
+  fetchResult: import("../lib/listingExpirationFetch").PublicFetchResult,
+  detection: import("../lib/listingExpirationDetect").ExpirationDetectResult,
+  via: string,
+): Promise<void> {
+  const fm: Record<string, unknown> = { kind: fetchResult.kind };
+  if ("status" in fetchResult) fm.httpStatus = fetchResult.status;
+  if ("error" in fetchResult) fm.fetchError = fetchResult.error;
+
+  const meta = {
+    jobId,
+    title,
+    company,
+    source,
+    fetchUrl,
+    via,
+    ...fm,
+    detectionStatus: detection.status,
+    detectionReason: detection.reason,
+  };
+
+  // Always emit to Cloudflare Observability so we can diagnose via MCP next time.
+  observabilityLog(
+    "debug",
+    "check_expired",
+    `check_expired: ${company} → ${detection.status} [${detection.reason}] via=${via} url=${fetchUrl}`,
+    meta,
+  );
+
+  if (detection.status === "expired") {
+    await log.info(env, "check_expired", `Listing expired: ${title} at ${company} — ${detection.reason}`, meta);
+  } else {
+    await log.verbose(env, "check_expired", `check: ${detection.status} — ${title} at ${company} (${detection.reason})`, meta);
+  }
+}
+
+async function handleCheckExpired(env: Env, userId: string, id: string): Promise<Response> {
+  const normalized = await loadNormalizedJob(env.DB, userId, id);
+  if (!normalized) return json({ ok: false, error: "not_found" }, 404);
+
+  const source = normalized.source;
+  const isLinkedin = source === "linkedin_jobs" || source === "jobs_api";
+  const title = normalized.title ?? "";
+  const company = normalized.company ?? "";
+
+  let fetchUrl: string;
+  if (source === "jsearch") {
+    const raw = normalized.raw;
+    fetchUrl = pickJsearchApplyUrl(raw) ?? normalized.applyUrl ?? normalized.jobUrl;
+  } else {
+    fetchUrl = normalized.jobUrl || normalized.applyUrl;
+  }
+  if (!fetchUrl) return json({ ok: false, error: "no_job_url" }, 400);
+
+  // Normalize LinkedIn URLs to www.linkedin.com so the rehydrate-data script
+  // returns English strings that LINKEDIN_EXPIRATION_PHRASES can match.
+  // Regional subdomains (es., nl., pl., etc.) serve locale-specific copy.
+  if (isLinkedin) fetchUrl = normalizeLinkedinJobUrl(fetchUrl);
+
+  const countryKey = typeof normalized.searchCountryKey === "string" ? normalized.searchCountryKey : null;
+  const phraseEntry = getPhrasesForCountry(countryKey);
+  const jobMeta = { source, company, countryIso2: countryKey };
+
+  // Always emit the target URL to Cloudflare Observability before any fetch so
+  // we can see which URL the check was aimed at even if the fetch times out.
+  observabilityLog("debug", "check_expired", `check_expired: fetching ${fetchUrl} for "${title}" at ${company}`, {
+    jobId: id,
+    source,
+    company,
+    title,
+    fetchUrl,
+    countryKey: countryKey ?? "en",
+    via: isLinkedin ? "linkedin" : "public",
+  });
+
+  // ── Non-LinkedIn path ──────────────────────────────────────────────────────
+  if (!isLinkedin) {
+    let fetchResult = await fetchPublicListingHtml(fetchUrl, phraseEntry.acceptLanguage);
+    let via = "public";
+
+    // Aggregator sites (recruit.net, indeed mirrors, etc.) frequently block
+    // Cloudflare Worker egress IPs at the TLS/HTTP-challenge level. Fall back
+    // to the Bright Data ISP proxy when the Worker fetch is bot-challenged:
+    // the proxy fetches from a residential IP that those sites accept.
+    if (fetchResult.kind === "blocked") {
+      observabilityLog(
+        "debug",
+        "check_expired",
+        `check_expired: Worker fetch blocked, retrying via BD ISP proxy for ${company}`,
+        { jobId: id, fetchUrl, primaryReason: fetchResult.reason },
+      );
+      const bdResult = await fetchViaBrightdataIsp(env, fetchUrl, phraseEntry.acceptLanguage);
+      // Adopt the BD result when it gives a definitive answer (ok / not_found),
+      // OR when it's a different kind of failure (so the user sees the more
+      // informative error). Keep the Worker result only if BD also returned
+      // the same kind of block — no new information.
+      if (bdResult.kind !== "blocked") {
+        fetchResult = bdResult;
+        via = "public_bd";
+      } else {
+        via = "public_bd_also_blocked";
+      }
+    }
+
+    const detection = detectExpiration(fetchResult, jobMeta);
+    await logCheckExpiredResult(env, id, title, company, source, fetchUrl, fetchResult, detection, via);
+    return json({ ok: true, status: detection.status, reason: detection.reason });
+  }
+
+  // ── LinkedIn tiered path ───────────────────────────────────────────────────
+  const session = await getActiveSession(env);
+  if (!session) {
+    await log.low(
+      env,
+      "check_expired",
+      `linkedin_check_no_session: manual check blocked — no active LinkedIn session (job ${id})`,
+      { jobId: id, source },
+      {
+        category: "system",
+        eventType: "linkedin_check_no_session",
+        phase: "manual",
+        statusKind: "degraded",
+      },
+    );
+    return json({ ok: true, status: "blocked", reason: "linkedin_session_disabled" });
+  }
+
+  const useBd = await isBrightdataFallbackActive(env);
+
+  if (useBd) {
+    // Day-long BD fallback already active — use BD for this single check.
+    let bdSession: BrightdataScrapeSession | null = null;
+    // Separate the create from the fetch so that a BD connect failure
+    // is caught, logged, and returned as a structured "blocked" response
+    // instead of propagating as an unlogged 500.
+    try {
+      bdSession = await BrightdataScrapeSession.create(env, session.cookieJar);
+    } catch (createErr) {
+      await log.moderate(
+        env,
+        "check_expired",
+        `linkedin_login_bd_connect_failed: cannot open BD session (manual check)`,
+        { jobId: id, error: createErr instanceof Error ? createErr.message : String(createErr) },
+        { category: "system", eventType: "linkedin_login_bd_connect_failed", phase: "manual", statusKind: "degraded" },
+      );
+      return json({ ok: true, status: "blocked", reason: "bd_connect_failed" });
+    }
+    try {
+      const bdResult = await bdSession.fetch(fetchUrl, "en-US,en;q=0.9");
+      if (bdResult.kind === "auth_expired") {
+        await invalidateSession(env, "bd_fetch_auth_expired_manual");
+        return json({ ok: true, status: "blocked", reason: "linkedin_session_invalidated" });
+      }
+      const fetchResult =
+        bdResult.kind === "ok"
+          ? { kind: "ok" as const, status: 200, html: bdResult.html, finalUrl: bdResult.finalUrl, durationMs: 0 }
+          : bdResult.kind === "not_found"
+          ? { kind: "not_found" as const, status: bdResult.status, finalUrl: bdResult.finalUrl }
+          : { kind: "transient" as const, error: bdResult.kind === "transient" ? bdResult.error : "unknown" };
+      if (fetchResult.kind === "ok") {
+        const hasRehydrateScript = fetchResult.html.includes('id="rehydrate-data"') || fetchResult.html.includes("id='rehydrate-data'");
+        const isFinalJobPage = fetchResult.finalUrl.includes("/jobs/view/");
+        observabilityLog("debug", "check_expired", `linkedin_bd_html_diag: size=${fetchResult.html.length}B rehydrate=${hasRehydrateScript} jobPage=${isFinalJobPage}`, {
+          jobId: id, source, company, title, fetchUrl, finalUrl: fetchResult.finalUrl,
+          htmlSizeBytes: fetchResult.html.length, hasRehydrateScript, isFinalJobPage, via: "linkedin_bd",
+        });
+      }
+      const detection = detectExpiration(fetchResult, jobMeta);
+      await logCheckExpiredResult(env, id, title, company, source, fetchUrl, fetchResult, detection, "linkedin_bd");
+      return json({ ok: true, status: detection.status, reason: detection.reason });
+    } finally {
+      await bdSession.close();
+    }
+  }
+
+  // Primary: Workers native fetch with the stored li_at cookie header.
+  // Native fetch is preferred for the LinkedIn cookie path because it's free
+  // (no proxy cost) and LinkedIn doesn't aggressively bot-block authenticated
+  // requests. Non-LinkedIn / public aggregators that DO bot-block Worker IPs
+  // get a BD ISP-proxy fallback above; for LinkedIn we instead fall back to
+  // the full BD Browser API (with the cookie jar) on auth_expired.
+  // Always request en-US for LinkedIn so the rehydrate-data JSON uses English
+  // strings that our LINKEDIN_EXPIRATION_PHRASES can match.
+  const workerResult = await fetchPublicListingHtml(fetchUrl, "en-US,en;q=0.9", session.cookieHeader);
+
+  if (workerResult.kind === "ok") {
+    const hasRehydrateScript = workerResult.html.includes('id="rehydrate-data"') || workerResult.html.includes("id='rehydrate-data'");
+    const isFinalJobPage = workerResult.finalUrl.includes("/jobs/view/");
+    observabilityLog("debug", "check_expired", `linkedin_worker_html_diag: size=${workerResult.html.length}B rehydrate=${hasRehydrateScript} jobPage=${isFinalJobPage}`, {
+      jobId: id, source, company, title, fetchUrl, finalUrl: workerResult.finalUrl,
+      htmlSizeBytes: workerResult.html.length, hasRehydrateScript, isFinalJobPage, via: "linkedin_worker",
+    });
+  }
+
+  if (workerResult.kind === "auth_expired") {
+    await log.moderate(
+      env,
+      "check_expired",
+      `linkedin_check_cookie_expired: session cookie no longer valid — please update in Settings`,
+      { jobId: id, redirectUrl: workerResult.redirectUrl },
+      { category: "system", eventType: "linkedin_check_cookie_expired", phase: "manual", statusKind: "degraded" },
+    );
+    await invalidateSession(env, "check_cookie_expired");
+    return json({ ok: true, status: "blocked", reason: "linkedin_cookie_expired" });
+  }
+
+  const detection = detectExpiration(workerResult, jobMeta);
+  await logCheckExpiredResult(env, id, title, company, source, fetchUrl, workerResult, detection, "linkedin_worker");
+  return json({ ok: true, status: detection.status, reason: detection.reason });
+}
+
 // ══ ADMIN API ══════════════════════════════════════════════════════════════════
 
 async function handleAdminApi(
@@ -2717,8 +3013,71 @@ async function handleAdminApi(
   request: Request,
   path: string,
   adminUserId: string,
+  ctx?: ExecutionContext,
 ): Promise<Response> {
   const now = Math.floor(Date.now() / 1000);
+
+  // ── Global verbose logging (site-wide) ────────────────────────────────────
+  if (path === "/api/admin/logging" && request.method === "GET") {
+    return json({
+      ok: true,
+      verboseLoggingEnabled: await getVerboseLoggingEnabled(env.DB),
+      pipelineHardKillActive: isPipelineHardKillActive(env),
+    });
+  }
+  if (path === "/api/admin/logging" && request.method === "PATCH") {
+    let body: { verboseLoggingEnabled?: boolean };
+    try {
+      body = (await request.json()) as typeof body;
+    } catch {
+      return json({ ok: false, error: "invalid_json" }, 400);
+    }
+    if (typeof body.verboseLoggingEnabled !== "boolean") {
+      return json({ ok: false, error: "bad_body" }, 400);
+    }
+    const before = await getVerboseLoggingEnabled(env.DB);
+    if (body.verboseLoggingEnabled !== before) {
+      await setVerboseLoggingEnabled(env.DB, body.verboseLoggingEnabled);
+      await log.info(
+        env,
+        "dashboard",
+        body.verboseLoggingEnabled ? "Verbose logging enabled" : "Verbose logging disabled",
+      );
+    }
+    return json({
+      ok: true,
+      verboseLoggingEnabled: await getVerboseLoggingEnabled(env.DB),
+      pipelineHardKillActive: isPipelineHardKillActive(env),
+    });
+  }
+
+  // ── LinkedIn manual cookie (global) ────────────────────────────────────────
+  if (path === "/api/admin/linkedin-manual-cookie" && request.method === "PATCH") {
+    let body: { linkedinLiAt?: unknown };
+    try {
+      body = (await request.json()) as typeof body;
+    } catch {
+      return json({ ok: false, error: "invalid_json" }, 400);
+    }
+    if (typeof body.linkedinLiAt !== "string") {
+      return json({ ok: false, error: "bad_body" }, 400);
+    }
+    const liAt = body.linkedinLiAt.trim();
+    await setLinkedinManualCookie(env.DB, liAt);
+    await log.info(
+      env,
+      "dashboard",
+      liAt ? "LinkedIn manual session cookie saved" : "LinkedIn manual session cookie cleared",
+      { length: liAt.length },
+    );
+    const patchedManualCookie = await getLinkedinManualCookie(env.DB);
+    const patchedManualCookieSavedAt = await getLinkedinManualCookieSavedAt(env.DB);
+    return json({
+      ok: true,
+      linkedinManualCookieSet: !!patchedManualCookie,
+      linkedinManualCookieSavedAt: patchedManualCookieSavedAt ?? null,
+    });
+  }
 
   // ── Users list ────────────────────────────────────────────────────────────
   if (path === "/api/admin/users" && request.method === "GET") {
@@ -2786,6 +3145,14 @@ async function handleAdminApi(
       }
       if (body.status === "active" || body.status === "disabled") {
         await setUserStatus(env.DB, targetId, body.status, now);
+        if (body.status === "disabled") {
+          const resetCoordinator = resetCoordinatorStateForInactiveUser(env, targetId);
+          if (ctx) {
+            ctx.waitUntil(resetCoordinator);
+          } else {
+            await resetCoordinator;
+          }
+        }
       }
       return json({ ok: true });
     }
@@ -2826,7 +3193,9 @@ async function handleAdminApi(
   // ── User caps ─────────────────────────────────────────────────────────────
   const capsMatch = path.match(/^\/api\/admin\/users\/([^/]+)\/caps$/);
   if (capsMatch) {
-    const targetId = capsMatch[1]!;
+    const targetId = decodeURIComponent(capsMatch[1]!);
+    const capsUserRow = await getUserById(env.DB, targetId);
+    if (!capsUserRow) return json({ ok: false, error: "user_not_found" }, 404);
 
     if (request.method === "GET") {
       const caps = await getUserProviderCaps(env.DB, targetId);
@@ -2844,14 +3213,287 @@ async function handleAdminApi(
         return json({ ok: false, error: "invalid_caps" }, 400);
       }
       const capsIn = body.caps as Record<string, unknown>;
-      const capsOut: Partial<Record<string, number>> = {};
+      const validProviders = new Set(getRegisteredProviderIds());
+      const capsPatch: Partial<Record<JobSourceId, number | null>> = {};
       for (const [k, v] of Object.entries(capsIn)) {
-        if (typeof v === "number" && Number.isFinite(v) && v >= 0) {
-          capsOut[k] = Math.floor(v);
+        if (!validProviders.has(k as JobSourceId)) {
+          return json({ ok: false, error: "bad_request_cap_key" }, 400);
+        }
+        if (v === null) {
+          capsPatch[k as JobSourceId] = null;
+        } else if (typeof v === "number" && Number.isFinite(v)) {
+          const n = Math.floor(v);
+          if (n < 0 || n > MAX_REQUEST_CAP_PER_DAY) {
+            return json({ ok: false, error: "bad_request_cap" }, 400);
+          }
+          capsPatch[k as JobSourceId] = n;
+        } else {
+          return json({ ok: false, error: "bad_request_cap" }, 400);
         }
       }
-      await setUserProviderCaps(env.DB, targetId, capsOut, now);
+      if (Object.keys(capsIn).length === 0) {
+        const clearCaps: Partial<Record<JobSourceId, null>> = {};
+        for (const id of getRegisteredProviderIds()) {
+          clearCaps[id] = null;
+        }
+        await patchAdminUserPreferences(env.DB, targetId, { requestCapOverrides: clearCaps });
+      } else {
+        await patchAdminUserPreferences(env.DB, targetId, { requestCapOverrides: capsPatch });
+      }
+      void now;
       return json({ ok: true });
+    }
+  }
+
+  // ── Per-user dashboard prefs (vendors, caps, debug toggles) ───────────────
+  const prefsMatch = path.match(/^\/api\/admin\/users\/([^/]+)\/preferences$/);
+  if (prefsMatch) {
+    const rawTargetId = prefsMatch[1]!;
+    const targetId = decodeURIComponent(rawTargetId);
+    const exists = await getUserById(env.DB, targetId);
+    if (!exists) return json({ ok: false, error: "user_not_found" }, 404);
+
+    if (request.method === "GET") {
+      const capsPayload = await buildRequestCapsPayload(env, targetId);
+      const [
+        dashboardShowJobPipelineParams,
+        dashboardShowJobApiRaw,
+        dashboardAiDebugRescoreEnabled,
+        vendors,
+      ] = await Promise.all([
+        getDashboardShowJobPipelineParams(env.DB, targetId),
+        getDashboardShowJobApiRaw(env.DB, targetId),
+        getDashboardAiDebugRescoreEnabled(env.DB, targetId),
+        buildVendorsPayload(env, targetId),
+      ]);
+      return json({
+        ok: true,
+        dashboardShowJobPipelineParams,
+        dashboardShowJobApiRaw,
+        dashboardAiDebugRescoreEnabled,
+        vendors,
+        requestCapsDetail: capsPayload.requestCapsDetail,
+        requestCapsPerDay: capsPayload.requestCapsPerDay,
+      });
+    }
+
+    if (request.method === "PATCH") {
+      let body: {
+        dashboardShowJobPipelineParams?: boolean;
+        dashboardShowJobApiRaw?: boolean;
+        dashboardAiDebugRescoreEnabled?: boolean;
+        enabledJobSources?: string[];
+        requestCapOverrides?: Record<string, unknown>;
+      };
+      try {
+        body = (await request.json()) as typeof body;
+      } catch {
+        return json({ ok: false, error: "invalid_json" }, 400);
+      }
+      const hasShowPipelineParams = typeof body.dashboardShowJobPipelineParams === "boolean";
+      const hasShowApiRaw = typeof body.dashboardShowJobApiRaw === "boolean";
+      const hasAiDebugRescore = typeof body.dashboardAiDebugRescoreEnabled === "boolean";
+      const hasVendors = Array.isArray(body.enabledJobSources);
+      const hasRequestCaps =
+        body.requestCapOverrides !== undefined &&
+        body.requestCapOverrides !== null &&
+        typeof body.requestCapOverrides === "object" &&
+        !Array.isArray(body.requestCapOverrides);
+      if (
+        !hasShowPipelineParams &&
+        !hasShowApiRaw &&
+        !hasAiDebugRescore &&
+        !hasVendors &&
+        !hasRequestCaps
+      ) {
+        return json({ ok: false, error: "bad_body" }, 400);
+      }
+      if (hasRequestCaps && Object.keys(body.requestCapOverrides!).length === 0) {
+        return json({ ok: false, error: "bad_body" }, 400);
+      }
+
+      const validProviders = new Set(getRegisteredProviderIds());
+
+      let enabledIdsValidated: JobSourceId[] | null = null;
+      if (hasVendors) {
+        const next: JobSourceId[] = [];
+        const seen = new Set<JobSourceId>();
+        for (const x of body.enabledJobSources!) {
+          if (typeof x !== "string") continue;
+          const id = x as JobSourceId;
+          if (validProviders.has(id) && !seen.has(id)) {
+            seen.add(id);
+            next.push(id);
+          }
+        }
+        if (next.length === 0) {
+          return json(
+            {
+              ok: false,
+              error: "enabled_job_sources_required",
+              message: "Select at least one job source when updating vendors.",
+            },
+            400,
+          );
+        }
+        enabledIdsValidated = next;
+      }
+
+      let capPatchValidated: Partial<Record<JobSourceId, number | null>> | null = null;
+      if (hasRequestCaps) {
+        const raw = body.requestCapOverrides!;
+        const patch: Partial<Record<JobSourceId, number | null>> = {};
+        for (const key of Object.keys(raw)) {
+          if (!validProviders.has(key as JobSourceId)) {
+            return json({ ok: false, error: "bad_request_cap_key" }, 400);
+          }
+        }
+        for (const id of validProviders) {
+          if (!Object.prototype.hasOwnProperty.call(raw, id)) continue;
+          const v = raw[id as string];
+          if (v === null) {
+            patch[id] = null;
+          } else if (typeof v === "number" && Number.isFinite(v)) {
+            const n = Math.floor(v as number);
+            if (n < 0 || n > MAX_REQUEST_CAP_PER_DAY) {
+              return json({ ok: false, error: "bad_request_cap" }, 400);
+            }
+            patch[id] = n;
+          } else {
+            return json({ ok: false, error: "bad_request_cap" }, 400);
+          }
+        }
+        capPatchValidated = patch;
+      }
+
+      const patchedCapIds = capPatchValidated ? (Object.keys(capPatchValidated) as JobSourceId[]) : [];
+      const effectiveCapsBefore: Partial<Record<JobSourceId, number>> = {};
+      for (const id of patchedCapIds) {
+        effectiveCapsBefore[id] = await getResolvedProviderDailyRequestCap(env.DB, env, targetId, id);
+      }
+
+      await patchAdminUserPreferences(env.DB, targetId, {
+        dashboardShowJobPipelineParams: hasShowPipelineParams
+          ? body.dashboardShowJobPipelineParams
+          : undefined,
+        dashboardShowJobApiRaw: hasShowApiRaw ? body.dashboardShowJobApiRaw : undefined,
+        dashboardAiDebugRescoreEnabled: hasAiDebugRescore
+          ? body.dashboardAiDebugRescoreEnabled
+          : undefined,
+        enabledJobSources: enabledIdsValidated ?? undefined,
+        requestCapOverrides: capPatchValidated ?? undefined,
+      });
+
+      if (hasShowPipelineParams) {
+        await log.info(env, "dashboard", "Admin: job list pipeline params visibility updated", {
+          targetUserId: targetId,
+          show: body.dashboardShowJobPipelineParams,
+        });
+      }
+      if (hasShowApiRaw) {
+        await log.info(env, "dashboard", "Admin: API raw fields visibility updated", {
+          targetUserId: targetId,
+          show: body.dashboardShowJobApiRaw,
+        });
+      }
+      if (hasAiDebugRescore) {
+        await log.info(env, "dashboard", "Admin: AI debug re-score visibility updated", {
+          targetUserId: targetId,
+          enabled: body.dashboardAiDebugRescoreEnabled,
+        });
+      }
+
+      if (enabledIdsValidated) {
+        await log.info(env, "dashboard", "Admin: pipeline vendors updated", {
+          targetUserId: targetId,
+          enabledJobSources: enabledIdsValidated,
+        });
+        if (ctx) {
+          ctx.waitUntil(
+            (async () => {
+              try {
+                const r = await startOrResumeCoordinator(env, targetId, { reason: "admin_vendors" });
+                await log.info(env, "dashboard", "Coordinator start requested after admin vendor change", r);
+              } catch (e) {
+                const msg = e instanceof Error ? e.message : String(e);
+                await log.critical(
+                  env,
+                  "dashboard",
+                  "Coordinator start failed (after admin vendor change)",
+                  { error: msg.slice(0, 500), targetUserId: targetId },
+                  {
+                    category: "dashboard",
+                    eventType: "coordinator_start_failed",
+                    phase: "admin_vendors",
+                    statusKind: "failed",
+                  },
+                );
+              }
+            })(),
+          );
+        }
+      }
+
+      if (capPatchValidated && Object.keys(capPatchValidated).length > 0) {
+        const capRaisedIds: JobSourceId[] = [];
+        for (const id of patchedCapIds) {
+          const before = effectiveCapsBefore[id] ?? 0;
+          const after = await getResolvedProviderDailyRequestCap(env.DB, env, targetId, id);
+          const raised = after > before || (before > 0 && after === 0);
+          if (raised) capRaisedIds.push(id);
+        }
+        await log.info(env, "dashboard", "Admin: provider request caps updated", {
+          targetUserId: targetId,
+          patchedIds: patchedCapIds,
+          capRaisedIds,
+        });
+        if (capRaisedIds.length && ctx) {
+          ctx.waitUntil(
+            (async () => {
+              try {
+                const r = await clearRequestCapPauseForProviders(env, targetId, {
+                  providerIds: capRaisedIds,
+                });
+                await log.info(env, "dashboard", "Coordinator cleared request-cap pause after admin cap raise", {
+                  targetUserId: targetId,
+                  cleared: r.cleared,
+                  status: r.status,
+                });
+              } catch (e) {
+                const msg = e instanceof Error ? e.message : String(e);
+                await log.moderate(
+                  env,
+                  "dashboard",
+                  "clearRequestCapPauseForProviders failed (admin cap patch)",
+                  {
+                    error: msg.slice(0, 500),
+                    providerIds: capRaisedIds,
+                    targetUserId: targetId,
+                  },
+                  {
+                    category: "dashboard",
+                    eventType: "clear_request_cap_pause_failed",
+                    phase: "admin_request_cap_overrides",
+                    statusKind: "degraded",
+                  },
+                );
+              }
+            })(),
+          );
+        }
+      }
+
+      const capsPayload = await buildRequestCapsPayload(env, targetId);
+      const vendors = await buildVendorsPayload(env, targetId);
+      return json({
+        ok: true,
+        dashboardShowJobPipelineParams: await getDashboardShowJobPipelineParams(env.DB, targetId),
+        dashboardShowJobApiRaw: await getDashboardShowJobApiRaw(env.DB, targetId),
+        dashboardAiDebugRescoreEnabled: await getDashboardAiDebugRescoreEnabled(env.DB, targetId),
+        vendors,
+        requestCapsDetail: capsPayload.requestCapsDetail,
+        requestCapsPerDay: capsPayload.requestCapsPerDay,
+      });
     }
   }
 
@@ -2924,6 +3566,58 @@ async function handleAdminApi(
     if (!targetUserId) return json({ ok: false, error: "userId_required" }, 400);
     const status = await getCoordinatorStatus(env, targetUserId);
     return json(status);
+  }
+
+  // ── LinkedIn session admin ─────────────────────────────────────────────────
+  if (path === "/api/admin/linkedin-session" && request.method === "GET") {
+    const manualRaw = await getLinkedinManualCookie(env.DB);
+    const manualSavedAt = await getLinkedinManualCookieSavedAt(env.DB);
+    const row = await getLinkedinSession(env.DB);
+    return json({
+      ok: true,
+      linkedinManualCookieSet: !!manualRaw?.trim(),
+      linkedinManualCookieSavedAt: manualSavedAt,
+      session: row
+        ? {
+            liAtExpiresAt: row.liAtExpiresAt,
+            lastRefreshAt: row.lastRefreshAt,
+            refreshCount: row.refreshCount,
+            lastStatus: row.lastStatus,
+            lastError: row.lastError,
+            lastErrorAt: row.lastErrorAt,
+            disabledUntilNextCron: row.disabledUntilNextCron,
+            forceBrightdataScansUntil: row.forceBrightdataScansUntil,
+            cookieKeys: Object.keys(row.cookies),
+            cookieCount: Object.keys(row.cookies).length,
+          }
+        : null,
+    });
+  }
+
+  if (path === "/api/admin/linkedin-session/refresh" && request.method === "POST") {
+    await ensureFresh(env);
+    const manualRaw = await getLinkedinManualCookie(env.DB);
+    const manualSavedAt = await getLinkedinManualCookieSavedAt(env.DB);
+    const row = await getLinkedinSession(env.DB);
+    return json({
+      ok: true,
+      linkedinManualCookieSet: !!manualRaw?.trim(),
+      linkedinManualCookieSavedAt: manualSavedAt,
+      session: row
+        ? {
+            liAtExpiresAt: row.liAtExpiresAt,
+            lastRefreshAt: row.lastRefreshAt,
+            refreshCount: row.refreshCount,
+            lastStatus: row.lastStatus,
+            lastError: row.lastError,
+            lastErrorAt: row.lastErrorAt,
+            disabledUntilNextCron: row.disabledUntilNextCron,
+            forceBrightdataScansUntil: row.forceBrightdataScansUntil,
+            cookieKeys: Object.keys(row.cookies),
+            cookieCount: Object.keys(row.cookies).length,
+          }
+        : null,
+    });
   }
 
   return json({ ok: false, error: "not_found" }, 404);

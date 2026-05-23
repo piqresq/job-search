@@ -11,8 +11,16 @@ export type JobRow = {
   dash_bucket: string | null;
 };
 
+export type ContentDedupeCandidateRow = {
+  id: string;
+  content_dedupe_hash: string | null;
+  normalized_json: string | null;
+};
+
 export type DashboardListRow = {
   id: string;
+  /** `linkedin_jobs` | `jsearch` | `jobs_api` — used for dashboard vendor UX. */
+  source: string | null;
   title: string | null;
   company: string | null;
   job_url: string | null;
@@ -74,7 +82,34 @@ export type DashboardJobListSortSrc = "default" | "linkedin-first" | "google-fir
 export type DashboardJobListSortSalary = "off" | "high-first" | "low-first";
 export type DashboardJobListSortDate = "off" | "new-first" | "old-first";
 /** Rolling window on pipeline ingest / fetch time (UTC), matching {@link DASHBOARD_JOB_INGEST_SORT_EXPR}. */
-export type DashboardJobListFilterFetchAge = "off" | "24h" | "2d" | "3d" | "7d" | "14d" | "21d";
+export type DashboardJobListFilterFetchAge =
+  | "off"
+  | "24h"
+  | "2d"
+  | "3d"
+  | "4d"
+  | "5d"
+  | "7d"
+  | "14d"
+  | "21d";
+
+export const FILTERED_REASON_OPTIONS = [
+  { key: "duplicate_content", label: "Duplicate listing" },
+  { key: "hard_salary", label: "Salary below floor" },
+  { key: "hard_degree", label: "Degree requirement" },
+  { key: "hard_workplace", label: "Workplace / location mismatch" },
+  { key: "hard_us_requirement", label: "US requirement" },
+  { key: "hard_language", label: "Language mismatch" },
+  { key: "hard_not_accepting", label: "Not accepting applications" },
+  { key: "hard_expired_at_ingest", label: "Expired at ingest" },
+  { key: "ai_reject", label: "AI scoring rejected" },
+  { key: "pipeline_failed", label: "Pipeline failed" },
+  { key: "hard_other", label: "Other hard filter" },
+] as const;
+
+export type FilteredReasonKey = (typeof FILTERED_REASON_OPTIONS)[number]["key"];
+
+export type FilteredReasonFacet = { key: FilteredReasonKey; label: string };
 
 export type DashboardJobListPrefs = {
   src: { linkedin: boolean; google: boolean; other: boolean };
@@ -82,6 +117,7 @@ export type DashboardJobListPrefs = {
   contract: { ft: boolean; pt: boolean; temp: boolean; other: boolean };
   countries: Record<string, boolean>;
   roleQueries: Record<string, boolean>;
+  filterReasons?: Record<string, boolean>;
   sortRel: DashboardJobListSortRel;
   sortSrc: DashboardJobListSortSrc;
   sortSalary: DashboardJobListSortSalary;
@@ -93,17 +129,25 @@ export type DashboardJobListPrefs = {
 export type DashboardJobListFacets = {
   countries: string[];
   roleQueries: string[];
+  filterReasons?: FilteredReasonFacet[];
 };
 
 export type DashboardJobListCursor = Record<string, string | number>;
 
 export type DashboardJobListPage = {
   rows: DashboardListRow[];
+  /** Rows matching tab + prefs (includes jobs already on the board). */
   totalMatching: number;
+  /** Rows matching tab + prefs excluding jobs on the kanban board. */
+  totalVisible: number;
   totalUnfiltered: number;
   hasMore: boolean;
   nextCursor: DashboardJobListCursor | null;
   facets: DashboardJobListFacets;
+};
+
+type DashboardJobListQueryOptions = {
+  excludeBoardItems?: boolean;
 };
 
 export function defaultDashboardJobListPrefs(): DashboardJobListPrefs {
@@ -113,6 +157,7 @@ export function defaultDashboardJobListPrefs(): DashboardJobListPrefs {
     contract: { ft: true, pt: true, temp: true, other: true },
     countries: {},
     roleQueries: {},
+    filterReasons: {},
     sortRel: "high-first",
     sortSrc: "default",
     sortSalary: "off",
@@ -244,6 +289,33 @@ export async function findOtherJobIdWithContentDedupeHash(
     .bind(userId, hash, excludeId)
     .first<{ id: string }>();
   return row?.id ?? null;
+}
+
+/**
+ * Fallback for fingerprint contract changes. Callers still perform the final
+ * hash comparison; this only returns earliest stored rows with the same role identity.
+ */
+export async function listContentDedupeCandidateJobsByCompanyTitle(
+  db: D1Database,
+  userId: string,
+  company: string,
+  title: string,
+  excludeId: string,
+): Promise<ContentDedupeCandidateRow[]> {
+  const result = await db
+    .prepare(
+      `SELECT id, content_dedupe_hash, normalized_json FROM jobs
+       WHERE user_id = ?
+         AND id != ?
+         AND content_dedupe_hash IS NOT NULL
+         AND normalized_json IS NOT NULL
+         AND lower(trim(company)) = lower(trim(?))
+         AND lower(trim(title)) = lower(trim(?))
+       ORDER BY created_at ASC, id ASC`,
+    )
+    .bind(userId, excludeId, company, title)
+    .all<ContentDedupeCandidateRow>();
+  return result.results ?? [];
 }
 
 /** After AI scoring: persist description-derived salary into D1 and normalized_json. */
@@ -481,7 +553,7 @@ export async function getJobFull(db: D1Database, userId: string, id: string) {
  * salary parsing (that now runs at ingest time and is cached on `salary_monthly_eur` /
  * `salary_display_eur`). `normalized_json` is still selected for ingestion-facts / API-raw panels.
  */
-const DASHBOARD_LIST_COLUMNS = `id, title, company, job_url, apply_url, salary_raw, salary_min, salary_max,
+const DASHBOARD_LIST_COLUMNS = `id, source, title, company, job_url, apply_url, salary_raw, salary_min, salary_max,
               salary_currency, salary_monthly_eur, salary_display_eur, fit_score, recommendation,
               reasons_to_apply, risks, r2_cv_key, r2_cover_key, status, hard_reject_reasons,
               scoring_notes,
@@ -496,7 +568,7 @@ const DASHBOARD_LIST_COLUMNS = `id, title, company, job_url, apply_url, salary_r
               json_extract(normalized_json, '$.postedAtUnix') AS posted_at_unix,
               json_extract(normalized_json, '$.apiFetchedAtUnix') AS api_fetched_at_unix`;
 
-const DASHBOARD_LIST_COLUMNS_ALIASED = `j.id AS id, j.title AS title, j.company AS company, j.job_url AS job_url,
+const DASHBOARD_LIST_COLUMNS_ALIASED = `j.id AS id, j.source AS source, j.title AS title, j.company AS company, j.job_url AS job_url,
               j.apply_url AS apply_url, j.salary_raw AS salary_raw,
               j.salary_min AS salary_min, j.salary_max AS salary_max, j.salary_currency AS salary_currency,
               j.salary_monthly_eur AS salary_monthly_eur, j.salary_display_eur AS salary_display_eur,
@@ -692,6 +764,53 @@ const DASHBOARD_JOB_FILTERED_SCOPE_EXPR = `(
   OR ${DASHBOARD_JOB_STALE_IMPORTED_SCOPE_EXPR}
 )`;
 
+const DASHBOARD_FILTERED_REASON_SQL: Record<FilteredReasonKey, string> = {
+  duplicate_content: `LOWER(COALESCE(j.hard_reject_reasons, '')) LIKE '%duplicate listing%'
+    OR LOWER(COALESCE(j.hard_reject_reasons, '')) LIKE '%content-hash dedupe%'`,
+  hard_salary: `LOWER(COALESCE(j.hard_reject_reasons, '')) LIKE '%salary below%'`,
+  hard_degree: `LOWER(COALESCE(j.hard_reject_reasons, '')) LIKE '%degree requirement%'`,
+  hard_workplace: `LOWER(COALESCE(j.hard_reject_reasons, '')) LIKE '%hybrid%'
+    OR LOWER(COALESCE(j.hard_reject_reasons, '')) LIKE '%on-site%'
+    OR LOWER(COALESCE(j.hard_reject_reasons, '')) LIKE '%onsite%'
+    OR LOWER(COALESCE(j.hard_reject_reasons, '')) LIKE '%office%'
+    OR LOWER(COALESCE(j.hard_reject_reasons, '')) LIKE '%commuting radius%'
+    OR LOWER(COALESCE(j.hard_reject_reasons, '')) LIKE '%local country%'`,
+  hard_us_requirement: `LOWER(COALESCE(j.hard_reject_reasons, '')) LIKE '%us work authorization%'
+    OR LOWER(COALESCE(j.hard_reject_reasons, '')) LIKE '%us residency%'`,
+  hard_language: `LOWER(COALESCE(j.hard_reject_reasons, '')) LIKE '%language%'
+    OR LOWER(COALESCE(j.hard_reject_reasons, '')) LIKE '%english, russian, or latvian%'
+    OR LOWER(COALESCE(j.hard_reject_reasons, '')) LIKE '%detected listing language%'`,
+  hard_not_accepting: `LOWER(COALESCE(j.hard_reject_reasons, '')) LIKE '%not accepting applications%'`,
+  hard_expired_at_ingest: `LOWER(COALESCE(j.hard_reject_reasons, '')) LIKE '%no longer active at ingest%'`,
+  ai_reject: `COALESCE(j.status, '') = 'rejected_by_ai'
+    OR ${DASHBOARD_JOB_RECOMMENDATION_NORM_EXPR} = 'reject'`,
+  pipeline_failed: `COALESCE(j.status, '') = 'failed'
+    OR ${DASHBOARD_JOB_STALE_IMPORTED_SCOPE_EXPR}
+    OR LOWER(COALESCE(j.scoring_notes, '')) LIKE '%pipeline failed%'
+    OR LOWER(COALESCE(j.scoring_notes, '')) LIKE '%pipeline stopped%'`,
+  hard_other: `COALESCE(j.status, '') = 'hard_rejected'
+    AND COALESCE(j.hard_reject_reasons, '') != ''
+    AND NOT (
+      LOWER(COALESCE(j.hard_reject_reasons, '')) LIKE '%duplicate listing%'
+      OR LOWER(COALESCE(j.hard_reject_reasons, '')) LIKE '%content-hash dedupe%'
+      OR LOWER(COALESCE(j.hard_reject_reasons, '')) LIKE '%salary below%'
+      OR LOWER(COALESCE(j.hard_reject_reasons, '')) LIKE '%degree requirement%'
+      OR LOWER(COALESCE(j.hard_reject_reasons, '')) LIKE '%hybrid%'
+      OR LOWER(COALESCE(j.hard_reject_reasons, '')) LIKE '%on-site%'
+      OR LOWER(COALESCE(j.hard_reject_reasons, '')) LIKE '%onsite%'
+      OR LOWER(COALESCE(j.hard_reject_reasons, '')) LIKE '%office%'
+      OR LOWER(COALESCE(j.hard_reject_reasons, '')) LIKE '%commuting radius%'
+      OR LOWER(COALESCE(j.hard_reject_reasons, '')) LIKE '%local country%'
+      OR LOWER(COALESCE(j.hard_reject_reasons, '')) LIKE '%us work authorization%'
+      OR LOWER(COALESCE(j.hard_reject_reasons, '')) LIKE '%us residency%'
+      OR LOWER(COALESCE(j.hard_reject_reasons, '')) LIKE '%language%'
+      OR LOWER(COALESCE(j.hard_reject_reasons, '')) LIKE '%english, russian, or latvian%'
+      OR LOWER(COALESCE(j.hard_reject_reasons, '')) LIKE '%detected listing language%'
+      OR LOWER(COALESCE(j.hard_reject_reasons, '')) LIKE '%not accepting applications%'
+      OR LOWER(COALESCE(j.hard_reject_reasons, '')) LIKE '%no longer active at ingest%'
+    )`,
+};
+
 const DASHBOARD_JOB_RELEVANCE_KEY_EXPR = `CASE
   WHEN COALESCE(j.status, '') = 'failed' THEN 'failed'
   WHEN ${DASHBOARD_JOB_RECOMMENDATION_NORM_EXPR} = 'high_priority_review' THEN 'high'
@@ -749,6 +868,8 @@ const DASHBOARD_JOB_FILTER_FETCH_AGE_SECONDS: Record<Exclude<DashboardJobListFil
   "24h": 86400,
   "2d": 172800,
   "3d": 259200,
+  "4d": 345600,
+  "5d": 432000,
   "7d": 604800,
   "14d": 1209600,
   "21d": 1814400,
@@ -893,15 +1014,24 @@ function dashboardJobListSourceRankExpr(mode: DashboardJobListSortSrc): string {
  */
 const DASHBOARD_JOB_SALARY_SORT_EXPR = `j.salary_monthly_eur`;
 
+const DASHBOARD_JOB_BOARD_EXCLUSION_SQL =
+  `NOT EXISTS (SELECT 1 FROM job_board_items b WHERE b.user_id = ? AND b.job_id = j.id)`;
+
 function buildDashboardJobListQuerySpec(
   tab: DashboardJobListTab,
   prefs: DashboardJobListPrefs,
   cursor?: DashboardJobListCursor | null,
   userId?: string,
+  options?: DashboardJobListQueryOptions,
 ): DashboardJobListQuerySpec {
   const scope = dashboardJobListScope(tab, userId ?? "");
   const whereClauses = [...scope.whereClauses];
   const params: DashboardJobListSqlValue[] = [...scope.params];
+
+  if (options?.excludeBoardItems && userId) {
+    whereClauses.push(DASHBOARD_JOB_BOARD_EXCLUSION_SQL);
+    params.push(userId);
+  }
 
   const enabledSources = (["linkedin", "google", "other"] as const).filter((key) => prefs.src[key]);
   if (enabledSources.length === 0) {
@@ -945,6 +1075,17 @@ function buildDashboardJobListQuerySpec(
       `${DASHBOARD_JOB_ROLE_QUERY_KEY_EXPR} NOT IN (${dashboardJobListPlaceholders(excludedRoleQueries.length)})`,
     );
     params.push(...excludedRoleQueries);
+  }
+
+  if (tab === "filtered") {
+    const enabledReasons = FILTERED_REASON_OPTIONS
+      .map((option) => option.key)
+      .filter((key) => prefs.filterReasons?.[key] !== false);
+    if (enabledReasons.length === 0) {
+      whereClauses.push(`1 = 0`);
+    } else if (enabledReasons.length < FILTERED_REASON_OPTIONS.length) {
+      whereClauses.push(`(${enabledReasons.map((key) => `(${DASHBOARD_FILTERED_REASON_SQL[key]})`).join(" OR ")})`);
+    }
   }
 
   const searchTerms = String(prefs.listSearch ?? "")
@@ -1058,6 +1199,30 @@ async function listDashboardJobFacetRoleQueries(db: D1Database, scope: Dashboard
     .bind(...scope.params)
     .all<{ value: string | null }>();
   return (results ?? []).map((row) => String(row.value ?? '{"t":null,"q":""}'));
+}
+
+async function listDashboardFilteredReasonFacets(
+  db: D1Database,
+  scope: DashboardJobListScope,
+): Promise<FilteredReasonFacet[]> {
+  const whereSql = scope.whereClauses.length ? `WHERE ${scope.whereClauses.join(" AND ")}` : "";
+  const checks = await Promise.all(
+    FILTERED_REASON_OPTIONS.map(async (option) => {
+      const row = await db
+        .prepare(
+          `SELECT 1 AS hit
+           ${scope.fromSql}
+           ${whereSql}
+             AND (${DASHBOARD_FILTERED_REASON_SQL[option.key]})
+           LIMIT 1`,
+        )
+        .bind(...scope.params)
+        .first<{ hit: number }>();
+      const facet: FilteredReasonFacet = { key: option.key, label: option.label };
+      return row ? facet : null;
+    }),
+  );
+  return checks.filter((item): item is FilteredReasonFacet => item != null);
 }
 
 function dashboardRowLogo(row: DashboardListRow): ListingLogoKind {
@@ -1236,6 +1401,7 @@ type TabFacetCache = {
   expiresAt: number;
   countries: string[];
   roleQueries: string[];
+  filterReasons: FilteredReasonFacet[];
 };
 
 const tabScopeTotalCache = new Map<string, TabScopeTotalCache>();
@@ -1305,23 +1471,25 @@ async function getCachedTabFacets(
   userId: string,
   tab: DashboardJobListTab,
   scope: DashboardJobListScope,
-): Promise<{ countries: string[]; roleQueries: string[] }> {
+): Promise<DashboardJobListFacets> {
   const cacheKey = `${userId}:${tab}`;
   const cached = tabFacetCache.get(cacheKey);
   const now = Date.now();
   if (cached && cached.expiresAt > now) {
-    return { countries: cached.countries, roleQueries: cached.roleQueries };
+    return { countries: cached.countries, roleQueries: cached.roleQueries, filterReasons: cached.filterReasons };
   }
-  const [countries, roleQueries] = await Promise.all([
+  const [countries, roleQueries, filterReasons] = await Promise.all([
     listDashboardJobFacetCountries(db, scope),
     listDashboardJobFacetRoleQueries(db, scope),
+    tab === "filtered" ? listDashboardFilteredReasonFacets(db, scope) : Promise.resolve([]),
   ]);
   tabFacetCache.set(cacheKey, {
     expiresAt: now + TAB_SCOPE_CACHE_TTL_MS,
     countries,
     roleQueries,
+    filterReasons,
   });
-  return { countries, roleQueries };
+  return { countries, roleQueries, filterReasons };
 }
 
 export async function queryDashboardJobListPage(
@@ -1338,17 +1506,21 @@ export async function queryDashboardJobListPage(
   }
   const scope = dashboardJobListScope(tab, userId);
   const filteredQuery = buildDashboardJobListQuerySpec(tab, prefs, undefined, userId);
+  const visibleQuery = buildDashboardJobListQuerySpec(tab, prefs, undefined, userId, {
+    excludeBoardItems: true,
+  });
   const pageQuery = cursor
-    ? buildDashboardJobListQuerySpec(tab, prefs, cursor, userId)
-    : filteredQuery;
+    ? buildDashboardJobListQuerySpec(tab, prefs, cursor, userId, { excludeBoardItems: true })
+    : visibleQuery;
   const safeLimit = Math.min(100, Math.max(1, Math.floor(limit)));
   const cursorSelectSql = buildDashboardJobListCursorSelectSql(pageQuery.orderFields);
   const selectSql = cursorSelectSql
     ? `${DASHBOARD_LIST_COLUMNS_ALIASED}, ${cursorSelectSql}`
     : DASHBOARD_LIST_COLUMNS_ALIASED;
-  const [totalUnfiltered, totalMatching, facets, pageResult] = await Promise.all([
+  const [totalUnfiltered, totalMatching, totalVisible, facets, pageResult] = await Promise.all([
     getCachedTabScopeTotal(db, userId, tab, scope),
     countDashboardJobListRows(db, filteredQuery),
+    countDashboardJobListRows(db, visibleQuery),
     getCachedTabFacets(db, userId, tab, scope),
     db
       .prepare(
@@ -1368,6 +1540,7 @@ export async function queryDashboardJobListPage(
   return {
     rows: pageRows,
     totalMatching,
+    totalVisible,
     totalUnfiltered,
     hasMore,
     nextCursor:
@@ -1388,7 +1561,9 @@ export async function queryDashboardJobListIds(
     const surfaced = await surfaceStaleImportedJobsAsFiltered(db, userId);
     if (surfaced > 0) invalidateDashboardListMemoCaches();
   }
-  const query = buildDashboardJobListQuerySpec(tab, prefs, undefined, userId);
+  const query = buildDashboardJobListQuerySpec(tab, prefs, undefined, userId, {
+    excludeBoardItems: true,
+  });
   const { results } = await db
     .prepare(
       `SELECT j.id AS id
@@ -1401,6 +1576,28 @@ export async function queryDashboardJobListIds(
   return (results ?? [])
     .map((row) => row.id)
     .filter((id): id is string => typeof id === "string" && id.length > 0);
+}
+
+export async function countDashboardJobListVisibleRows(
+  db: D1Database,
+  userId: string,
+  tab: DashboardJobListTab,
+  prefs: DashboardJobListPrefs,
+): Promise<number> {
+  const query = buildDashboardJobListQuerySpec(tab, prefs, undefined, userId, {
+    excludeBoardItems: true,
+  });
+  return countDashboardJobListRows(db, query);
+}
+
+export async function countDashboardJobListMatchingRows(
+  db: D1Database,
+  userId: string,
+  tab: DashboardJobListTab,
+  prefs: DashboardJobListPrefs,
+): Promise<number> {
+  const query = buildDashboardJobListQuerySpec(tab, prefs, undefined, userId);
+  return countDashboardJobListRows(db, query);
 }
 
 export async function getFavoriteJobIdsSet(

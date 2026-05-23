@@ -1,0 +1,11 @@
+---
+description: Legacy dashboard.html is deprecated; all dashboard UI work targets dashboard-v2.html only
+alwaysApply: true
+---
+
+# Dashboard UI — v2 only
+
+- **`public/dashboard.html`** is **deprecated**. Do **not** add features, fix UX bugs, or sync visual/design changes there unless the user explicitly asks to patch legacy for a one-off (e.g. emergency rollback documentation).
+- **`public/dashboard-v2.html`** is the **only** dashboard surface for **new work and ongoing updates**. Treat it as the canonical dashboard static asset.
+- Shared dashboard API (`src/dashboard/api.ts`, related `src/dashboard/**`) may still change when behavior is shared; **HTML/CSS/JS for the operator UI** belongs in **`dashboard-v2.html`** (and linked assets under `public/` as the project already does).
+- When the user says “dashboard” without a version, assume **`dashboard-v2`**.

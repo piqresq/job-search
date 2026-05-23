@@ -14,6 +14,7 @@ import {
 import {
   findOtherJobIdWithContentDedupeHash,
   getJob,
+  listContentDedupeCandidateJobsByCompanyTitle,
   markDashboardProcessingFailure,
   markHardPassed,
   markHardRejected,
@@ -24,7 +25,7 @@ import {
 } from "../db/jobs";
 import { log, observabilityLog } from "../logging/appLog";
 import { getEnabledProviders } from "../providers";
-import { computeContentDedupeHash } from "./contentDedupeHash";
+import { computeContentDedupeHash, computeCountryInclusiveContentDedupeHash } from "./contentDedupeHash";
 import { dedupeJobs } from "./dedupe";
 import { applyHardFilters, fetchUsdGbpToEurRates, getSalaryBelowFloorReasons } from "./hardFilters";
 import { stableJobId } from "./ids";
@@ -42,8 +43,14 @@ import {
   scoreTitleToQueryHealth,
 } from "../metrics/titleQueryHealth";
 import { normalizeRejectionReason, type NormalizedJob, type ScoringResult } from "../types/job";
+import {
+  checkListingActiveAtIngest,
+  INGEST_EXPIRED_REASON,
+} from "./ingestActiveCheck";
 
 /** Email + tokenized review flow is soft-disabled; use /dashboard instead. */
+
+type ContentDedupeMatchPath = "exact_hash" | "remote_countryless_fingerprint";
 
 function statisticsVariantFromJob(job: NormalizedJob): StatisticsVariantDimension | null {
   const searchQuery = typeof job.searchQuery === "string" ? job.searchQuery.trim() : "";
@@ -87,6 +94,35 @@ function shouldSkipExisting(row: {
     row.status === "edit_pending" ||
     row.status === "dashboard_open"
   );
+}
+
+async function findRemoteDuplicateByCurrentContentFingerprint(
+  db: D1Database,
+  userId: string,
+  job: NormalizedJob,
+  excludeId: string,
+): Promise<string | null> {
+  if (job.workplaceType !== "Remote") return null;
+
+  const candidates = await listContentDedupeCandidateJobsByCompanyTitle(db, userId, job.company, job.title, excludeId);
+  for (const candidate of candidates) {
+    if (!candidate.content_dedupe_hash || !candidate.normalized_json) continue;
+    try {
+      const normalized = JSON.parse(candidate.normalized_json) as NormalizedJob;
+      const candidateCountry = normalized.country || normalized.searchCountryLabel || "";
+      const legacyHashForCandidateCountry = await computeCountryInclusiveContentDedupeHash({
+        ...job,
+        country: candidateCountry,
+        searchCountryLabel: candidateCountry,
+      });
+      if (legacyHashForCandidateCountry && legacyHashForCandidateCountry === candidate.content_dedupe_hash) {
+        return candidate.id;
+      }
+    } catch {
+      continue;
+    }
+  }
+  return null;
 }
 
 const PIPELINE_STATE_WRITE_MAX_ATTEMPTS = 3;
@@ -358,8 +394,19 @@ export async function processFetchedJobs(
 
     if (contentDedupeHash) {
       let dupOf: string | null = null;
+      let dedupeMatchPath: ContentDedupeMatchPath | null = null;
       try {
         dupOf = await findOtherJobIdWithContentDedupeHash(env.DB, userId, contentDedupeHash, id);
+        if (dupOf) dedupeMatchPath = "exact_hash";
+        if (!dupOf) {
+          dupOf = await findRemoteDuplicateByCurrentContentFingerprint(
+            env.DB,
+            userId,
+            jobWithFetchMeta,
+            id,
+          );
+          if (dupOf) dedupeMatchPath = "remote_countryless_fingerprint";
+        }
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
         errors.push(`content_dedupe_lookup ${id}: ${msg}`);
@@ -381,6 +428,39 @@ export async function processFetchedJobs(
             statusKind: "degraded",
           },
         );
+      }
+      if (dupOf) {
+        await log.event(env, {
+          level: "info",
+          scope: "pipeline",
+          message: "Content dedupe duplicate detected",
+          meta: {
+            jobId: id,
+            duplicateOf: dupOf,
+            providerId: job.source,
+            contentDedupeHashPrefix: contentDedupeHash.slice(0, 8),
+            dedupeMatchPath,
+            duplicateRule:
+              dedupeMatchPath === "remote_countryless_fingerprint"
+                ? "remote listing matched current countryless fingerprint against older stored job JSON"
+                : "stored content_dedupe_hash matched",
+            title: jobWithFetchMeta.title,
+            company: jobWithFetchMeta.company,
+            workplaceType: jobWithFetchMeta.workplaceType,
+            country: jobWithFetchMeta.country ?? null,
+            searchCountryLabel: jobWithFetchMeta.searchCountryLabel ?? null,
+          },
+          context: {
+            severity: "none",
+            category: "system",
+            eventType: "content_dedupe_duplicate_detected",
+            providerId: job.source,
+            jobId: id,
+            phase: "content_hash_dedupe",
+            fingerprint: `content_dedupe_duplicate|${dedupeMatchPath ?? "unknown"}|${job.source}`,
+            statusKind: "ok",
+          },
+        });
       }
       if (dupOf && debugSynthetic) {
         await log.low(
@@ -460,6 +540,7 @@ export async function processFetchedJobs(
             providerId: job.source,
             duplicateOf: dupOf,
             contentDedupeHashPrefix: contentDedupeHash.slice(0, 8),
+            dedupeMatchPath,
           },
           {
             category: "system",
@@ -833,6 +914,75 @@ export async function processFetchedJobs(
         rejection_reason: normalizeRejectionReason(rr),
         priority_label: "",
       };
+    }
+
+    // Ingest-time active check: only for medium and high relevance jobs.
+    // Fetches the live listing page once; if confidently expired, hard-rejects
+    // the job before it ever becomes visible in the dashboard.
+    // Any ambiguous result (blocked, transient, unclear, no session) is treated
+    // as "skip" so the job passes through normally — we only reject on certainty.
+    if (
+      finalScoring.recommendation === "high_priority_review" ||
+      finalScoring.recommendation === "review"
+    ) {
+      let activeCheckResult: "expired" | "skip" = "skip";
+      try {
+        activeCheckResult = await checkListingActiveAtIngest(env, mergedJob);
+      } catch {
+        // Non-fatal: any unexpected error in the check lets the job through.
+      }
+      if (activeCheckResult === "expired") {
+        try {
+          await retryPipelineStateWrite(env, {
+            jobId: id,
+            providerId: job.source,
+            phase: "ingest_active_check",
+            action: "markHardRejected",
+            run: () => markHardRejected(env.DB, userId, id, [INGEST_EXPIRED_REASON], now),
+          });
+        } catch (e) {
+          const msg = e instanceof Error ? e.message : String(e);
+          errors.push(`ingest_active_check_reject ${id}: ${msg}`);
+          await log.moderate(
+            env,
+            "pipeline",
+            "Persist ingest active check reject failed",
+            { jobId: id, providerId: job.source, error: msg.slice(0, 500) },
+            {
+              category: "storage",
+              eventType: "ingest_active_check_reject_failed",
+              providerId: job.source,
+              jobId: id,
+              phase: "ingest_active_check",
+              statusKind: "degraded",
+            },
+          );
+          continue;
+        }
+        await log.info(
+          env,
+          "pipeline",
+          `Listing expired at ingest: ${jobWithFetchMeta.title} at ${jobWithFetchMeta.company}`,
+          {
+            jobId: id,
+            providerId: job.source,
+            recommendation: finalScoring.recommendation,
+            company: jobWithFetchMeta.company,
+            title: jobWithFetchMeta.title,
+          },
+        );
+        statisticsDeltas.push({
+          userId,
+          providerId: job.source,
+          atUnix: jobWithFetchMeta.apiFetchedAtUnix ?? now,
+          jobsProcessed: 1,
+          jobsFiltered: 1,
+          jobsHardRejected: 1,
+          variant: statisticsVariantFromJob(jobWithFetchMeta),
+        });
+        processed++;
+        continue;
+      }
     }
 
     try {

@@ -378,6 +378,10 @@
       flex-direction: column;
       gap: 0.5rem;
     }
+    .ops-incident-list {
+      max-height: 280px;
+      overflow-y: auto;
+    }
     .ops-status-item,
     .ops-status-vendor-item,
     .ops-incident-item {
@@ -2975,6 +2979,10 @@
               <img class="dd-caret" src="/assets/dropdown.png" alt="" width="10" height="10"/>
             </summary>
             <div class="dd-panel">
+              <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:6px">
+                <span class="dd-name" style="font-weight:600;font-size:12px;color:var(--text-sub)">Contract</span>
+                <span style="font-size:11px"><a href="#" class="pop-all" data-grp="contract">All</a> &middot; <a href="#" class="pop-none" data-grp="contract">None</a></span>
+              </div>
               <label><input type="checkbox" id="flt-contract-ft" checked/> Full-time</label>
               <label><input type="checkbox" id="flt-contract-pt" checked/> Part-time</label>
               <label><input type="checkbox" id="flt-contract-temp" checked/> Temporary</label>
@@ -2999,6 +3007,35 @@
           </details>
         </div>
         </div>
+
+        document.querySelectorAll('.pop-all').forEach(function (btn) {
+          btn.addEventListener('click', function (e) {
+            e.preventDefault(); e.stopPropagation();
+            var grp = btn.getAttribute('data-grp');
+            var cbSelector = "";
+            if (grp === "country") cbSelector = "#dd-filter-country-panel .flt-country-cb";
+            else if (grp === "rolequery") cbSelector = "#dd-filter-rolequery-panel .flt-rolequery-cb";
+            else cbSelector = 'input[id^="flt-' + grp + '-"]';
+            
+            document.querySelectorAll(cbSelector).forEach(function (i) { i.checked = true; });
+            onJobListToolbarPrefsChanged();
+          });
+        });
+
+        document.querySelectorAll('.pop-none').forEach(function (btn) {
+          btn.addEventListener('click', function (e) {
+            e.preventDefault(); e.stopPropagation();
+            var grp = btn.getAttribute('data-grp');
+            var cbSelector = "";
+            if (grp === "country") cbSelector = "#dd-filter-country-panel .flt-country-cb";
+            else if (grp === "rolequery") cbSelector = "#dd-filter-rolequery-panel .flt-rolequery-cb";
+            else cbSelector = 'input[id^="flt-' + grp + '-"]';
+            
+            document.querySelectorAll(cbSelector).forEach(function (i) { i.checked = false; });
+            onJobListToolbarPrefsChanged();
+          });
+        });
+
         <div class="toolbar-job-search-row">
           <label class="toolbar-job-search-label" for="job-list-search">Search</label>
           <input
@@ -3140,6 +3177,30 @@
           <pre id="cv-sanitized-pre" class="cv-sanitized-pre" hidden></pre>
           <p class="hint" id="cv-sanitized-compare-note" style="margin-top: 0.35rem" hidden></p>
         </details>
+      </section>
+      <section class="settings-card" aria-labelledby="linkedin-session-h">
+        <h2 id="linkedin-session-h">LINKEDIN SESSION</h2>
+        <p class="hint" style="margin-top:0">
+          Paste your LinkedIn <code>li_at</code> session cookie to enable authenticated expiration checks.
+          Sessions last about 1 year. To get it: open LinkedIn in your browser &rarr; DevTools (F12) &rarr; Application &rarr;
+          Cookies &rarr; <code>www.linkedin.com</code> &rarr; copy the value of <code>li_at</code>.
+        </p>
+        <p id="linkedin-session-manual-status" class="hint" style="margin:0 0 0.6rem" aria-live="polite">Loading…</p>
+        <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap">
+          <input
+            type="password"
+            id="linkedin-li-at-input"
+            placeholder="AQEDATxxxxxxx…"
+            autocomplete="off"
+            spellcheck="false"
+            style="flex:1;min-width:14rem;font-family:var(--mono);font-size:0.82rem;
+                   padding:0.35rem 0.5rem;border:1px solid var(--border);border-radius:6px;
+                   background:#fff"
+          />
+          <button type="button" class="settings-save-btn" id="save-linkedin-session">Save cookie</button>
+          <button type="button" class="reject-all-btn" id="clear-linkedin-session">Clear</button>
+        </div>
+        <span class="settings-save-status" id="linkedin-session-save-status" aria-live="polite" style="display:block;margin-top:0.4rem"></span>
       </section>
       <section class="settings-card settings-countries-card" aria-labelledby="search-countries-h">
         <h2 id="search-countries-h">SEARCH COUNTRIES</h2>
@@ -4659,18 +4720,46 @@
       loadList();
     }
 
-    function onSortSalaryOrDateChange(isSalary) {
-      if (isSalary) {
-        var sv = getSortSalaryValue();
-        if (sv !== "off") {
+    function onSortRelevanceOrSalaryOrDateChange(changed) {
+      if (changed === "rel") {
+        var rv = getSortRelValue();
+        if (rv !== "as-fetched") {
+          var cOff = document.querySelector('input[name="sort-src-opt"][value="default"]');
+          if (cOff) cOff.checked = true;
           var dOff = document.querySelector('input[name="sort-date-opt"][value="off"]');
           if (dOff) dOff.checked = true;
-        }
-      } else {
-        var dv = getSortDateValue();
-        if (dv !== "off") {
           var sOff = document.querySelector('input[name="sort-salary-opt"][value="off"]');
           if (sOff) sOff.checked = true;
+        }
+      } else if (changed === "src") {
+        var srcv = getSortSrcValue();
+        if (srcv !== "default") {
+          var rOff = document.querySelector('input[name="sort-rel-opt"][value="as-fetched"]');
+          if (rOff) rOff.checked = true;
+          var dOff = document.querySelector('input[name="sort-date-opt"][value="off"]');
+          if (dOff) dOff.checked = true;
+          var sOff = document.querySelector('input[name="sort-salary-opt"][value="off"]');
+          if (sOff) sOff.checked = true;
+        }
+      } else if (changed === "sal") {
+        var sv = getSortSalaryValue();
+        if (sv !== "off") {
+          var cOff = document.querySelector('input[name="sort-src-opt"][value="default"]');
+          if (cOff) cOff.checked = true;
+          var dOff = document.querySelector('input[name="sort-date-opt"][value="off"]');
+          if (dOff) dOff.checked = true;
+          var rOff = document.querySelector('input[name="sort-rel-opt"][value="as-fetched"]');
+          if (rOff) rOff.checked = true;
+        }
+      } else if (changed === "date") {
+        var dv = getSortDateValue();
+        if (dv !== "off") {
+          var cOff = document.querySelector('input[name="sort-src-opt"][value="default"]');
+          if (cOff) cOff.checked = true;
+          var sOff = document.querySelector('input[name="sort-salary-opt"][value="off"]');
+          if (sOff) sOff.checked = true;
+          var rOff = document.querySelector('input[name="sort-rel-opt"][value="as-fetched"]');
+          if (rOff) rOff.checked = true;
         }
       }
       onJobListToolbarPrefsChanged();
@@ -4684,6 +4773,7 @@
     }
 
     function showApp() {
+      _sessionExpired = false;
       loginWrap.hidden = true;
       appEl.hidden = false;
       var pr = document.getElementById("pipeline-status");
@@ -4747,6 +4837,26 @@
           hint.textContent = "";
           hint.className = "env-flag";
         }
+      }
+    }
+
+    function applyLinkedinSessionFromSettingsPayload(j) {
+      var el = document.getElementById("linkedin-session-manual-status");
+      if (!el) return;
+      if (!j || !j.ok) { el.textContent = ""; return; }
+      var isSet = !!j.linkedinManualCookieSet;
+      var savedAt = j.linkedinManualCookieSavedAt;
+      if (isSet) {
+        var ageStr = "";
+        if (savedAt && Number.isFinite(Number(savedAt))) {
+          var ageDays = Math.floor((Date.now() / 1000 - Number(savedAt)) / 86400);
+          ageStr = ageDays === 0 ? " — saved today" : " — saved " + ageDays + " day" + (ageDays === 1 ? "" : "s") + " ago";
+        }
+        el.textContent = "Cookie active" + ageStr + ". Expiration checks will use this session.";
+        el.style.color = "var(--score-high, #1a7f37)";
+      } else {
+        el.textContent = "No cookie set — LinkedIn expiration checks will not authenticate.";
+        el.style.color = "";
       }
     }
 
@@ -5422,6 +5532,7 @@
       }
     }
 
+    var _sessionExpired = false;
     async function api(path, opts) {
       const init = { credentials: "include", method: (opts && opts.method) || "GET" };
       if (opts && opts.body != null) {
@@ -5430,6 +5541,11 @@
       }
       const r = await fetch(path, init);
       const j = await r.json().catch(() => ({}));
+      if (r.status === 401 && path !== "/api/auth/login" && path !== "/api/auth/logout" && !_sessionExpired) {
+        _sessionExpired = true;
+        fetch("/api/auth/logout", { credentials: "include", method: "POST" }).catch(function() {});
+        showLogin("Session expired. Please sign in again.");
+      }
       return { r, j };
     }
 
@@ -7839,6 +7955,7 @@
       }
       applyMasterSwitchesFromSettingsPayload(j);
       applyCvCacheFromSettingsPayload(j);
+      applyLinkedinSessionFromSettingsPayload(j);
       renderVendorsFromSettings(j);
       renderSearchCountriesFromSettings(j);
       renderRoleTiersFromSettings(j);
@@ -8827,6 +8944,47 @@
       await loadTextbot();
     });
 
+    (function bindLinkedinSession() {
+      var saveBtn = document.getElementById("save-linkedin-session");
+      var clearBtn = document.getElementById("clear-linkedin-session");
+      var input = document.getElementById("linkedin-li-at-input");
+      var status = document.getElementById("linkedin-session-save-status");
+      if (!saveBtn || !clearBtn || !input) return;
+
+      async function saveCookie(liAt) {
+        if (status) status.textContent = liAt ? "Saving…" : "Clearing…";
+        var res = await api("/api/settings", {
+          method: "PATCH",
+          body: JSON.stringify({ linkedinLiAt: liAt }),
+        });
+        if (res.r.status === 401) { showLogin(""); return; }
+        if (!res.j || !res.j.ok) {
+          if (status) status.textContent = (res.j && res.j.error) || "Save failed";
+          return;
+        }
+        if (liAt && input) input.value = "";
+        if (status) {
+          status.textContent = liAt ? "Cookie saved." : "Cookie cleared.";
+          setTimeout(function() { if (status) status.textContent = ""; }, 3000);
+        }
+        applyLinkedinSessionFromSettingsPayload(res.j);
+      }
+
+      saveBtn.addEventListener("click", async function () {
+        var val = input && input.value ? input.value.trim() : "";
+        if (!val) {
+          if (status) status.textContent = "Paste the li_at cookie value first.";
+          return;
+        }
+        await saveCookie(val);
+      });
+
+      clearBtn.addEventListener("click", async function () {
+        if (!confirm("Clear the LinkedIn session cookie?")) return;
+        await saveCookie("");
+      });
+    })();
+
     (function bindCvUpload() {
       var uploadBtn = document.getElementById("cv-upload-btn");
       if (!uploadBtn) return;
@@ -9690,36 +9848,26 @@
 
     document.querySelectorAll('input[name="sort-rel-opt"]').forEach(function (inp) {
       inp.addEventListener("change", function () {
-        var d = inp.closest("details");
-        if (d) d.open = false;
-        onJobListToolbarPrefsChanged();
+        onSortRelevanceOrSalaryOrDateChange("rel");
       });
     });
     document.querySelectorAll('input[name="sort-src-opt"]').forEach(function (inp) {
       inp.addEventListener("change", function () {
-        var d = inp.closest("details");
-        if (d) d.open = false;
-        onJobListToolbarPrefsChanged();
+        onSortRelevanceOrSalaryOrDateChange("src");
       });
     });
     document.querySelectorAll('input[name="sort-salary-opt"]').forEach(function (inp) {
       inp.addEventListener("change", function () {
-        var d = inp.closest("details");
-        if (d) d.open = false;
-        onSortSalaryOrDateChange(true);
+        onSortRelevanceOrSalaryOrDateChange("sal");
       });
     });
     document.querySelectorAll('input[name="sort-date-opt"]').forEach(function (inp) {
       inp.addEventListener("change", function () {
-        var d = inp.closest("details");
-        if (d) d.open = false;
-        onSortSalaryOrDateChange(false);
+        onSortRelevanceOrSalaryOrDateChange("date");
       });
     });
     document.querySelectorAll('input[name="filter-fetch-age-opt"]').forEach(function (inp) {
       inp.addEventListener("change", function () {
-        var d = inp.closest("details");
-        if (d) d.open = false;
         onJobListToolbarPrefsChanged();
       });
     });
@@ -9766,7 +9914,16 @@
       showLogin("");
     });
 
-    loadList();
+    (async function initDashboard() {
+      // Fetch initial settings to populate stored preferences
+      try {
+        var resSet = await api("/api/settings", { method: "GET" });
+        if (resSet.j && resSet.j.ok && resSet.j.jobListPrefs) {
+          localStorage.setItem(LS_JOB_LIST_PREFS, JSON.stringify(resSet.j.jobListPrefs));
+        }
+      } catch (e) {}
+      loadList();
+    })();
   </script>
 </body>
 </html>

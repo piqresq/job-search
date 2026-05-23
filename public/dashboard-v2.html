@@ -22,7 +22,8 @@
   --danger-50:#FEE2E2;--danger-600:#B91C1C;--danger-800:#7F1D1D;
   --neutral-50:#F1F5F9;--neutral-600:#475569;
   --col-new:#475569;--col-applying:#FF5C28;--col-applied:#1D4ED8;
-  --col-interview:#15803D;--col-rejected:#78716C;
+  --col-interview:#15803D;--col-rejected:#78716C;--col-expired:#9CA3AF;
+  --info-50:#EFF6FF;--info-600:#2563EB;
   --r-xs:4px;--r-sm:6px;--r-md:10px;--r-lg:14px;
   --sh-soft:0 1px 3px rgba(11,11,15,0.06);
   --sh-pop:0 8px 24px -8px rgba(11,11,15,0.12),0 2px 6px -2px rgba(11,11,15,0.08);
@@ -115,6 +116,8 @@ a{color:inherit;text-decoration:none}
 .btn-ghost:hover{background:var(--surface-sunken)}
 .btn-destructive{background:var(--surface);color:var(--danger-600);border-color:var(--hairline)}
 .btn-destructive:hover{background:var(--danger-50);border-color:#FECACA;color:var(--danger-800)}
+.btn-danger{background:var(--danger-600);color:#fff;border-color:var(--danger-600)}
+.btn-danger:hover{background:var(--danger-800);border-color:var(--danger-800)}
 .btn-muted-delete{background:var(--surface);color:var(--ink-muted);border-color:var(--hairline)}
 .btn-muted-delete:hover{background:var(--surface-sunken);border-color:var(--hairline-strong);color:var(--ink-body)}
 .btn-icon{padding:5px;min-width:30px;justify-content:center}
@@ -141,13 +144,15 @@ a{color:inherit;text-decoration:none}
 .afc:hover{background:var(--brand-200)}
 
 /* POPOVER */
-.popover{position:absolute;z-index:110;top:calc(100% + 6px);left:0;background:var(--surface);border:1px solid var(--hairline);border-radius:var(--r-md);box-shadow:var(--sh-pop);padding:8px;min-width:190px;opacity:0;transform:translateY(-4px);pointer-events:none;transition:opacity var(--dur-base) var(--ease-out),transform var(--dur-base) var(--ease-out)}
+.popover{position:absolute;z-index:110;top:calc(100% + 6px);left:0;background:var(--surface);border:1px solid var(--hairline);border-radius:var(--r-md);box-shadow:var(--sh-pop);padding:8px;min-width:248px;opacity:0;transform:translateY(-4px);pointer-events:none;transition:opacity var(--dur-base) var(--ease-out),transform var(--dur-base) var(--ease-out)}
 .popover.open{opacity:1;transform:translateY(0);pointer-events:auto}
 .pop-item{display:flex;align-items:center;gap:10px;padding:6px 8px;border-radius:var(--r-sm);font-size:13px;color:var(--ink-body);cursor:pointer;transition:background var(--dur-fast) var(--ease-out);user-select:none}
 .pop-item:hover{background:var(--surface-sunken)}
 .pop-item input{width:14px;height:14px;flex-shrink:0;accent-color:var(--brand-600);cursor:pointer}
 .pop-div{height:1px;background:var(--hairline);margin:4px 0}
 .pop-lbl{font-size:11px;font-weight:600;color:var(--ink-faint);text-transform:uppercase;letter-spacing:.06em;padding:4px 8px 2px}
+.pop-lbl-row{display:flex;justify-content:space-between;align-items:baseline;gap:12px;flex-wrap:nowrap;white-space:nowrap;padding:4px 8px 2px;font-size:11px;font-weight:600;color:var(--ink-faint);text-transform:uppercase;letter-spacing:.06em}
+.pop-lbl-actions{font-size:inherit;font-weight:600;color:var(--ink-muted);text-transform:uppercase;letter-spacing:.06em;flex-shrink:0;white-space:nowrap}
 
 /* JOB LIST */
 .jobs-list{background:var(--surface)}
@@ -215,9 +220,20 @@ a{color:inherit;text-decoration:none}
 .bbtn.danger:hover{background:rgba(185,28,28,.24);border-color:#FECACA;color:#fff}
 
 /* KANBAN */
-.board-canvas{display:flex;gap:12px;padding:24px 32px 32px;overflow-x:auto;align-items:flex-start;flex:1;background-image:radial-gradient(circle at 1px 1px,rgba(11,11,15,.06) 1px,transparent 0);background-size:16px 16px}
-.board-canvas::-webkit-scrollbar{height:8px}
-.board-canvas::-webkit-scrollbar-thumb{background:var(--hairline-strong);border-radius:4px}
+.board-shell{display:flex;flex-direction:column;flex:1;min-height:0;background-image:radial-gradient(circle at 1px 1px,rgba(11,11,15,.06) 1px,transparent 0);background-size:16px 16px}
+.board-canvas{display:flex;gap:12px;padding:24px 32px 24px;overflow-x:auto;align-items:flex-start;flex:1;background:transparent;background-image:none;scrollbar-width:none;-ms-overflow-style:none;cursor:grab}
+.board-canvas::-webkit-scrollbar{display:none;width:0;height:0}
+.board-canvas.drag-panning{cursor:grabbing;user-select:none;touch-action:none}
+.board-canvas .kcol{cursor:default}
+.board-scroll-affordance{display:none;align-items:center;gap:12px;padding:10px 32px 14px;background:var(--surface);border-top:1px solid var(--hairline);flex-shrink:0}
+.board-scroll-affordance.visible{display:flex}
+.board-scroll-label{display:inline-flex;align-items:center;gap:6px;font-family:var(--f-mono);font-size:11px;font-weight:500;color:var(--ink-muted);white-space:nowrap}
+.board-scroll-label svg{flex-shrink:0;color:var(--ink-muted)}
+.board-scroll-track{position:relative;flex:1;height:18px;border-radius:999px;background:var(--surface-sunken);border:1px solid var(--hairline);cursor:grab;touch-action:none}
+.board-scroll-track:active{cursor:grabbing}
+.board-scroll-thumb{position:absolute;top:3px;left:3px;height:10px;min-width:72px;border-radius:999px;background:var(--ink-muted);transition:background-color var(--dur-fast) var(--ease-out),transform var(--dur-base) var(--ease-out)}
+.board-scroll-affordance.is-panning .board-scroll-thumb{transition:background-color var(--dur-fast) var(--ease-out)}
+.board-scroll-track:hover .board-scroll-thumb{background:var(--ink-strong)}
 .kcol{width:320px;min-width:320px;flex-shrink:0;background:var(--surface);border:1px solid var(--hairline);border-radius:var(--r-md);display:flex;flex-direction:column;max-height:calc(100dvh - var(--header-h) - 80px);overflow:hidden}
 .col-hdr{padding:20px 24px 16px;border-top:3px solid var(--col-color,var(--neutral-600));flex-shrink:0}
 .col-lbl{font-size:11px;font-weight:600;color:var(--ink-muted);letter-spacing:.08em;text-transform:uppercase}
@@ -237,6 +253,8 @@ a{color:inherit;text-decoration:none}
 .kcard{background:var(--surface);border:1px solid var(--hairline);border-radius:var(--r-md);padding:14px;cursor:grab;transition:border-color var(--dur-base) var(--ease-out),box-shadow var(--dur-base) var(--ease-out),transform var(--dur-base) var(--ease-out)}
 .kcard:hover{border-color:var(--hairline-strong);box-shadow:var(--sh-soft);transform:translateY(-1px)}
 .kcard.drag-src{opacity:.5;transform:scale(.98)}
+.kcard.scanning{border-color:var(--brand-200);box-shadow:0 0 0 3px var(--brand-50)}
+.kcard.expiring{transition:opacity 240ms var(--ease-in),transform 240ms var(--ease-in)!important;opacity:0;transform:translateY(-10px) scale(0.96);pointer-events:none}
 .kcard.drag-over-above{box-shadow:0 -3px 0 0 var(--brand-600)!important}
 .kcard.drag-over-below{box-shadow:0 3px 0 0 var(--brand-600)!important}
 .kcard-top{display:flex;align-items:flex-start;gap:10px;margin-bottom:8px}
@@ -252,7 +270,18 @@ a{color:inherit;text-decoration:none}
 .spin{animation:spin 4.6s linear infinite;display:inline-flex;align-items:center}
 @keyframes spin{to{transform:rotate(360deg)}}
 .rej-cd{font-family:var(--f-mono);font-size:11px;font-weight:500;color:var(--warning-800);margin-bottom:6px}
+#expiration-scan-notice{display:flex;align-items:center;gap:10px;padding:10px 16px;background:var(--warning-50);border-bottom:1px solid #FDE68A;font-size:13px;color:var(--warning-800);line-height:1.4}
+#expiration-scan-notice.esn-green{background:var(--success-50);border-bottom-color:#86EFAC;color:var(--success-800)}
+#expiration-scan-notice .esn-icon{flex-shrink:0;font-size:15px}
+#expiration-scan-notice .esn-msg{flex:1}
+#expiration-scan-notice .esn-dismiss{flex-shrink:0;font-size:12px;font-weight:500;cursor:pointer;opacity:.7;transition:opacity var(--dur-fast) var(--ease-out);background:none;border:none;color:inherit;padding:2px 4px}
+#expiration-scan-notice .esn-dismiss:hover{opacity:1}
 .kcard-danger{margin-top:10px;width:100%;justify-content:center}
+.kcard-footer{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:10px;min-height:32px}
+.kcard-footer-acts{display:flex;align-items:center;gap:6px;flex-wrap:wrap;flex:1;min-width:0}
+.kcard-open-lnk{display:inline-flex;align-items:center;justify-content:center;width:32px;height:32px;border-radius:var(--r-sm);color:var(--ink-faint);background:transparent;border:none;transition:background-color var(--dur-base) var(--ease-out),color var(--dur-fast) var(--ease-out);flex-shrink:0;text-decoration:none;cursor:pointer}
+.kcard-open-lnk:hover{background:var(--surface-sunken);color:var(--ink-body)}
+.kcard-open-lnk:focus-visible{outline:none;box-shadow:0 0 0 3px var(--brand-50),0 0 0 4px var(--brand-600)}
 
 /* DRAWER */
 .drw-backdrop{position:fixed;inset:0;background:var(--scrim);z-index:200;opacity:0;pointer-events:none;transition:opacity var(--dur-slow) var(--ease-out)}
@@ -296,6 +325,8 @@ a{color:inherit;text-decoration:none}
 .coll-body.open{display:block}
 .drw-footer{border-top:1px solid var(--hairline);padding:16px 20px;flex-shrink:0;display:flex;flex-direction:column;gap:10px;background:var(--surface)}
 .drw-footer-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.drw-footer-sep{height:1px;background:var(--hairline);margin:0 -20px}
+.drw-footer-job-actions{display:inline-flex;align-items:center;gap:8px;flex-wrap:wrap}
 .move-select{height:32px;padding:0 10px;border-radius:var(--r-sm);border:1px solid var(--hairline);background:var(--surface);font-size:13px;font-family:var(--f-ui);color:var(--ink-body);cursor:pointer;outline:none;transition:border-color var(--dur-base) var(--ease-out)}
 .move-select:focus{border-color:var(--brand-600);box-shadow:0 0 0 3px var(--brand-50)}
 
@@ -323,6 +354,14 @@ a{color:inherit;text-decoration:none}
 .ops-outer{display:flex;flex:1;min-height:0;overflow:hidden}
 .ops-main{flex:1;overflow-y:auto;padding:20px 24px;display:flex;flex-direction:column;gap:14px;min-width:0;background:var(--surface-sunken)}
 .ops-side{width:320px;flex-shrink:0;overflow-y:auto;padding:14px;display:flex;flex-direction:column;gap:12px;border-left:1px solid var(--hairline)}
+/* Admin: main config left, operational status + incidents right */
+.admin-layout{display:flex;align-items:flex-start;gap:28px;width:100%;max-width:1320px;margin:0 auto;padding:28px 32px 56px;box-sizing:border-box}
+.admin-col-left{flex:1;min-width:0}
+.admin-col-right{width:min(344px,100%);flex-shrink:0;display:flex;flex-direction:column;gap:12px;position:sticky;top:12px;align-self:flex-start;max-height:calc(100dvh - var(--header-h) - 24px);overflow-y:auto;padding-bottom:8px}
+@media (max-width:1020px){
+  .admin-layout{flex-direction:column;padding:20px 16px 48px}
+  .admin-col-right{width:100%;max-height:none;position:static;overflow:visible}
+}
 .ops-card{background:var(--surface);border:1px solid var(--hairline);border-radius:var(--r-md);overflow:hidden;box-shadow:var(--sh-soft)}
 .ops-card-title{font-size:10px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;color:var(--ink-muted);padding:9px 14px;border-bottom:1px solid var(--hairline);background:var(--surface-sunken);display:flex;align-items:center;gap:8px}
 .ops-switch-row{display:flex;align-items:center;gap:10px;padding:10px 14px;border-bottom:1px solid var(--hairline)}
@@ -376,7 +415,7 @@ a{color:inherit;text-decoration:none}
 .ops-status-vendor-row{font-size:12px;display:flex;align-items:center;gap:6px;padding:4px 0;border-bottom:1px solid var(--hairline)}
 .ops-status-vendor-row:last-child{border-bottom:none}
 .ops-side-incidents{padding:6px}
-.ops-incidents{padding:6px}
+.ops-incidents{padding:6px;max-height:280px;overflow-y:auto}
 .ops-incidents-empty{padding:10px;font-size:12px;color:var(--ink-faint);text-align:center}
 /* SETTINGS */
 .settings-inner{padding:28px 32px;max-width:680px;display:flex;flex-direction:column;gap:16px}
@@ -406,7 +445,7 @@ a{color:inherit;text-decoration:none}
 .stg-label{flex:1}
 .stg-label-main{font-size:13px;font-weight:500;color:var(--ink-body)}
 .stg-label-sub{font-size:12px;color:var(--ink-muted);margin-top:1px}
-.toggle-wrap{display:flex;align-items:center;flex-shrink:0;cursor:pointer}
+.toggle-wrap{display:flex;align-items:center;flex-shrink:0;cursor:pointer;position:relative}
 .toggle-input{position:absolute;opacity:0;width:0;height:0}
 .toggle-track{width:34px;height:18px;background:var(--hairline-strong);border-radius:9px;position:relative;transition:background var(--dur-base) var(--ease-out);flex-shrink:0}
 .toggle-track::after{content:'';position:absolute;top:2px;left:2px;width:14px;height:14px;background:#fff;border-radius:50%;transition:transform var(--dur-base) var(--ease-spring);box-shadow:0 1px 2px rgba(0,0,0,.2)}
@@ -663,8 +702,27 @@ a{color:inherit;text-decoration:none}
           <div class="header-title">Board</div>
           <div class="header-sub">Application pipeline</div>
         </div>
+        <div style="display:flex;align-items:center;gap:8px">
+          <button class="btn btn-secondary" id="board-gen-all" aria-label="Generate CV and cover letter for all active board jobs without docs">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M9 15h6"/><path d="M12 18v-6"/></svg>
+            Gen. CV &amp; CL for all active jobs
+          </button>
+          <button class="btn btn-secondary" id="board-refresh-all" aria-label="Check all board jobs for expiration">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></svg>
+            Refresh all
+          </button>
+        </div>
       </header>
-      <div class="board-canvas" id="board-canvas"></div>
+      <div id="expiration-scan-notice" style="display:none" role="alert"></div>
+      <div class="board-shell">
+        <div class="board-canvas" id="board-canvas"></div>
+        <div class="board-scroll-affordance" id="board-scroll-affordance" aria-hidden="true">
+          <span class="board-scroll-label">More columns<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg></span>
+          <div class="board-scroll-track" id="board-scroll-track">
+            <div class="board-scroll-thumb" id="board-scroll-thumb"></div>
+          </div>
+        </div>
+      </div>
     </div>
 
     <!-- STATS -->
@@ -703,10 +761,10 @@ a{color:inherit;text-decoration:none}
       <div class="ops-outer">
         <!-- LEFT: main scrollable column -->
         <div class="ops-main">
-          <!-- Master switches -->
-          <div class="ops-card" id="ops-switches-card">
-            <div class="ops-card-title">Master switches</div>
-            <div id="ops-switches-rows"><div class="ops-empty">Loading…</div></div>
+          <!-- Pipeline notice (e.g. hard kill); toggles live under Admin -->
+          <div class="ops-card" id="ops-pipeline-notice-card" style="display:none">
+            <div class="ops-card-title">Pipeline notice</div>
+            <div id="ops-pipeline-notice-body"></div>
           </div>
           <!-- Vendor usage -->
           <div class="ops-card">
@@ -742,35 +800,6 @@ a{color:inherit;text-decoration:none}
             </div>
           </div>
         </div>
-        <!-- RIGHT: status + incidents -->
-        <div class="ops-side">
-          <div class="ops-card">
-            <div class="ops-card-title">Operational status</div>
-            <div style="padding:10px 12px">
-              <div id="ops-status-headline" style="font-size:13px;font-weight:600;color:var(--ink-strong);margin-bottom:2px">—</div>
-              <div id="ops-status-driver" style="font-size:12px;color:var(--ink-muted);margin-bottom:6px"></div>
-              <ul id="ops-status-list" style="list-style:none;padding:0;margin:0;display:flex;flex-direction:column;gap:2px"></ul>
-            </div>
-            <div style="border-top:1px solid var(--hairline);padding:8px 12px">
-              <div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--ink-faint);margin-bottom:6px">Per-vendor state</div>
-              <div id="ops-vendor-state"></div>
-            </div>
-          </div>
-          <div class="ops-card">
-            <div class="ops-card-title" style="color:var(--danger-700)">Critical incidents
-              <button class="btn btn-ghost" id="clear-incidents-btn" style="font-size:11px;padding:2px 8px;margin-left:auto">Clear all</button>
-            </div>
-            <div class="ops-incidents" id="ops-crit-list"><div class="ops-incidents-empty">—</div></div>
-          </div>
-          <div class="ops-card">
-            <div class="ops-card-title" style="color:var(--warning-700)">Moderate incidents</div>
-            <div class="ops-incidents" id="ops-mod-list"><div class="ops-incidents-empty">—</div></div>
-          </div>
-          <div class="ops-card">
-            <div class="ops-card-title">Low-priority anomalies</div>
-            <div class="ops-incidents" id="ops-low-list"><div class="ops-incidents-empty">—</div></div>
-          </div>
-        </div>
       </div>
     </div>
 
@@ -794,11 +823,30 @@ a{color:inherit;text-decoration:none}
       <header class="header">
         <div class="header-info">
           <div class="header-title">Admin</div>
-          <div class="header-sub">User management &amp; global configuration</div>
+          <div class="header-sub">Users, configuration, and operational incidents</div>
         </div>
       </header>
       <div class="content">
-        <div id="admin-inner" style="max-width:900px;margin:0 auto;padding:32px 32px 64px">
+        <div id="admin-inner" class="admin-layout">
+          <div class="admin-col-left">
+
+          <!-- Pipeline debug toggles (global verbose + site-wide pipeline kill notice) -->
+          <div class="stg-section" style="margin-bottom:40px">
+            <div class="stg-section-title">Pipeline debug</div>
+            <div class="stg-section-desc">Verbose logging affects log verbosity for everyone. Job-detail debug toggles are set per user under Edit.</div>
+            <div id="admin-pipeline-debug-inner">
+              <div style="padding:16px;text-align:center;font-size:13px;color:var(--ink-faint)">Loading…</div>
+            </div>
+          </div>
+
+          <!-- LinkedIn session (global) -->
+          <div class="stg-section" style="margin-bottom:40px">
+            <div class="stg-section-title">LinkedIn session</div>
+            <div class="stg-section-desc">Shared session for expiration checks and Bright Data flows. Paste <code style="font-family:var(--f-mono)">li_at</code> or use Connect (proxy auto-login).</div>
+            <div id="admin-linkedin-inner">
+              <div style="padding:16px;text-align:center;font-size:13px;color:var(--ink-faint)">Loading…</div>
+            </div>
+          </div>
 
           <!-- Users section -->
           <div class="stg-section" style="margin-bottom:40px">
@@ -834,10 +882,10 @@ a{color:inherit;text-decoration:none}
             </div>
           </div>
 
-          <!-- Setup analysis instruction -->
+          <!-- Setup wizard — CV analysis prompt (admin account) -->
           <div class="stg-section" style="margin-bottom:40px">
-            <div class="stg-section-title">Setup wizard analysis instruction</div>
-            <div class="stg-section-desc">System prompt used when the setup wizard analyzes an uploaded CV and proposes job queries, target countries, scoring policy, and draft instruction. Save here for the admin account; use the template sync below to clone it for future users.</div>
+            <div class="stg-section-title">Setup wizard — CV analysis prompt</div>
+            <div class="stg-section-desc">System prompt sent to the AI when the setup wizard analyzes an uploaded CV—home country, job search queries, and how to shape scoring and drafts instructions. Takes effect on the next wizard run; reset restores the built-in default. Stored for the <strong>admin</strong> account; use <strong>New-user settings template</strong> sync below so new users inherit your defaults.</div>
             <textarea id="admin-setup-analysis-ta" rows="12" class="stg-textarea" placeholder="Loading…" style="font-family:var(--f-mono);font-size:12px"></textarea>
             <div style="display:flex;gap:8px;margin-top:8px">
               <button class="btn btn-primary" id="admin-setup-analysis-save-btn">Save</button>
@@ -860,13 +908,43 @@ a{color:inherit;text-decoration:none}
             </div>
           </div>
 
+          </div>
+          <aside class="admin-col-right" aria-label="Operational status and incidents" data-admin-only>
+            <div class="ops-card">
+              <div class="ops-card-title">Operational status</div>
+              <div style="padding:10px 12px">
+                <div id="ops-status-headline" style="font-size:13px;font-weight:600;color:var(--ink-strong);margin-bottom:2px">—</div>
+                <div id="ops-status-driver" style="font-size:12px;color:var(--ink-muted);margin-bottom:6px"></div>
+                <ul id="ops-status-list" style="list-style:none;padding:0;margin:0;display:flex;flex-direction:column;gap:2px"></ul>
+              </div>
+              <div style="border-top:1px solid var(--hairline);padding:8px 12px">
+                <div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--ink-faint);margin-bottom:6px">Per-vendor state</div>
+                <div id="ops-vendor-state"></div>
+              </div>
+            </div>
+            <div class="ops-card">
+              <div class="ops-card-title" style="color:var(--danger-700)">Critical incidents
+                <button class="btn btn-ghost" id="clear-incidents-btn" style="font-size:11px;padding:2px 8px;margin-left:auto">Clear all</button>
+              </div>
+              <div class="ops-incidents" id="ops-crit-list"><div class="ops-incidents-empty">—</div></div>
+            </div>
+            <div class="ops-card">
+              <div class="ops-card-title" style="color:var(--warning-700)">Moderate incidents</div>
+              <div class="ops-incidents" id="ops-mod-list"><div class="ops-incidents-empty">—</div></div>
+            </div>
+            <div class="ops-card">
+              <div class="ops-card-title">Low-priority anomalies</div>
+              <div class="ops-incidents" id="ops-low-list"><div class="ops-incidents-empty">—</div></div>
+            </div>
+          </aside>
+
         </div>
       </div>
     </div>
 
     <!-- ADMIN MODALS (create user, edit user) -->
     <div id="admin-modal-overlay" style="position:fixed;inset:0;z-index:200;background:var(--scrim);align-items:center;justify-content:center;display:none">
-      <div id="admin-modal-box" style="width:440px;background:var(--surface);border-radius:var(--r-lg);padding:32px;box-shadow:var(--sh-drawer);position:relative">
+      <div id="admin-modal-box" style="width:520px;max-width:calc(100vw - 40px);background:var(--surface);border-radius:var(--r-lg);padding:32px;box-shadow:var(--sh-drawer);position:relative">
         <button id="admin-modal-close" style="position:absolute;right:16px;top:16px;background:none;border:none;cursor:pointer;color:var(--ink-muted)">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
         </button>
@@ -910,13 +988,19 @@ const IC = {
   search: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>`,
   sort: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m3 16 4 4 4-4"/><path d="M7 20V4"/><path d="m21 8-4-4-4 4"/><path d="M17 4v16"/></svg>`,
   trash: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="m19 6-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/></svg>`,
+  refresh: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></svg>`,
+  gen: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M9 15h6"/><path d="M12 18v-6"/></svg>`,
+  regen: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>`,
+  inbox: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></svg>`,
+  plus: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"/><path d="M12 5v14"/></svg>`,
 };
 
 /* ── STATE ───────────────────────────────────────────────────────────────── */
 const S = {
   jobs: [], cursor: null, hasMore: true, loading: false, total: 0,
-  facets: { countries: [], roleQueries: [] },
+  facets: { countries: [], roleQueries: [], filterReasons: [] },
   prefs: defaultPrefs(),
+  filteredPrefs: defaultPrefs(),
   sel: new Set(),
   board: emptyBoard(),
   drawerJob: null,
@@ -929,10 +1013,29 @@ function defaultPrefs() {
     src: { linkedin: true, google: true, other: true },
     rel: { high: true, medium: true, low: true, failed: true, none: true },
     contract: { ft: true, pt: true, temp: true, other: true },
-    countries: {}, roleQueries: {},
+    countries: {}, roleQueries: {}, filterReasons: {},
     sortRel: 'high-first', sortSrc: 'default', sortSalary: 'off', sortDate: 'off',
     filterFetchAge: 'off', listSearch: '',
   };
+}
+
+function activeListPrefs() {
+  return S.listTab === 'filtered' ? S.filteredPrefs : S.prefs;
+}
+
+const FILTER_FETCH_AGE_OPTS = [
+  ['off', 'Any time'],
+  ['24h', 'Last 24 h'],
+  ['2d', 'Last 2 days'],
+  ['3d', 'Last 3 days'],
+  ['4d', 'Last 4 days'],
+  ['5d', 'Last 5 days'],
+  ['7d', 'Last 7 days'],
+  ['14d', 'Last 14 days'],
+];
+function filterFetchAgeLabel(value) {
+  const hit = FILTER_FETCH_AGE_OPTS.find(([v]) => v === value);
+  return hit ? hit[1] : value;
 }
 
 /* ── BOARD STATE ───────────────────────────────────────────────────────────
@@ -941,7 +1044,7 @@ function defaultPrefs() {
  */
 const LEGACY_BOARD_KEY = 'jb-board-v3';
 function emptyBoard() {
-  return { new: [], applying: [], applied: [], interview: [], rejected: [] };
+  return { new: [], applying: [], applied: [], interview: [], rejected: [], expired: [] };
 }
 function boardKey(userId) {
   return userId ? `jb-board-v3:${userId}` : null;
@@ -963,6 +1066,35 @@ function normalizeBoardShape(board) {
   for (const col of Object.keys(out)) out[col] = Array.isArray(board[col]) ? board[col] : [];
   return out;
 }
+/** Job ids with an active POST /generate in this tab (merged into board until API confirms). */
+const docGenerationInFlight = new Set();
+
+function applyBoardFromApi(board) {
+  const prevDrawerDoc = S.drawerJob ? {
+    generating: !!S.drawerJob.generating,
+    hasDocx: !!S.drawerJob.hasDocx,
+  } : null;
+  S.board = normalizeBoardShape(board);
+  for (const id of docGenerationInFlight) {
+    const j = boardFind(id);
+    if (j) j.generating = true;
+  }
+  if (S.drawerJob) {
+    const drawerBoardJob = boardFind(S.drawerJob.id);
+    if (drawerBoardJob) {
+      S.drawerJob = drawerBoardJob;
+    } else if (docGenerationInFlight.has(S.drawerJob.id)) {
+      S.drawerJob.generating = true;
+    }
+  }
+  const drawerOpen = S.drawerJob && document.getElementById('job-drawer')?.classList.contains('open');
+  if (drawerOpen) {
+    const docChanged = !prevDrawerDoc
+      || prevDrawerDoc.generating !== !!S.drawerJob.generating
+      || prevDrawerDoc.hasDocx !== !!S.drawerJob.hasDocx;
+    if (docChanged) fillDrawer(S.drawerJob);
+  }
+}
 function isBoardEmpty(board) {
   return Object.values(board || {}).every(arr => !Array.isArray(arr) || arr.length === 0);
 }
@@ -977,7 +1109,7 @@ async function loadBoard() {
       clearLegacyBoardForUser(currentUser?.userId);
       toast('Board restored from this browser', 'success');
     }
-    S.board = board;
+    applyBoardFromApi(board);
   } catch(e) {
     S.board = emptyBoard();
     toast('Failed to load board: ' + e.message, 'error');
@@ -1003,7 +1135,7 @@ async function hardDeleteJobs(ids, opts = {}) {
   if (!uniqueIds.length) return null;
   const res = await api('/api/jobs/bulk-delete', {
     method: 'POST',
-    body: JSON.stringify({ ids: uniqueIds }),
+    body: JSON.stringify({ ids: uniqueIds, tab: S.listTab, prefs: activeListPrefs() }),
   });
   const deletedIds = Array.isArray(res.affectedLoadedIds) ? res.affectedLoadedIds : uniqueIds;
   removeDeletedIdsFromState(deletedIds);
@@ -1016,13 +1148,22 @@ async function hardDeleteJobs(ids, opts = {}) {
 }
 
 /* ── API ─────────────────────────────────────────────────────────────────── */
+let _sessionInvalidated = false;
 async function api(path, opts = {}) {
   const res = await fetch(path, {
     ...opts,
     headers: { 'Content-Type': 'application/json', ...(opts.headers || {}) },
   });
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+  if (res.status === 401 && !path.startsWith('/api/auth/') && !_sessionInvalidated) {
+    _sessionInvalidated = true;
+    currentUser = null;
+    S.board = emptyBoard(); S.jobs = []; S.sel.clear(); S.drawerJob = null;
+    fetch('/api/auth/logout', { method: 'POST' }).catch(() => {});
+    showLogin();
+    throw new Error(data.error || 'unauthorized');
+  }
+  if (!res.ok) throw new Error(data.message || data.error || `HTTP ${res.status}`);
   return data;
 }
 
@@ -1076,9 +1217,26 @@ function applyRoleGating() {
   if (userEl) userEl.textContent = currentUser?.username || '';
 }
 async function showApp() {
+  _sessionInvalidated = false;
   document.getElementById('login-screen').style.display = 'none';
   document.getElementById('app').style.display = '';
   applyRoleGating();
+
+  // Load settings first to populate prefs
+  try {
+    const s = await api('/api/settings');
+    if (s.jobListPrefs) {
+      S.prefs = Object.assign(defaultPrefs(), s.jobListPrefs);
+    }
+    if (s.filteredJobListPrefs) {
+      S.filteredPrefs = Object.assign(defaultPrefs(), s.filteredJobListPrefs);
+    }
+    renderToolbar();
+    if (s.expirationScanSummary) {
+      renderExpirationBanner(s.expirationScanSummary);
+    }
+  } catch {}
+
   await loadBoard();
   switchView('jobs');
   loadPipelineStatus();
@@ -1086,6 +1244,10 @@ async function showApp() {
   purgeExpiredRejected();
   // Show setup wizard if this is a first-time user
   await checkSetupWizard();
+}
+
+async function checkExpirationScanNotice() {
+  // Merged into showApp
 }
 function switchView(name) {
   const isFiltered = name === 'filtered';
@@ -1160,7 +1322,7 @@ function renderStats(data) {
   const vendors = data.vendors || [];
   const vRows = vendors.map(v => `
     <div class="vtable-row">
-      <div class="vt-l">${esc(v.label || v.id)}</div>
+      <div class="vt-l">${esc(vendorUiPublicLabelFromProviderId(v.id, v.label || v.id))}</div>
       <div class="vt-n">${fmtN(v.requestCount)}</div>
       <div class="vt-n">${fmtN(v.jobsReceived)}</div>
       <div class="vt-n" style="color:var(--success-600)">${fmtN(v.jobsHigh)}</div>
@@ -1170,7 +1332,9 @@ function renderStats(data) {
 
   const thData = data.titleQueryHealthByVendor || [];
   const thLine = thData.length > 0
-    ? thData.map(t => `${esc(t.providerId || t.label || t.id)}: ${fmtPct(t.averageScore)}`).join(', ')
+    ? thData.map(t =>
+        `${esc(vendorUiPublicLabelFromProviderId(t.providerId || t.id || '', (t.label != null ? t.label : '') || ''))}: ${fmtPct(t.averageScore)}`,
+      ).join(', ')
     : null;
 
   document.getElementById('stats-inner').innerHTML = `
@@ -1229,51 +1393,30 @@ async function loadOps() {
       api('/api/settings'),
     ]);
     const logs = logsResp.logs || [];
-    renderOpsSwitches(settings);
+    renderOpsPipelineNotice(settings);
     renderOpsVendors(dashboard, signals);
     renderSearchExhaustion(exhaustion);
     renderTextbot('textbot-main', logs.filter(l => l.level !== 'debug'));
     renderTextbot('textbot-debug', logs.filter(l => l.level === 'debug'));
-    renderOpsStatus(signals);
-    renderIncidentBucket('ops-crit-list', 'critical', (signals.incidents || {}).critical || []);
-    renderIncidentBucket('ops-mod-list', 'moderate', (signals.incidents || {}).moderate || []);
-    renderIncidentBucket('ops-low-list', 'low', (signals.incidents || {}).low || []);
-    if (sub) sub.textContent = logs.length + ' log lines';
+    renderOpsIncidentsAndStatus(signals);
+    if (sub) sub.textContent = logs.length + ' log lines · status & incidents in Admin';
   } catch(e) {
     if (sub) sub.textContent = 'Error';
     toast('Failed to load operations: ' + e.message, 'error');
   }
 }
 
-function renderOpsSwitches(settings) {
-  const el = document.getElementById('ops-switches-rows');
-  if (!el) return;
-  const switches = [
-    { id: 'ops-tog-verbose',       key: 'verboseLoggingEnabled',         label: 'Verbose logging',                  sub: 'Extra detail in the pipeline log',          val: settings.verboseLoggingEnabled },
-    { id: 'ops-tog-params',        key: 'dashboardShowJobPipelineParams', label: 'Show pipeline params in job detail', sub: '',                                        val: settings.dashboardShowJobPipelineParams },
-    { id: 'ops-tog-api-raw',       key: 'dashboardShowJobApiRaw',        label: 'Show received API data in job detail', sub: '',                                      val: settings.dashboardShowJobApiRaw },
-    { id: 'ops-tog-ai-debug',      key: 'dashboardAiDebugRescoreEnabled', label: 'AI debug re-score button',        sub: 'Shows a re-score button in job detail',     val: settings.dashboardAiDebugRescoreEnabled },
-  ];
-  el.innerHTML = switches.map(s => `
-    <div class="ops-switch-row">
-      <div style="flex:1">
-        <div class="ops-switch-lbl">${s.label}</div>
-        ${s.sub ? `<div class="ops-switch-sub">${s.sub}</div>` : ''}
-      </div>
-      <label class="toggle-wrap">
-        <input type="checkbox" class="toggle-input ops-sw-input" data-key="${s.key}" id="${s.id}" ${s.val ? 'checked' : ''}/>
-        <span class="toggle-track"></span>
-      </label>
-    </div>`).join('');
-  if (settings.pipelineHardKillActive) {
-    el.insertAdjacentHTML('afterbegin', `<div class="ops-switch-row" style="background:var(--danger-50)"><div class="ops-switch-lbl" style="color:var(--danger-700)">Hard kill active — PIPELINE_FETCH_ENABLED=false overrides extraction toggle</div></div>`);
+function renderOpsPipelineNotice(settings) {
+  const card = document.getElementById('ops-pipeline-notice-card');
+  const body = document.getElementById('ops-pipeline-notice-body');
+  if (!card || !body) return;
+  if (!settings.pipelineHardKillActive) {
+    card.style.display = 'none';
+    body.innerHTML = '';
+    return;
   }
-  el.querySelectorAll('.ops-sw-input').forEach(inp => {
-    inp.addEventListener('change', async e => {
-      try { await patchSettings({ [e.target.dataset.key]: e.target.checked }); }
-      catch { e.target.checked = !e.target.checked; }
-    });
-  });
+  card.style.display = '';
+  body.innerHTML = `<div class="ops-switch-row" style="background:var(--danger-50)"><div class="ops-switch-lbl" style="color:var(--danger-700)">Hard kill active — PIPELINE_FETCH_ENABLED=false overrides extraction toggle</div></div>`;
 }
 
 function renderOpsVendors(dashboard, signals) {
@@ -1296,7 +1439,7 @@ function renderOpsVendors(dashboard, signals) {
     const badgeTxt = !v.enabled ? 'Disabled' : budgetOk ? 'Budget OK' : 'Exhausted';
     return `<div class="ops-vendor-row">
       <div class="ops-vendor-hdr">
-        <span class="ops-vendor-name">${esc(v.label || v.id)}</span>
+        <span class="ops-vendor-name">${esc(vendorUiPublicLabelFromProviderId(v.id, v.label || v.id))}</span>
         <span class="ops-vendor-badge ${badge}">${badgeTxt}</span>
       </div>
       ${cap > 0 ? `<div class="ops-vendor-bar-wrap"><div class="ops-vendor-bar-fill" style="width:${pct}%;background:${pct >= 100 ? 'var(--danger-500)' : pct > 70 ? 'var(--warning-500)' : 'var(--brand-600)'}"></div></div>` : ''}
@@ -1320,7 +1463,7 @@ function renderSearchExhaustion(payload) {
       const roleHtml = c.roles.map(r => `<div class="exh-role"><span class="exh-dot ${r.exhausted ? 'done' : 'ok'}"></span>${esc(r.label)}</div>`).join('');
       return `<div class="exh-country"><span class="exh-dot ${cDot}"></span>${esc(c.label)} <span style="font-size:10px;color:var(--ink-faint);font-family:var(--f-mono)">${c.exhaustedRoles}/${c.totalRoles} roles</span></div>${roleHtml}`;
     }).join('');
-    return `<div class="exh-vendor-row"><div class="exh-vendor-hdr"><span class="exh-dot ${vDot}"></span><span>${esc(v.providerId)}</span><span style="font-size:11px;color:var(--ink-faint);font-family:var(--f-mono)">${v.exhaustedCountries}/${v.totalCountries} countries</span>${v.orchestrationDoneForCycle ? '<span style="font-size:10px;color:var(--ink-faint)">· done for cycle</span>' : ''}</div>${countryHtml}</div>`;
+    return `<div class="exh-vendor-row"><div class="exh-vendor-hdr"><span class="exh-dot ${vDot}"></span><span>${esc(vendorUiPublicLabelFromProviderId(v.providerId, v.providerId))}</span><span style="font-size:11px;color:var(--ink-faint);font-family:var(--f-mono)">${v.exhaustedCountries}/${v.totalCountries} countries</span>${v.orchestrationDoneForCycle ? '<span style="font-size:10px;color:var(--ink-faint)">· done for cycle</span>' : ''}</div>${countryHtml}</div>`;
   }).join('');
 }
 
@@ -1350,10 +1493,22 @@ function renderOpsStatus(signals) {
     const vRows = (signals.vendors || []).map(v => {
       const stateTxt = v.state || '';
       const usedTxt = (v.cap > 0) ? `${v.usedUtcDay}/${v.cap}` : `${v.usedUtcDay}/∞`;
-      return `<div class="ops-status-vendor-row"><span style="flex:1;font-weight:500">${esc(v.label || v.id)}</span><span style="font-family:var(--f-mono);font-size:11px;color:var(--ink-muted)">${usedTxt}</span><span style="font-size:11px;color:var(--ink-faint);max-width:90px;text-overflow:ellipsis;overflow:hidden;white-space:nowrap">${esc(stateTxt)}</span></div>`;
+      return `<div class="ops-status-vendor-row"><span style="flex:1;font-weight:500">${esc(v.label || v.id)}${vendorUiAdminParenSuffix(v.id)}</span><span style="font-family:var(--f-mono);font-size:11px;color:var(--ink-muted)">${usedTxt}</span><span style="font-size:11px;color:var(--ink-faint);max-width:90px;text-overflow:ellipsis;overflow:hidden;white-space:nowrap">${esc(stateTxt)}</span></div>`;
     }).join('');
     vendorEl.innerHTML = vRows || '<div style="font-size:12px;color:var(--ink-faint)">—</div>';
   }
+}
+
+/** Operational status + incident buckets (Admin panel right column only). */
+function renderOpsIncidentsAndStatus(signals) {
+  if (currentUser?.role !== 'admin') return;
+  const critRoot = document.getElementById('ops-crit-list');
+  if (!critRoot) return;
+  renderOpsStatus(signals);
+  const inc = signals.incidents || {};
+  renderIncidentBucket('ops-crit-list', 'critical', inc.critical || []);
+  renderIncidentBucket('ops-mod-list', 'moderate', inc.moderate || []);
+  renderIncidentBucket('ops-low-list', 'low', inc.low || []);
 }
 
 function renderIncidentBucket(elId, severity, items) {
@@ -1417,8 +1572,6 @@ function renderSettings(d) {
   const inner = document.getElementById('settings-inner');
   if (!inner) return;
 
-  const vendors  = d.vendors || [];
-  const caps     = d.requestCapsDetail || {};
   const roles    = (d.roleTiers?.tier1 || []).join('\n');
   const countries       = d.searchConfig?.countries || [];
   const defaultCountries = d.searchConfig?.defaultCountries || [];
@@ -1439,36 +1592,24 @@ function renderSettings(d) {
       <div class="stg-sec-title">Pipeline</div>
       ${d.pipelineHardKillActive ? `<div class="stg-row" style="background:var(--danger-50)"><div class="stg-label"><div class="stg-label-main" style="color:var(--danger-700)">Hard kill active</div><div class="stg-label-sub">PIPELINE_FETCH_ENABLED=false in wrangler.toml overrides the extraction toggle</div></div></div>` : ''}
       <div class="stg-row">
-        <div class="stg-label"><div class="stg-label-main">Verbose logging</div><div class="stg-label-sub">Extra detail in the Operations log</div></div>
-        <label class="toggle-wrap"><input type="checkbox" class="toggle-input" id="tog-verbose" ${d.verboseLoggingEnabled ? 'checked' : ''}/><span class="toggle-track"></span></label>
-      </div>
-      <div class="stg-row">
-        <div class="stg-label"><div class="stg-label-main">Show pipeline params in job detail</div></div>
-        <label class="toggle-wrap"><input type="checkbox" class="toggle-input" id="tog-pipeline-params" ${d.dashboardShowJobPipelineParams ? 'checked' : ''}/><span class="toggle-track"></span></label>
-      </div>
-      <div class="stg-row">
-        <div class="stg-label"><div class="stg-label-main">Show received API data in job detail</div></div>
-        <label class="toggle-wrap"><input type="checkbox" class="toggle-input" id="tog-api-raw" ${d.dashboardShowJobApiRaw ? 'checked' : ''}/><span class="toggle-track"></span></label>
-      </div>
-      <div class="stg-row">
-        <div class="stg-label"><div class="stg-label-main">AI debug re-score button</div><div class="stg-label-sub">Shows a re-score button in job detail</div></div>
-        <label class="toggle-wrap"><input type="checkbox" class="toggle-input" id="tog-ai-debug-rescore" ${d.dashboardAiDebugRescoreEnabled ? 'checked' : ''}/><span class="toggle-track"></span></label>
+        <div class="stg-label"><div class="stg-label-main">Auto-check expired board listings</div><div class="stg-label-sub">Daily scan moves expired jobs to the Expired column (3-day auto-clear)</div></div>
+        <label class="toggle-wrap"><input type="checkbox" class="toggle-input" id="tog-expiration-check" ${d.boardAutoExpirationCheckEnabled ? 'checked' : ''}/><span class="toggle-track"></span></label>
       </div>
     </div>
 
-    <!-- Vendors -->
-    ${vendors.length ? `<div class="stg-sec">
-      <div class="stg-sec-title">Vendors</div>
-      ${vendors.map(v => `<div class="stg-row"><div class="stg-label"><div class="stg-label-main">${esc(v.label)}</div><div class="stg-label-sub" style="font-family:var(--f-mono)">${esc(v.id)}</div></div><label class="toggle-wrap"><input type="checkbox" class="toggle-input vendor-tog" data-id="${esc(v.id)}" ${v.enabled ? 'checked' : ''}/><span class="toggle-track"></span></label></div>`).join('')}
-      <div class="stg-save-row"><button class="btn btn-primary" id="save-vendors-btn">Save vendors</button></div>
-    </div>` : ''}
-
-    <!-- Request caps -->
-    ${Object.keys(caps).length ? `<div class="stg-sec">
-      <div class="stg-sec-title">Daily request caps <span style="font-weight:400;color:var(--ink-muted);font-size:12px">(0 = unlimited, blank = use env default)</span></div>
-      ${Object.entries(caps).map(([id, c]) => `<div class="cap-row"><span class="cap-vendor">${esc(id)}</span><span class="cap-hint">env: ${c.envDefault ?? '—'}</span><input type="number" class="cap-input" id="cap-${esc(id)}" value="${c.databaseOverride ?? ''}" placeholder="${c.envDefault ?? ''}" min="0"/></div>`).join('')}
-      <div class="stg-save-row"><button class="btn btn-primary" id="save-caps-btn">Save caps</button></div>
-    </div>` : ''}
+    <!-- CV -->
+    <div class="stg-sec">
+      <div class="stg-sec-title">CV (WORD)</div>
+      <div class="stg-row">
+        <div class="stg-label"><div class="stg-label-main">Status</div><div class="stg-label-sub" style="font-family:var(--f-mono)">${esc(cvStatus)}</div></div>
+      </div>
+      <div class="stg-row">
+        <div class="stg-label"><div class="stg-label-main">Upload .docx</div><div class="stg-label-sub">Replaces the CV used for scoring and draft generation</div></div>
+        <input type="file" id="cv-file-input" accept=".docx" style="display:none"/>
+        <button class="btn btn-secondary" id="cv-upload-btn">Choose file…</button>
+      </div>
+      <div id="cv-upload-msg" style="display:none;padding:4px 18px 10px;font-size:12px;color:var(--ink-muted);font-family:var(--f-mono)"></div>
+    </div>
 
     <!-- Role queries -->
     <div class="stg-sec">
@@ -1478,7 +1619,7 @@ function renderSettings(d) {
         <textarea class="stg-textarea" id="roles-tier1" rows="7" placeholder="One query per line">${esc(roles)}</textarea>
       </div>
       <div class="stg-save-row">
-        <input type="text" class="stg-note-input" id="roles-note" placeholder="Revision note (required)"/>
+        <input type="text" class="stg-note-input" id="roles-note" placeholder="Revision note (optional)"/>
         <button class="btn btn-secondary" id="reset-roles-btn">Reset to defaults</button>
         <button class="btn btn-primary" id="save-roles-btn">Save roles</button>
       </div>
@@ -1500,20 +1641,6 @@ function renderSettings(d) {
       <div class="stg-save-row"><button class="btn btn-primary" id="save-countries-btn">Save countries</button></div>
     </div>
 
-    <!-- CV -->
-    <div class="stg-sec">
-      <div class="stg-sec-title">CV (WORD)</div>
-      <div class="stg-row">
-        <div class="stg-label"><div class="stg-label-main">Status</div><div class="stg-label-sub" style="font-family:var(--f-mono)">${esc(cvStatus)}</div></div>
-      </div>
-      <div class="stg-row">
-        <div class="stg-label"><div class="stg-label-main">Upload .docx</div><div class="stg-label-sub">Replaces the CV used for scoring and draft generation</div></div>
-        <input type="file" id="cv-file-input" accept=".docx" style="display:none"/>
-        <button class="btn btn-secondary" id="cv-upload-btn">Choose file…</button>
-      </div>
-      <div id="cv-upload-msg" style="display:none;padding:4px 18px 10px;font-size:12px;color:var(--ink-muted);font-family:var(--f-mono)"></div>
-    </div>
-
     <!-- AI Prompts -->
     <div class="stg-sec">
       <div class="stg-sec-title">AI prompts</div>
@@ -1529,29 +1656,13 @@ function renderSettings(d) {
         <textarea class="stg-textarea" id="ai-drafts" rows="5" placeholder="Loading…"></textarea>
       </div>
       <div class="stg-save-row">
-        <input type="text" class="stg-note-input" id="ai-note" placeholder="Revision note (required)"/>
+        <input type="text" class="stg-note-input" id="ai-note" placeholder="Revision note (optional)"/>
         <button class="btn btn-secondary" id="reset-ai-btn">Reset to defaults</button>
         <button class="btn btn-primary" id="save-ai-btn">Save prompts</button>
       </div>
-      <div id="ai-rev-list" style="padding:8px 18px 12px;display:flex;flex-direction:column;gap:6px">
+      <div id="ai-rev-list" style="padding:8px 18px 12px;display:flex;flex-direction:column;gap:8px">
         <div style="font-size:11px;font-weight:600;color:var(--ink-muted);letter-spacing:.06em;text-transform:uppercase;margin-bottom:2px">Revision history</div>
-        <div id="ai-rev-rows" style="font-size:12px;color:var(--ink-faint)">Loading…</div>
-      </div>
-    </div>
-    <!-- Setup wizard analysis prompt -->
-    <div class="stg-sec">
-      <div class="stg-sec-title">Setup wizard — CV analysis prompt</div>
-      <div style="padding:0 18px 8px;font-size:12px;color:var(--ink-muted);line-height:1.4">
-        System prompt sent to the AI when analyzing an uploaded CV during the setup wizard. It instructs the model how to detect home country, suggest job search queries, and personalize scoring &amp; drafts instructions.
-        Changes take effect on the next wizard run. Resetting reverts to the built-in default.
-      </div>
-      <div class="stg-text-block">
-        <div class="stg-sublbl">Analysis system prompt</div>
-        <textarea class="stg-textarea" id="ai-setup-analysis" rows="8" placeholder="Loading…"></textarea>
-      </div>
-      <div class="stg-save-row">
-        <button class="btn btn-secondary" id="reset-setup-analysis-btn">Reset to default</button>
-        <button class="btn btn-primary" id="save-setup-analysis-btn">Save prompt</button>
+        <div id="ai-rev-rows" style="font-size:12px;color:var(--ink-faint);display:flex;flex-direction:column;gap:10px">Loading…</div>
       </div>
     </div>`;
 
@@ -1561,47 +1672,20 @@ function renderSettings(d) {
 
 function bindSettingsEvents() {
   document.getElementById('settings-rerun-wizard')?.addEventListener('click', () => openWizard());
-  document.getElementById('tog-verbose')?.addEventListener('change', async e => {
-    await patchSettings({ verboseLoggingEnabled: e.target.checked });
-  });
-  document.getElementById('tog-pipeline-params')?.addEventListener('change', async e => {
-    await patchSettings({ dashboardShowJobPipelineParams: e.target.checked });
-  });
-  document.getElementById('tog-api-raw')?.addEventListener('change', async e => {
-    await patchSettings({ dashboardShowJobApiRaw: e.target.checked });
-  });
-  document.getElementById('tog-ai-debug-rescore')?.addEventListener('change', async e => {
-    await patchSettings({ dashboardAiDebugRescoreEnabled: e.target.checked });
+  document.getElementById('tog-expiration-check')?.addEventListener('change', async e => {
+    await patchSettings({ boardAutoExpirationCheckEnabled: e.target.checked });
   });
 
   document.getElementById('reset-roles-btn')?.addEventListener('click', async () => {
     const note = document.getElementById('roles-note')?.value.trim() || '';
-    if (!note) { toast('Revision note is required', 'warning'); return; }
     if (!confirm('Reset role queries to defaults?')) return;
     await patchSettings({ roleTiersReset: true, revisionNote: note });
     loadSettings();
   });
 
-  document.getElementById('save-vendors-btn')?.addEventListener('click', async () => {
-    const enabled = [...document.querySelectorAll('.vendor-tog:checked')].map(el => el.dataset.id);
-    await patchSettings({ enabledJobSources: enabled });
-    loadSettings();
-  });
-
-  document.getElementById('save-caps-btn')?.addEventListener('click', async () => {
-    const overrides = {};
-    document.querySelectorAll('.cap-input').forEach(el => {
-      const id = el.id.replace('cap-', '');
-      const v = el.value.trim();
-      overrides[id] = v === '' ? null : Number(v);
-    });
-    await patchSettings({ requestCapOverrides: overrides });
-  });
-
   document.getElementById('save-roles-btn')?.addEventListener('click', async () => {
     const t1 = (document.getElementById('roles-tier1')?.value || '').split('\n').map(s => s.trim()).filter(Boolean);
     const note = document.getElementById('roles-note')?.value.trim() || '';
-    if (!note) { toast('Revision note is required', 'warning'); return; }
     await patchSettings({ roleTiers: { tier1: t1, tier2: [] }, revisionNote: note });
     if (document.getElementById('roles-note')) document.getElementById('roles-note').value = '';
   });
@@ -1650,10 +1734,8 @@ async function loadAiPrompts() {
     ]);
     const scoringEl = document.getElementById('ai-scoring');
     const draftsEl = document.getElementById('ai-drafts');
-    const setupEl = document.getElementById('ai-setup-analysis');
     if (scoringEl) scoringEl.value = current.scoring || '';
     if (draftsEl) draftsEl.value = current.drafts || '';
-    if (setupEl) setupEl.value = current.setupAnalysis || '';
     renderAiRevHistory(history.revisions || []);
     bindAiPromptEvents();
   } catch(e) { /* silently skip if view not visible */ }
@@ -1665,7 +1747,7 @@ function renderAiRevHistory(revisions) {
   if (!revisions.length) { el.textContent = 'No revisions yet.'; return; }
   el.innerHTML = revisions.map(r => {
     const d = r.createdAt ? new Date(r.createdAt * 1000).toLocaleString('en-GB') : '—';
-    return `<div style="border:1px solid var(--hairline);border-radius:var(--r-sm);padding:7px 10px;background:var(--surface)">
+    return `<div class="ai-rev-card" style="border:1px solid var(--hairline);border-radius:var(--r-sm);padding:9px 12px;background:var(--surface);margin:0">
       <div style="display:flex;align-items:center;gap:8px">
         <span style="font-size:12px;font-weight:500;flex:1">#${r.id} · ${d}</span>
         ${r.source ? `<span style="font-size:10px;color:var(--ink-faint)">${esc(r.source)}</span>` : ''}
@@ -1678,10 +1760,10 @@ function renderAiRevHistory(revisions) {
   el.querySelectorAll('[data-ai-rev-restore]').forEach(btn => {
     btn.addEventListener('click', async () => {
       const revisionId = Number(btn.dataset.aiRevRestore);
-      const note = prompt('Revision note for restore (required):');
-      if (!note?.trim()) return;
+      const note = prompt('Revision note for restore (optional):');
+      if (note === null) return;
       try {
-        const r = await api('/api/ai-instructions/revert', { method: 'POST', body: JSON.stringify({ revisionId, revisionNote: note.trim() }) });
+        const r = await api('/api/ai-instructions/revert', { method: 'POST', body: JSON.stringify({ revisionId, revisionNote: (note || '').trim() }) });
         if (document.getElementById('ai-scoring')) document.getElementById('ai-scoring').value = r.scoring || '';
         if (document.getElementById('ai-drafts')) document.getElementById('ai-drafts').value = r.drafts || '';
         toast('Reverted to revision #' + revisionId, 'success');
@@ -1707,7 +1789,6 @@ function bindAiPromptEvents() {
     const scoring = document.getElementById('ai-scoring')?.value || '';
     const drafts = document.getElementById('ai-drafts')?.value || '';
     const note = document.getElementById('ai-note')?.value.trim() || '';
-    if (!note) { toast('Revision note is required', 'warning'); return; }
     try {
       await api('/api/ai-instructions', { method: 'PATCH', body: JSON.stringify({ scoring, drafts, revisionNote: note }) });
       toast('AI prompts saved', 'success');
@@ -1717,33 +1798,11 @@ function bindAiPromptEvents() {
   });
   document.getElementById('reset-ai-btn')?.addEventListener('click', async () => {
     const note = document.getElementById('ai-note')?.value.trim() || '';
-    if (!note) { toast('Revision note is required', 'warning'); return; }
     if (!confirm('Reset AI prompts to defaults?')) return;
     try {
       await api('/api/ai-instructions', { method: 'PATCH', body: JSON.stringify({ reset: true, revisionNote: note }) });
       toast('AI prompts reset to defaults', 'success');
       loadAiPrompts();
-    } catch(e) { toast('Failed: ' + e.message, 'error'); }
-  });
-
-  document.getElementById('save-setup-analysis-btn')?.addEventListener('click', async () => {
-    const val = document.getElementById('ai-setup-analysis')?.value || '';
-    if (!val.trim()) { toast('Prompt cannot be empty', 'warning'); return; }
-    try {
-      await api('/api/ai-instructions', { method: 'PATCH', body: JSON.stringify({ setupAnalysis: val }) });
-      toast('Setup analysis prompt saved', 'success');
-    } catch(e) { toast('Failed: ' + e.message, 'error'); }
-  });
-
-  document.getElementById('reset-setup-analysis-btn')?.addEventListener('click', async () => {
-    if (!confirm('Reset to built-in default prompt?')) return;
-    try {
-      const r = await api('/api/ai-instructions', { method: 'PATCH', body: JSON.stringify({ resetSetupAnalysis: true }) });
-      if (r.setupAnalysis) {
-        const el = document.getElementById('ai-setup-analysis');
-        if (el) el.value = r.setupAnalysis;
-      }
-      toast('Setup analysis prompt reset to default', 'success');
     } catch(e) { toast('Failed: ' + e.message, 'error'); }
   });
 }
@@ -1767,9 +1826,65 @@ function vendorClass(url) {
   if (url.includes('jsearch') || url.includes('rapidapi')) return 'jsearch';
   return 'other';
 }
+/** URL-only fallback when DB `job.source` is unavailable. */
 function vendorLbl(url) {
   const c = vendorClass(url);
-  return c === 'linkedin' ? 'LinkedIn' : c === 'jsearch' ? 'JSearch' : 'Other';
+  return c === 'linkedin' ? 'LinkedIn' : c === 'jsearch' ? 'Google Jobs' : 'Other';
+}
+function vendorUiInferSourceFromUrl(url) {
+  if (!url || typeof url !== 'string') return '';
+  const u = url.toLowerCase();
+  if (u.includes('linkedin.')) return 'linkedin_jobs';
+  if (u.includes('jsearch.') || u.includes('rapidapi.')) return 'jsearch';
+  return '';
+}
+function vendorUiEffectiveJobSource(job) {
+  const s = job && job.source ? String(job.source) : '';
+  if (s === 'linkedin_jobs' || s === 'jobs_api' || s === 'jsearch') return s;
+  return vendorUiInferSourceFromUrl((job && (job.jobUrl || job.applyUrl)) || '');
+}
+function vendorUiPublicLabelFromProviderId(providerId, apiLabelFallback) {
+  const id = String(providerId || '');
+  if (id === 'jobs_api') return 'LinkedIn';
+  if (id === 'jsearch') return 'Google Jobs';
+  if (id === 'linkedin_jobs') return 'LinkedIn';
+  return apiLabelFallback || id || '—';
+}
+/** Admin UI: append friendly vendor name next to backend id / label */
+function vendorUiAdminParenSuffix(providerId) {
+  const id = String(providerId || '');
+  if (id === 'jobs_api' || id === 'linkedin_jobs') return ' (LinkedIn)';
+  if (id === 'jsearch') return ' (Google Jobs)';
+  return '';
+}
+function vendorUiCapsAbbrevFromKey(capKey) {
+  return String(capKey || '')
+    .replace(/_max_api_calls_per_run/g, '')
+    .replace(/linkedin_jobs/g, 'li')
+    .replace(/jsearch/g, 'js')
+    .replace(/jobs_api/g, 'ja');
+}
+function vendorUiAdminParenSuffixForCapsAbbrev(abbrev) {
+  const a = String(abbrev || '');
+  if (a === 'li' || a === 'ja') return ' (LinkedIn)';
+  if (a === 'js') return ' (Google Jobs)';
+  return '';
+}
+function vendorUiPublicNameFromJob(job) {
+  const eff = vendorUiEffectiveJobSource(job);
+  if (eff === 'jobs_api') return 'LinkedIn';
+  if (eff === 'jsearch') return 'Google Jobs';
+  if (eff === 'linkedin_jobs') return 'LinkedIn';
+  const url = (job.jobUrl || job.applyUrl || '');
+  return vendorLbl(url);
+}
+function vendorUiLogoMeta(job) {
+  const eff = vendorUiEffectiveJobSource(job);
+  if (eff === 'linkedin_jobs' || eff === 'jobs_api') return { img: '/assets/linkedin.png' };
+  if (eff === 'jsearch') return { img: '/assets/google.png' };
+  const url = job.jobUrl || job.applyUrl || '';
+  const c = vendorClass(url);
+  return { img: c === 'linkedin' ? '/assets/linkedin.png' : '/assets/google.png' };
 }
 function timeAgo(unix) {
   if (!unix) return '';
@@ -1801,28 +1916,32 @@ async function loadJobs(reset = false) {
     document.getElementById('jobs-sub').textContent = 'Loading…';
   }
   try {
-    const body = { tab: requestedTab, prefs: S.prefs, limit: 25, ...(S.cursor ? { cursor: S.cursor } : {}) };
+    const body = { tab: requestedTab, prefs: activeListPrefs(), limit: 25, ...(S.cursor ? { cursor: S.cursor } : {}) };
     const data = await api('/api/jobs/query', { method: 'POST', body: JSON.stringify(body) });
     if (requestSeq !== S.listRequestSeq || requestedTab !== S.listTab) return;
-    const bids = boardIds();
-    const fresh = (data.jobs || []).filter(j => !bids.has(j.id));
-    S.jobs = reset ? fresh : [...S.jobs, ...fresh];
-    S.cursor = data.nextCursor; S.hasMore = data.hasMore; S.total = data.totalMatching;
-    const prevCountries = JSON.stringify(S.facets.countries);
-    S.facets = data.facets || { countries: [], roleQueries: [] };
-    if (reset || JSON.stringify(S.facets.countries) !== prevCountries) renderToolbar();
+    const pageJobs = data.jobs || [];
+    S.jobs = reset ? pageJobs : [...S.jobs, ...pageJobs];
+    S.cursor = data.nextCursor; S.hasMore = data.hasMore;
+    S.total = typeof data.totalVisible === 'number' ? data.totalVisible : data.totalMatching;
+    const prevFacets = JSON.stringify(S.facets);
+    S.facets = data.facets || { countries: [], roleQueries: [], filterReasons: [] };
+    if (reset || JSON.stringify(S.facets) !== prevFacets) renderToolbar();
     const list = document.getElementById('jobs-list');
     if (S.jobs.length === 0) {
-      list.innerHTML = `<div class="jobs-empty"><div class="je-hero">—</div><div class="je-msg">No jobs found</div><div class="je-hint">Adjust your filters or wait for the next pipeline run.</div></div>`;
+      renderJobListEmptyState();
     } else {
       if (reset) list.innerHTML = S.jobs.map(renderRow).join('');
-      else list.insertAdjacentHTML('beforeend', fresh.map(renderRow).join(''));
+      else list.insertAdjacentHTML('beforeend', pageJobs.map(renderRow).join(''));
     }
-    const subSuffix = requestedTab === 'filtered' ? 'filtered by hard rules' : 'sorted by relevance';
+    const subSuffix = requestedTab === 'filtered' ? 'filtered by rules, dedupe, or AI' : 'sorted by relevance';
     document.getElementById('jobs-sub').textContent = `${S.total} job${S.total === 1 ? '' : 's'} · ${subSuffix}`;
-    if (requestedTab === 'filtered') navCount('filtered', S.total);
-    else navCount('jobs', S.total);
+    syncJobListNavCounts();
     renderActiveFilters();
+    if (!S.hasMore && S.jobs.length !== S.total) {
+      S.total = S.jobs.length;
+      syncJobListNavCounts();
+      syncJobListHeaderSubtitle();
+    }
     setupScrollObs();
   } catch (e) {
     if (requestSeq === S.listRequestSeq && requestedTab === S.listTab) {
@@ -1834,12 +1953,30 @@ async function loadJobs(reset = false) {
   }
 }
 
+function renderJobListEmptyState() {
+  const list = document.getElementById('jobs-list');
+  if (!list) return;
+  list.innerHTML = `<div class="jobs-empty"><div class="je-hero">—</div><div class="je-msg">No jobs found</div><div class="je-hint">Adjust your filters or wait for the next pipeline run.</div></div>`;
+}
+
+function syncJobListNavCounts() {
+  if (S.listTab === 'filtered') navCount('filtered', S.total);
+  else navCount('jobs', S.total);
+}
+
+function syncJobListHeaderSubtitle() {
+  const sub = document.getElementById('jobs-sub');
+  if (!sub || !document.getElementById('view-jobs')?.classList.contains('active')) return;
+  const subSuffix = S.listTab === 'filtered' ? 'filtered by rules, dedupe, or AI' : 'sorted by relevance';
+  sub.textContent = `${S.total} job${S.total === 1 ? '' : 's'} · ${subSuffix}`;
+}
+
 function renderRow(job) {
   const sc = scoreClass(job.fitScore);
-  const url = job.jobUrl || job.applyUrl || '';
-  const vCls = vendorClass(url); const vLbl = vendorLbl(url); // vLbl used for alt text + drawer
+  const logo = vendorUiLogoMeta(job);
+  const vLbl = vendorUiPublicNameFromJob(job);
   const date = timeAgo(job.ingestedAtUnix || job.postedAtUnix);
-  const srcImg = vCls === 'linkedin' ? '/assets/linkedin.png' : '/assets/google.png';
+  const srcImg = logo.img;
   const metaParts = [
     job.countryName || null,
     job.employmentType || null,
@@ -1859,6 +1996,7 @@ function renderRow(job) {
     <div class="jrow-r">
       <span class="score score-inbox ${sc}" aria-label="Score ${esc(String(job.fitScore||0))}, ${sc}">${scoreLbl(job.fitScore)}</span>
       <button class="btn btn-primary add-to-board" data-id="${esc(job.id)}" aria-label="Add to board">Add to board</button>
+      <button class="btn btn-ghost btn-icon row-refresh-btn" data-refresh-job="${esc(job.id)}" aria-label="Check if listing is still active" title="Check if still active">${IC.refresh}</button>
       <button class="btn btn-muted-delete btn-icon row-delete-btn" data-delete-job="${esc(job.id)}" aria-label="Delete job">${IC.trash}</button>
     </div>
   </div>`;
@@ -1873,7 +2011,7 @@ function setupScrollObs() {
   const trig = document.getElementById('load-trigger');
   if (!trig) return;
   if (scrollObs) scrollObs.disconnect();
-  trig.textContent = S.hasMore ? 'Scroll for more' : `${S.jobs.length} jobs loaded`;
+  trig.textContent = S.hasMore ? 'Scroll for more' : `${S.jobs.length} job${S.jobs.length === 1 ? '' : 's'} loaded`;
   if (!S.hasMore) return;
   scrollObs = new IntersectionObserver(entries => {
     if (entries[0].isIntersecting && !S.loading) loadJobs(false);
@@ -1885,36 +2023,65 @@ function setupScrollObs() {
 function renderToolbar() {
   const tb = document.getElementById('jobs-toolbar');
   if (!tb) return;
-  const relActive = Object.values(S.prefs.rel).some(v => !v);
-  const ctActive = Object.values(S.prefs.contract).some(v => !v);
-  const ctrActive = Object.values(S.prefs.countries).some(v => v === false);
-  const dateActive = S.prefs.filterFetchAge !== 'off';
-  const sortActive = S.prefs.sortRel !== 'high-first' || S.prefs.sortSalary !== 'off';
+
+  const prefs = activeListPrefs();
+  const activeEl = document.activeElement;
+  const activeId = activeEl ? activeEl.id : null;
+  const activeSelStart = (activeEl && activeEl.tagName === 'INPUT') ? activeEl.selectionStart : null;
+  const openPops = Array.from(document.querySelectorAll('.popover.open')).map(p => p.id);
+
+  const relActive = Object.values(prefs.rel).some(v => !v);
+  const ctActive = Object.values(prefs.contract).some(v => !v);
+  const ctrActive = Object.values(prefs.countries).some(v => v === false);
+  const reasonActive = S.listTab === 'filtered' && Object.values(prefs.filterReasons || {}).some(v => v === false);
+  const dateActive = prefs.filterFetchAge !== 'off';
+  const sortActive = prefs.sortRel !== 'as-fetched' || prefs.sortSalary !== 'off' || prefs.sortDate !== 'off';
   const countryOpts = S.facets.countries.length > 0
-    ? S.facets.countries.map(c=>`<label class="pop-item"><input type="checkbox" name="ctr-${esc(c)}" ${S.prefs.countries[c]!==false?'checked':''}/>${esc(c)}</label>`).join('')
+    ? S.facets.countries.map(c=>`<label class="pop-item"><input type="checkbox" name="ctr-${esc(c)}" ${prefs.countries[c]!==false?'checked':''}/>${esc(c)}</label>`).join('')
     : `<div style="padding:6px 8px;font-size:12px;color:var(--ink-faint)">Loading…</div>`;
+  const reasonOpts = (S.facets.filterReasons || []).length > 0
+    ? (S.facets.filterReasons || []).map(r=>`<label class="pop-item"><input type="checkbox" name="reason-${esc(r.key)}" ${(prefs.filterReasons || {})[r.key]!==false?'checked':''}/>${esc(r.label || r.key)}</label>`).join('')
+    : `<div style="padding:6px 8px;font-size:12px;color:var(--ink-faint)">No reasons yet</div>`;
+  const reasonFilterHtml = S.listTab === 'filtered' ? `
+      <div class="popover-wrap">
+        <button class="chip${reasonActive?' active':''}" id="ch-reason">Filter reason ${IC.chevD}</button>
+        <div class="popover" id="pop-reason" style="min-width:240px;max-height:300px;overflow-y:auto">
+          <div class="pop-lbl-row">Filter reason <span class="pop-lbl-actions"><a href="#" class="pop-all" data-grp="reason">All</a> &middot; <a href="#" class="pop-none" data-grp="reason">None</a></span></div>
+          ${reasonOpts}
+        </div>
+      </div>` : '';
+
+  let sortLbl = 'Sort';
+  if (prefs.sortRel !== 'as-fetched') sortLbl = 'Sort: ' + (prefs.sortRel === 'high-first' ? 'high→low' : 'low→high');
+  else if (prefs.sortSalary !== 'off') sortLbl = 'Sort: ' + (prefs.sortSalary === 'high-first' ? 'high→low' : 'low→high');
+  else if (prefs.sortDate !== 'off') sortLbl = 'Sort: ' + (prefs.sortDate === 'new-first' ? 'new→old' : 'old→new');
+
+  const relSortGrpCls = (prefs.sortSalary !== 'off' || prefs.sortDate !== 'off') ? 'opacity:.45;' : '';
+  const salSortGrpCls = (prefs.sortRel !== 'as-fetched' || prefs.sortDate !== 'off') ? 'opacity:.45;' : '';
+  const dateSortGrpCls = (prefs.sortRel !== 'as-fetched' || prefs.sortSalary !== 'off') ? 'opacity:.45;' : '';
 
   tb.innerHTML = `
-    <div class="jobs-search">${IC.search}<input type="text" id="srch" placeholder="Search jobs…" value="${esc(S.prefs.listSearch)}" aria-label="Search jobs"/></div>
+    <div class="jobs-search">${IC.search}<input type="text" id="srch" placeholder="Search jobs…" value="${esc(prefs.listSearch)}" aria-label="Search jobs"/></div>
     <div class="filter-group">
       <div class="popover-wrap">
         <button class="chip${relActive?' active':''}" id="ch-rel">Relevance ${IC.chevD}</button>
         <div class="popover" id="pop-rel">
-          <div class="pop-lbl">Relevance bands</div>
-          ${[['high','High (≥85)'],['medium','Medium (75–84)'],['low','Low (60–74)'],['failed','Low score (&lt;60)'],['none','Unscored']].map(([k,l])=>`<label class="pop-item"><input type="checkbox" name="rel-${k}" ${S.prefs.rel[k]?'checked':''}/>${l}</label>`).join('')}
+          <div class="pop-lbl-row">Relevance <span class="pop-lbl-actions"><a href="#" class="pop-all" data-grp="rel">All</a> &middot; <a href="#" class="pop-none" data-grp="rel">None</a></span></div>
+          ${[['high','High (≥85)'],['medium','Medium (75–84)'],['low','Low (60–74)'],['failed','Low score (&lt;60)'],['none','Unscored']].map(([k,l])=>`<label class="pop-item"><input type="checkbox" name="rel-${k}" ${prefs.rel[k]?'checked':''}/>${l}</label>`).join('')}
         </div>
       </div>
       <div class="popover-wrap">
         <button class="chip${ctActive?' active':''}" id="ch-ct">Contract ${IC.chevD}</button>
         <div class="popover" id="pop-ct">
-          <div class="pop-lbl">Employment type</div>
-          ${[['ft','Full-time'],['pt','Part-time'],['temp','Contract'],['other','Other']].map(([k,l])=>`<label class="pop-item"><input type="checkbox" name="ct-${k}" ${S.prefs.contract[k]?'checked':''}/>${l}</label>`).join('')}
+          <div class="pop-lbl-row">Employment type <span class="pop-lbl-actions"><a href="#" class="pop-all" data-grp="ct">All</a> &middot; <a href="#" class="pop-none" data-grp="ct">None</a></span></div>
+          ${[['ft','Full-time'],['pt','Part-time'],['temp','Contract'],['other','Other']].map(([k,l])=>`<label class="pop-item"><input type="checkbox" name="ct-${k}" ${prefs.contract[k]?'checked':''}/>${l}</label>`).join('')}
         </div>
       </div>
+      ${reasonFilterHtml}
       <div class="popover-wrap">
         <button class="chip${ctrActive?' active':''}" id="ch-ctr">Country ${IC.chevD}</button>
         <div class="popover" id="pop-ctr" style="min-width:200px;max-height:260px;overflow-y:auto">
-          <div class="pop-lbl">Country</div>
+          <div class="pop-lbl-row">Country <span class="pop-lbl-actions"><a href="#" class="pop-all" data-grp="ctr">All</a> &middot; <a href="#" class="pop-none" data-grp="ctr">None</a></span></div>
           ${countryOpts}
         </div>
       </div>
@@ -1922,25 +2089,51 @@ function renderToolbar() {
         <button class="chip${dateActive?' active':''}" id="ch-date">Date ${IC.chevD}</button>
         <div class="popover" id="pop-date">
           <div class="pop-lbl">Fetched within</div>
-          ${[['off','Any time'],['24h','Last 24 h'],['2d','Last 2 days'],['7d','Last 7 days'],['14d','Last 14 days']].map(([v,l])=>`<label class="pop-item"><input type="radio" name="sAge" value="${v}" ${S.prefs.filterFetchAge===v?'checked':''}/>${l}</label>`).join('')}
+          ${FILTER_FETCH_AGE_OPTS.map(([v,l])=>`<label class="pop-item"><input type="radio" name="sAge" value="${v}" ${prefs.filterFetchAge===v?'checked':''}/>${l}</label>`).join('')}
         </div>
       </div>
       <div class="popover-wrap">
-        <button class="chip${sortActive?' active':''}" id="ch-sort">${IC.sort} Sort ${IC.chevD}</button>
+        <button class="chip${sortActive?' active':''}" id="ch-sort">${IC.sort} ${sortLbl} ${IC.chevD}</button>
         <div class="popover" id="pop-sort" style="min-width:220px">
-          <div class="pop-lbl">Sort by relevance</div>
-          ${[['high-first','Highest first'],['low-first','Lowest first'],['as-fetched','As fetched']].map(([v,l])=>`<label class="pop-item"><input type="radio" name="sRel" value="${v}" ${S.prefs.sortRel===v?'checked':''}/>${l}</label>`).join('')}
+          <div style="${relSortGrpCls}">
+            <div class="pop-lbl">Sort by relevance</div>
+            ${[['high-first','Highest first'],['low-first','Lowest first'],['as-fetched','As fetched']].map(([v,l])=>`<label class="pop-item"><input type="radio" name="sRel" value="${v}" ${prefs.sortRel===v?'checked':''}/>${l}</label>`).join('')}
+          </div>
           <div class="pop-div"></div>
-          <div class="pop-lbl">Sort by salary</div>
-          ${[['off','Off'],['high-first','Highest first'],['low-first','Lowest first']].map(([v,l])=>`<label class="pop-item"><input type="radio" name="sSal" value="${v}" ${S.prefs.sortSalary===v?'checked':''}/>${l}</label>`).join('')}
+          <div style="${salSortGrpCls}">
+            <div class="pop-lbl">Sort by salary</div>
+            ${[['off','Off'],['high-first','Highest first'],['low-first','Lowest first']].map(([v,l])=>`<label class="pop-item"><input type="radio" name="sSal" value="${v}" ${prefs.sortSalary===v?'checked':''}/>${l}</label>`).join('')}
+          </div>
+          <div class="pop-div"></div>
+          <div style="${dateSortGrpCls}">
+            <div class="pop-lbl">Sort by date</div>
+            ${[['off','Off'],['new-first','Newest first'],['old-first','Oldest first']].map(([v,l])=>`<label class="pop-item"><input type="radio" name="sDate" value="${v}" ${prefs.sortDate===v?'checked':''}/>${l}</label>`).join('')}
+          </div>
         </div>
       </div>
     </div>`;
 
   document.getElementById('srch').addEventListener('input', debounce(e => {
-    S.prefs.listSearch = e.target.value; loadJobs(true);
+    activeListPrefs().listSearch = e.target.value; loadJobs(true);
   }, 380));
   bindPopovers();
+
+  openPops.forEach(id => {
+    const p = document.getElementById(id);
+    if (p) {
+      p.classList.add('open');
+      const c = document.getElementById(id.replace('pop-', 'ch-'));
+      if (c) c.setAttribute('aria-expanded', 'true');
+    }
+  });
+
+  if (activeId === 'srch') {
+    const s = document.getElementById('srch');
+    if (s) {
+      s.focus();
+      try { s.setSelectionRange(activeSelStart, activeSelStart); } catch(e){}
+    }
+  }
 }
 
 function bindPopovers() {
@@ -1956,7 +2149,39 @@ function bindPopovers() {
     });
   });
   document.querySelectorAll('.popover input').forEach(el => {
-    el.addEventListener('change', collectAndReload);
+    el.addEventListener('change', e => {
+      const prefs = activeListPrefs();
+      if (e.target.name === 'sRel' && e.target.value !== 'as-fetched') {
+        prefs.sortSalary = 'off'; prefs.sortDate = 'off';
+        const selSal = document.querySelector('input[name="sSal"][value="off"]'); if (selSal) selSal.checked = true;
+        const selDate = document.querySelector('input[name="sDate"][value="off"]'); if (selDate) selDate.checked = true;
+      } else if (e.target.name === 'sSal' && e.target.value !== 'off') {
+        prefs.sortRel = 'as-fetched'; prefs.sortDate = 'off';
+        const selRel = document.querySelector('input[name="sRel"][value="as-fetched"]'); if (selRel) selRel.checked = true;
+        const selDate = document.querySelector('input[name="sDate"][value="off"]'); if (selDate) selDate.checked = true;
+      } else if (e.target.name === 'sDate' && e.target.value !== 'off') {
+        prefs.sortRel = 'as-fetched'; prefs.sortSalary = 'off';
+        const selRel = document.querySelector('input[name="sRel"][value="as-fetched"]'); if (selRel) selRel.checked = true;
+        const selSal = document.querySelector('input[name="sSal"][value="off"]'); if (selSal) selSal.checked = true;
+      }
+      collectAndReload();
+    });
+  });
+  document.querySelectorAll('.pop-all').forEach(btn => {
+    btn.addEventListener('click', e => {
+      e.preventDefault(); e.stopPropagation();
+      const grp = btn.dataset.grp;
+      document.querySelectorAll(`input[name^="${grp}-"]`).forEach(i => i.checked = true);
+      collectAndReload();
+    });
+  });
+  document.querySelectorAll('.pop-none').forEach(btn => {
+    btn.addEventListener('click', e => {
+      e.preventDefault(); e.stopPropagation();
+      const grp = btn.dataset.grp;
+      document.querySelectorAll(`input[name^="${grp}-"]`).forEach(i => i.checked = false);
+      collectAndReload();
+    });
   });
 }
 function closePopovers() {
@@ -1964,39 +2189,61 @@ function closePopovers() {
   document.querySelectorAll('.chip[aria-expanded="true"]').forEach(c => c.setAttribute('aria-expanded','false'));
 }
 function collectAndReload() {
+  const prefs = activeListPrefs();
   ['high','medium','low','failed','none'].forEach(k => {
-    const el = document.querySelector(`input[name="rel-${k}"]`); if (el) S.prefs.rel[k] = el.checked;
+    const el = document.querySelector(`input[name="rel-${k}"]`); if (el) prefs.rel[k] = el.checked;
   });
   ['ft','pt','temp','other'].forEach(k => {
-    const el = document.querySelector(`input[name="ct-${k}"]`); if (el) S.prefs.contract[k] = el.checked;
+    const el = document.querySelector(`input[name="ct-${k}"]`); if (el) prefs.contract[k] = el.checked;
   });
   S.facets.countries.forEach(c => {
-    const el = document.querySelector(`input[name="ctr-${c}"]`); if (el) S.prefs.countries[c] = el.checked;
+    const el = document.querySelector(`input[name="ctr-${c}"]`); if (el) prefs.countries[c] = el.checked;
   });
-  const sRel = document.querySelector('input[name="sRel"]:checked'); if (sRel) S.prefs.sortRel = sRel.value;
-  const sSal = document.querySelector('input[name="sSal"]:checked'); if (sSal) S.prefs.sortSalary = sSal.value;
-  const sAge = document.querySelector('input[name="sAge"]:checked'); if (sAge) S.prefs.filterFetchAge = sAge.value;
+  if (S.listTab === 'filtered') {
+    prefs.filterReasons = prefs.filterReasons || {};
+    (S.facets.filterReasons || []).forEach(r => {
+      const el = document.querySelector(`input[name="reason-${r.key}"]`); if (el) prefs.filterReasons[r.key] = el.checked;
+    });
+  }
+  const sRel = document.querySelector('input[name="sRel"]:checked'); if (sRel) prefs.sortRel = sRel.value;
+  const sSal = document.querySelector('input[name="sSal"]:checked'); if (sSal) prefs.sortSalary = sSal.value;
+  const sDate = document.querySelector('input[name="sDate"]:checked'); if (sDate) prefs.sortDate = sDate.value;
+  const sAge = document.querySelector('input[name="sAge"]:checked'); if (sAge) prefs.filterFetchAge = sAge.value;
   loadJobs(true); renderActiveFilters();
 }
 function renderActiveFilters() {
   const row = document.getElementById('afilters'); if (!row) return;
+  const prefs = activeListPrefs();
   const chips = [];
-  const relOff = Object.entries(S.prefs.rel).filter(([,v])=>!v).map(([k])=>k);
+  const relOff = Object.entries(prefs.rel).filter(([,v])=>!v).map(([k])=>k);
   if (relOff.length) chips.push(`<span class="afc" data-clr="rel">Hiding: ${relOff.join(', ')} ×</span>`);
-  const ctOff = Object.entries(S.prefs.contract).filter(([,v])=>!v).map(([k])=>k);
+  const ctOff = Object.entries(prefs.contract).filter(([,v])=>!v).map(([k])=>k);
   if (ctOff.length) chips.push(`<span class="afc" data-clr="ct">Hiding: ${ctOff.join(', ')} ×</span>`);
-  if (S.prefs.filterFetchAge !== 'off') chips.push(`<span class="afc" data-clr="age">Date: ${S.prefs.filterFetchAge} ×</span>`);
-  if (S.prefs.sortSalary !== 'off') chips.push(`<span class="afc" data-clr="sal">Salary sort ×</span>`);
-  if (S.prefs.listSearch) chips.push(`<span class="afc" data-clr="srch">Search: "${esc(S.prefs.listSearch)}" ×</span>`);
+  if (S.listTab === 'filtered') {
+    const hiddenReasons = (S.facets.filterReasons || []).filter(r => (prefs.filterReasons || {})[r.key] === false);
+    if (hiddenReasons.length) chips.push(`<span class="afc" data-clr="reason">Hiding reasons: ${hiddenReasons.map(r => esc(r.label || r.key)).join(', ')} ×</span>`);
+  }
+  if (prefs.filterFetchAge !== 'off') chips.push(`<span class="afc" data-clr="age">Date: ${filterFetchAgeLabel(prefs.filterFetchAge)} ×</span>`);
+  if (prefs.sortRel !== 'as-fetched') {
+    const txt = prefs.sortRel === 'high-first' ? 'Relevance sort' : 'Relevance sort · low→high';
+    chips.push(`<span class="afc" data-clr="rel-sort">${txt} ×</span>`);
+  }
+  if (prefs.sortSalary !== 'off') chips.push(`<span class="afc" data-clr="sal">Salary sort ×</span>`);
+  if (prefs.sortDate !== 'off') chips.push(`<span class="afc" data-clr="date">Date sort ×</span>`);
+  if (prefs.listSearch) chips.push(`<span class="afc" data-clr="srch">Search: "${esc(prefs.listSearch)}" ×</span>`);
   row.innerHTML = chips.join('');
   row.querySelectorAll('.afc').forEach(el => {
     el.addEventListener('click', () => {
       const k = el.dataset.clr;
-      if (k==='rel') Object.keys(S.prefs.rel).forEach(x=>S.prefs.rel[x]=true);
-      if (k==='ct') Object.keys(S.prefs.contract).forEach(x=>S.prefs.contract[x]=true);
-      if (k==='age') S.prefs.filterFetchAge='off';
-      if (k==='sal') S.prefs.sortSalary='off';
-      if (k==='srch') { S.prefs.listSearch=''; }
+      const prefs = activeListPrefs();
+      if (k==='rel') Object.keys(prefs.rel).forEach(x=>prefs.rel[x]=true);
+      if (k==='ct') Object.keys(prefs.contract).forEach(x=>prefs.contract[x]=true);
+      if (k==='reason') prefs.filterReasons = {};
+      if (k==='age') prefs.filterFetchAge='off';
+      if (k==='sal') prefs.sortSalary='off';
+      if (k==='date') prefs.sortDate='off';
+      if (k==='srch') { prefs.listSearch=''; }
+      if (k==='rel-sort') prefs.sortRel='as-fetched';
       loadJobs(true); renderToolbar();
     });
   });
@@ -2013,6 +2260,11 @@ function handleRowClick(e, id) {
     hardDeleteJobs([id]).catch(err => toast('Delete failed: ' + err.message, 'error'));
     return;
   }
+  if (e.target.closest('[data-refresh-job]')) {
+    e.stopPropagation();
+    checkJobExpired(id, job);
+    return;
+  }
   if (e.target.classList.contains('jcheck')) {
     S.sel.has(id) ? S.sel.delete(id) : S.sel.add(id);
     const row = document.querySelector(`.job-row[data-id="${id}"]`);
@@ -2021,6 +2273,176 @@ function handleRowClick(e, id) {
   }
   openDrawer(job);
 }
+
+async function checkJobExpired(id, job) {
+  const btn = document.querySelector(`[data-refresh-job="${id}"]`) || document.getElementById('drw-refresh-btn');
+  if (btn) { btn.disabled = true; btn.innerHTML = IC.spin; }
+  try {
+    const res = await api(`/api/jobs/${id}/check-expired`, { method: 'POST' });
+    if (res.status === 'expired') {
+      if (btn) { btn.disabled = false; btn.innerHTML = IC.refresh; }
+      closeDrawer();
+      openModal(`
+        <div style="font-size:16px;font-weight:600;color:var(--ink-strong);margin-bottom:12px">This job has expired</div>
+        <p style="color:var(--ink-body);margin-bottom:20px">The listing page no longer accepts applications. Delete this job?</p>
+        <div style="display:flex;gap:8px;justify-content:flex-end">
+          <button class="btn btn-secondary" onclick="closeModal()">Keep it</button>
+          <button class="btn btn-danger" id="confirm-expired-delete">Delete</button>
+        </div>
+      `);
+      document.getElementById('confirm-expired-delete')?.addEventListener('click', async () => {
+        closeModal();
+        await hardDeleteJobs([id]);
+      });
+      document.getElementById('confirm-expired-delete')?.focus();
+    } else if (res.status === 'active' || res.status === 'unclear') {
+      toast('This job still looks active.', 'success');
+    } else if (res.status === 'blocked' && (res.reason === 'linkedin_session_disabled' || res.reason === 'linkedin_check_no_session')) {
+      toast('LinkedIn session not set. Ask an admin to open Admin → LinkedIn session and paste an li_at cookie.', 'warning');
+    } else if (res.status === 'blocked' && res.reason === 'linkedin_cookie_expired') {
+      toast('LinkedIn cookie expired. Ask an admin to update Admin → LinkedIn session.', 'warning');
+    } else {
+      toast("Sorry, we couldn\u2019t confirm if this job is still active. Please check it manually.", 'warning');
+    }
+  } catch {
+    toast("Sorry, we couldn\u2019t confirm if this job is still active. Please check it manually.", 'warning');
+  } finally {
+    if (btn) { btn.disabled = false; btn.innerHTML = IC.refresh; }
+  }
+}
+function renderExpirationBanner(summary) {
+  const el = document.getElementById('expiration-scan-notice');
+  if (!el) return;
+  if (!summary || !summary.scanned) { el.style.display = 'none'; return; }
+
+  const { scanned, expired, failed } = summary;
+  const active = Math.max(0, scanned - expired - failed);
+  const isGreen = expired === 0 && failed === 0;
+
+  el.classList.toggle('esn-green', isGreen);
+
+  let msg;
+  if (isGreen) {
+    msg = scanned === 1
+      ? `Board check complete \u2014 1 job is still active.`
+      : `Board check complete \u2014 all ${scanned} jobs are still active.`;
+  } else {
+    const parts = [];
+    if (active > 0) parts.push(`${active} active`);
+    if (expired > 0) parts.push(`${expired} expired`);
+    if (failed > 0) parts.push(`${failed} couldn\u2019t be verified`);
+    msg = `Board check: ${parts.join(' \u00B7 ')}.`;
+  }
+
+  const icon = isGreen ? '\u2713' : '\u26A0\uFE0F';
+  el.innerHTML = `<span class="esn-icon" aria-hidden="true">${icon}</span><span class="esn-msg">${msg}</span><button class="esn-dismiss" aria-label="Dismiss">Dismiss \u00D7</button>`;
+  el.style.display = 'flex';
+  el.querySelector('.esn-dismiss')?.addEventListener('click', async () => {
+    el.style.display = 'none';
+    try { await api('/api/notifications/dismiss-expiration-scan-notice', { method: 'POST' }); } catch {}
+  });
+}
+
+async function refreshAllBoard() {
+  const btn = document.getElementById('board-refresh-all');
+  if (!btn || btn.disabled) return;
+
+  const ACTIVE_COLS = ['new', 'applying', 'applied', 'interview'];
+  const jobsToCheck = [];
+  for (const colId of ACTIVE_COLS) {
+    for (const job of (S.board[colId] || [])) jobsToCheck.push({ ...job });
+  }
+
+  if (jobsToCheck.length === 0) {
+    toast('No active jobs on the board to check.', 'info');
+    return;
+  }
+
+  const origHtml = btn.innerHTML;
+  btn.disabled = true;
+  btn.innerHTML = `<span style="display:inline-flex;animation:spin 1s linear infinite">${IC.spin}</span> Checking\u2026`;
+
+  let expiredCount = 0;
+  let blockedCount = 0;
+
+  for (const job of jobsToCheck) {
+    const cardEl = document.querySelector(`.kcard[data-id="${CSS.escape(job.id)}"]`);
+    if (cardEl) cardEl.classList.add('scanning');
+
+    let res;
+    try {
+      res = await api(`/api/jobs/${encodeURIComponent(job.id)}/check-expired`, { method: 'POST' });
+    } catch {
+      if (cardEl) cardEl.classList.remove('scanning');
+      continue;
+    }
+
+    if (res.status === 'expired') {
+      expiredCount++;
+      if (cardEl) {
+        cardEl.classList.remove('scanning');
+        cardEl.classList.add('expiring');
+      }
+      // Run board API move and animation wait in parallel — animation is 240ms
+      const [moved] = await Promise.all([
+        api(`/api/board/items/${encodeURIComponent(job.id)}`, {
+          method: 'PATCH',
+          body: JSON.stringify({ columnId: 'expired' }),
+        }).catch(() => null),
+        new Promise(r => setTimeout(r, 280)),
+      ]);
+      if (moved?.board) {
+        applyBoardFromApi(moved.board);
+      } else {
+        for (const col of ACTIVE_COLS) S.board[col] = S.board[col].filter(j => j.id !== job.id);
+        if (!S.board.expired.find(j => j.id === job.id)) {
+          S.board.expired = [{ ...job, kanban_at: Math.floor(Date.now() / 1000) }, ...S.board.expired];
+        }
+      }
+      renderBoard();
+    } else {
+      if (cardEl) cardEl.classList.remove('scanning');
+      if (res.status === 'blocked') blockedCount++;
+    }
+  }
+
+  btn.disabled = false;
+  btn.innerHTML = origHtml;
+
+  const total = jobsToCheck.length;
+  const scanSummary = { scanned: total, expired: expiredCount, failed: blockedCount };
+
+  // Save results server-side so the banner persists across reloads and overwrites
+  // any stale automated-scan notice from midnight.
+  try {
+    await api('/api/notifications/expiration-scan-summary', {
+      method: 'POST',
+      body: JSON.stringify(scanSummary),
+    });
+  } catch {}
+
+  // Update the banner immediately with the Refresh All results.
+  renderExpirationBanner({ date: new Date().toISOString().slice(0, 10), ...scanSummary });
+
+  // Toast for quick feedback.
+  if (expiredCount === 0 && blockedCount === 0) {
+    toast(`All ${total} job${total === 1 ? '' : 's'} are still active.`, 'success');
+  } else if (expiredCount === 0) {
+    toast(
+      `All checkable jobs are still active.${blockedCount ? ` ${blockedCount} couldn\u2019t be verified.` : ''}`,
+      'warning',
+    );
+  } else {
+    const suffix = blockedCount > 0 ? ` ${blockedCount} couldn\u2019t be verified.` : '';
+    toast(
+      expiredCount === 1
+        ? `1 job position has expired and was moved to Expired.${suffix}`
+        : `${expiredCount} job positions have expired and were moved to Expired.${suffix}`,
+      'warning',
+    );
+  }
+}
+
 function updateBulkBar() {
   const bar = document.getElementById('bulk-bar');
   const n = S.sel.size;
@@ -2035,14 +2457,210 @@ const COLS = [
   { id:'applied',   lbl:'Applied',   color:'var(--col-applied)' },
   { id:'interview', lbl:'Interview', color:'var(--col-interview)' },
   { id:'rejected',  lbl:'Rejected',  color:'var(--col-rejected)' },
+  { id:'expired',   lbl:'Expired',   color:'var(--col-expired)' },
 ];
 
 function renderBoard() {
   const canvas = document.getElementById('board-canvas'); if (!canvas) return;
   canvas.innerHTML = COLS.map(renderCol).join('');
   initDnD();
+  syncBoardScrollAffordance();
   const total = Object.values(S.board).reduce((a,arr)=>a+arr.length, 0);
   navCount('board', total);
+}
+function syncBoardScrollAffordance() {
+  const canvas = document.getElementById('board-canvas');
+  const affordance = document.getElementById('board-scroll-affordance');
+  const thumb = document.getElementById('board-scroll-thumb');
+  const track = document.getElementById('board-scroll-track');
+  if (!canvas || !affordance || !thumb || !track) return;
+
+  const overflow = canvas.scrollWidth > canvas.clientWidth + 2;
+  affordance.classList.toggle('visible', overflow);
+  if (!overflow) return;
+
+  const trackWidth = track.clientWidth;
+  const maxScroll = Math.max(1, canvas.scrollWidth - canvas.clientWidth);
+  const thumbWidth = Math.max(72, Math.round(trackWidth * canvas.clientWidth / canvas.scrollWidth));
+  const maxLeft = Math.max(0, trackWidth - thumbWidth - 6);
+  const left = Math.round((canvas.scrollLeft / maxScroll) * maxLeft);
+  thumb.style.width = `${thumbWidth}px`;
+  thumb.style.transform = `translateX(${left}px)`;
+}
+/** Smooth horizontal board scroll (canvas pan, scroll rail, card-drag edge scroll). */
+const boardHScroll = {
+  canvas: null,
+  rafId: 0,
+  target: 0,
+  velocity: 0,
+  dragging: false,
+  lastX: 0,
+  lastT: 0,
+  edgeVel: 0,
+  edgeRaf: 0,
+};
+
+function boardScrollMax(canvas) {
+  return Math.max(0, canvas.scrollWidth - canvas.clientWidth);
+}
+
+function boardScrollClamp(canvas, left) {
+  return Math.max(0, Math.min(boardScrollMax(canvas), left));
+}
+
+function boardScrollPrefersReduced() {
+  return window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+}
+
+function boardScrollStopLoop() {
+  if (boardHScroll.rafId) {
+    cancelAnimationFrame(boardHScroll.rafId);
+    boardHScroll.rafId = 0;
+  }
+}
+
+function boardScrollStopEdge() {
+  boardHScroll.edgeVel = 0;
+  if (boardHScroll.edgeRaf) {
+    cancelAnimationFrame(boardHScroll.edgeRaf);
+    boardHScroll.edgeRaf = 0;
+  }
+}
+
+function boardScrollTick() {
+  const canvas = boardHScroll.canvas;
+  if (!canvas) {
+    boardHScroll.rafId = 0;
+    return;
+  }
+
+  const max = boardScrollMax(canvas);
+  if (max <= 0) {
+    boardHScroll.velocity = 0;
+    boardHScroll.rafId = 0;
+    return;
+  }
+
+  const current = canvas.scrollLeft;
+  let next = current;
+
+  if (boardHScroll.dragging) {
+    const follow = boardScrollPrefersReduced() ? 1 : 0.34;
+    next = current + (boardHScroll.target - current) * follow;
+  } else if (Math.abs(boardHScroll.velocity) > 0.35) {
+    boardHScroll.target = boardScrollClamp(canvas, boardHScroll.target + boardHScroll.velocity);
+    next = current + (boardHScroll.target - current) * 0.42;
+    boardHScroll.velocity *= 0.9;
+  } else if (Math.abs(boardHScroll.target - current) > 0.5) {
+    next = current + (boardHScroll.target - current) * 0.28;
+  } else {
+    canvas.scrollLeft = boardHScroll.target;
+    boardHScroll.velocity = 0;
+    boardHScroll.rafId = 0;
+    syncBoardScrollAffordance();
+    return;
+  }
+
+  canvas.scrollLeft = boardScrollClamp(canvas, next);
+  syncBoardScrollAffordance();
+  boardHScroll.rafId = requestAnimationFrame(boardScrollTick);
+}
+
+function boardScrollEnsureLoop(canvas) {
+  boardHScroll.canvas = canvas;
+  boardHScroll.target = boardScrollClamp(canvas, boardHScroll.target);
+  if (!boardHScroll.rafId) boardHScroll.rafId = requestAnimationFrame(boardScrollTick);
+}
+
+function boardScrollSetTarget(canvas, left, sampleVelocity, clientX, gain) {
+  const reduced = boardScrollPrefersReduced();
+  boardHScroll.target = boardScrollClamp(canvas, left);
+  if (reduced) {
+    canvas.scrollLeft = boardHScroll.target;
+    syncBoardScrollAffordance();
+    return;
+  }
+  if (sampleVelocity) {
+    const now = performance.now();
+    const dt = Math.max(8, now - boardHScroll.lastT);
+    const vx = (clientX - boardHScroll.lastX) / dt;
+    boardHScroll.velocity = -(vx * gain) * 11;
+    boardHScroll.lastX = clientX;
+    boardHScroll.lastT = now;
+  }
+  boardScrollEnsureLoop(canvas);
+}
+
+function boardPanByPointer(canvas, startX, startScrollLeft, clientX, gain = 1.08) {
+  const left = startScrollLeft - (clientX - startX) * gain;
+  boardScrollSetTarget(canvas, left, true, clientX, gain);
+}
+
+function boardPanRailByPointer(canvas, startX, startScrollLeft, clientX, gain = 2.05) {
+  const left = startScrollLeft + (clientX - startX) * gain;
+  boardScrollSetTarget(canvas, left, true, clientX, gain);
+}
+
+function boardPanPointerDown(canvas) {
+  boardHScroll.dragging = true;
+  boardHScroll.velocity = 0;
+  boardHScroll.target = canvas.scrollLeft;
+  boardHScroll.lastX = 0;
+  boardHScroll.lastT = performance.now();
+  boardScrollStopEdge();
+  document.getElementById('board-scroll-affordance')?.classList.add('is-panning');
+}
+
+function boardPanPointerUp() {
+  boardHScroll.dragging = false;
+  document.getElementById('board-scroll-affordance')?.classList.remove('is-panning');
+  if (boardHScroll.canvas) boardScrollEnsureLoop(boardHScroll.canvas);
+}
+
+function boardEdgeScrollFromDrag(clientX) {
+  const canvas = document.getElementById('board-canvas');
+  if (!canvas || !dragId) return;
+  const max = boardScrollMax(canvas);
+  if (max <= 0) {
+    boardScrollStopEdge();
+    return;
+  }
+  const rect = canvas.getBoundingClientRect();
+  const zone = 88;
+  const maxVel = 3.2;
+  let vel = 0;
+  if (clientX < rect.left + zone) {
+    const t = Math.min(1, (rect.left + zone - clientX) / zone);
+    vel = -maxVel * t * t;
+  } else if (clientX > rect.right - zone) {
+    const t = Math.min(1, (clientX - (rect.right - zone)) / zone);
+    vel = maxVel * t * t;
+  }
+  boardHScroll.edgeVel = vel;
+  if (!vel) {
+    boardScrollStopEdge();
+    return;
+  }
+  if (boardHScroll.edgeRaf) return;
+  const tick = () => {
+    if (!dragId || boardHScroll.edgeVel === 0) {
+      boardScrollStopEdge();
+      return;
+    }
+    const c = document.getElementById('board-canvas');
+    if (!c) {
+      boardScrollStopEdge();
+      return;
+    }
+    const next = boardScrollClamp(c, c.scrollLeft + boardHScroll.edgeVel);
+    if (next !== c.scrollLeft) {
+      c.scrollLeft = next;
+      boardHScroll.target = next;
+      syncBoardScrollAffordance();
+    }
+    boardHScroll.edgeRaf = requestAnimationFrame(tick);
+  };
+  boardHScroll.edgeRaf = requestAnimationFrame(tick);
 }
 function renderCol(col) {
   const jobs = S.board[col.id] || [];
@@ -2060,28 +2678,38 @@ function renderCol(col) {
   </div>`;
 }
 function colEmpty(id) {
-  const hints = { new:'Add jobs from the Job List', applying:'Drag here to start applying', applied:'Drag here when submitted', interview:'Drag here when you land an interview', rejected:'Drag here when declined' };
+  const hints = { new:'Add jobs from the Job List', applying:'Drag here to start applying', applied:'Drag here when submitted', interview:'Drag here when you land an interview', rejected:'Drag here when declined', expired:'Auto-detected expired listings — delete or wait 3 days' };
   return `<div class="col-empty"><div class="col-empty-hero">—</div><div class="col-empty-msg">${hints[id]||''}</div></div>`;
 }
 function renderKCard(job, colId) {
   const sc = scoreClass(job.fitScore);
-  const url = job.jobUrl || ''; const vCls = vendorClass(url); const vLbl = vendorLbl(url);
+  const logo = vendorUiLogoMeta(job);
+  const vLbl = vendorUiPublicNameFromJob(job);
   const date = timeAgo(job.ingestedAtUnix || job.postedAtUnix);
-  const srcImg = vCls === 'linkedin' ? '/assets/linkedin.png' : '/assets/google.png';
-  let actions = '';
-  if (colId === 'applying') {
-    if (job.generating) actions = `<div class="kcard-actions"><div class="gen-pill"><span class="spin">${IC.spin}</span> Generating…</div></div>`;
-    else if (job.hasDocx) actions = `<div class="kcard-actions">
-      <a href="${esc(job.downloadCv||'')}" class="btn btn-secondary" target="_blank" rel="noopener">${IC.dl} CV</a>
-      <a href="${esc(job.downloadCover||'')}" class="btn btn-secondary" target="_blank" rel="noopener">${IC.dl} Cover</a>
-    </div>`;
+  const srcImg = logo.img;
+
+  // Footer left: document actions — generate / generating / cv+cover
+  let footerActs = '';
+  if (job.generating) {
+    footerActs = `<div class="gen-pill"><span class="spin">${IC.spin}</span> Generating…</div>`;
+  } else if (job.hasDocx) {
+    footerActs = `<a href="${esc(job.downloadCv||'')}" class="btn btn-secondary" target="_blank" rel="noopener">${IC.dl} CV</a><a href="${esc(job.downloadCover||'')}" class="btn btn-secondary" target="_blank" rel="noopener">${IC.dl} Cover</a>`;
+  } else if (colId !== 'rejected' && colId !== 'expired') {
+    footerActs = `<button class="btn btn-secondary" data-gen-job="${esc(job.id)}" aria-label="Generate CV and cover letter">${IC.gen} Generate CV &amp; CL</button>`;
   }
+
+  // Footer right: icon-only open job link
+  const jobLink = job.jobUrl || job.applyUrl || '';
+  const openBtn = jobLink
+    ? `<a href="${esc(jobLink)}" target="_blank" rel="noopener" class="kcard-open-lnk" aria-label="Open job posting">${IC.ext}</a>`
+    : '';
+
   let rejCd = '';
-  if (colId === 'rejected' && job.kanban_at) {
+  if ((colId === 'rejected' || colId === 'expired') && job.kanban_at) {
     const rem = (job.kanban_at + 3*86400) - Math.floor(Date.now()/1000);
     if (rem > 0) { const d=Math.floor(rem/86400),h=Math.floor((rem%86400)/3600); rejCd=`<div class="rej-cd">Auto-clears in ${d}d ${h}h</div>`; }
   }
-  const deleteAction = colId === 'rejected'
+  const deleteAction = (colId === 'rejected' || colId === 'expired')
     ? `<button class="btn btn-muted-delete kcard-danger" data-board-delete="${esc(job.id)}" aria-label="Delete job">${IC.trash} Delete job</button>`
     : '';
   return `<div class="kcard" draggable="true" data-id="${esc(job.id)}" data-col="${esc(colId)}" role="article" aria-label="${esc(job.title)} at ${esc(job.company)}">
@@ -2095,7 +2723,10 @@ function renderKCard(job, colId) {
     <div class="kcard-meta">
       ${esc(job.countryName||'')}${job.employmentType?` · ${esc(job.employmentType)}`:''}${date?` · <span class="kcard-mono">${date}</span>`:''}${job.salaryEur&&job.salaryEur!=='N/A'?` · <span class="kcard-mono">${esc(job.salaryEur)}</span>`:''}
     </div>
-    ${rejCd}${actions}${deleteAction}
+    ${rejCd}<div class="kcard-footer">
+      <div class="kcard-footer-acts">${footerActs}</div>
+      ${openBtn}
+    </div>${deleteAction}
   </div>`;
 }
 
@@ -2129,6 +2760,7 @@ function initDnD() {
     card.addEventListener('dragend', () => {
       card.classList.remove('drag-src');
       dndClearIndicator();
+      boardScrollStopEdge();
       dragId = null; dragFrom = null;
     });
     card.addEventListener('click', e => {
@@ -2138,6 +2770,13 @@ function initDnD() {
         hardDeleteJobs([boardDeleteBtn.dataset.boardDelete]).catch(err => toast('Delete failed: ' + err.message, 'error'));
         return;
       }
+      const genBtn = e.target.closest('[data-gen-job]');
+      if (genBtn) {
+        e.stopPropagation();
+        generateBoardJobDocs(genBtn.dataset.genJob);
+        return;
+      }
+      if (e.target.closest('.kcard-open-lnk')) { e.stopPropagation(); return; }
       const job = boardFind(card.dataset.id); if (job) openDrawer(job);
     });
     // Hovering over a card during drag — show insert position indicator
@@ -2207,7 +2846,7 @@ async function reorderInColumn(colId, movedId, targetId, insertBefore) {
       method: 'POST',
       body: JSON.stringify({ columnId: colId, jobIds: newOrder.map(j => j.id) }),
     });
-    S.board = normalizeBoardShape(res.board);
+    applyBoardFromApi(res.board);
     renderBoard();
   } catch (err) {
     toast('Reorder failed: ' + err.message, 'error');
@@ -2223,27 +2862,140 @@ function boardColOf(id) {
   for (const [col, arr] of Object.entries(S.board)) { if (arr.find(x=>x.id===id)) return col; }
   return null;
 }
+async function syncBoardDocStateFromApi() {
+  try {
+    const res = await api('/api/board');
+    applyBoardFromApi(res.board);
+    renderBoard();
+  } catch {
+    /* best-effort resync */
+  }
+}
+function applyDocGenerationDone(id, payload) {
+  const done = {
+    generating: false,
+    hasDocx: true,
+    downloadCv: payload.downloadCv,
+    downloadCover: payload.downloadCover,
+  };
+  const boardJob = boardFind(id);
+  if (boardJob) Object.assign(boardJob, done);
+  if (S.drawerJob?.id === id) Object.assign(S.drawerJob, done);
+}
+function markJobDocGenerating(id, generating) {
+  const boardJob = boardFind(id);
+  if (boardJob) boardJob.generating = generating;
+  if (S.drawerJob?.id === id) S.drawerJob.generating = generating;
+  renderBoard();
+  if (S.drawerJob?.id === id) fillDrawer(S.drawerJob);
+}
+async function runJobDocGeneration(id, successToast) {
+  if (docGenerationInFlight.has(id)) return null;
+  const boardJob = boardFind(id);
+  if (boardJob?.generating) return null;
+
+  docGenerationInFlight.add(id);
+  markJobDocGenerating(id, true);
+  try {
+    const d = await api(`/api/jobs/${encodeURIComponent(id)}/generate`, { method: 'POST' });
+    applyDocGenerationDone(id, d);
+    renderBoard();
+    if (S.drawerJob?.id === id) fillDrawer(S.drawerJob);
+    if (successToast) toast(successToast, 'success');
+    return d;
+  } catch (e) {
+    const msg = String(e.message || '');
+    if (msg.includes('already_generating')) {
+      markJobDocGenerating(id, true);
+      return null;
+    }
+    await syncBoardDocStateFromApi();
+    if (S.drawerJob?.id === id && !boardFind(id)) {
+      S.drawerJob.generating = false;
+      fillDrawer(S.drawerJob);
+    }
+    throw e;
+  } finally {
+    docGenerationInFlight.delete(id);
+  }
+}
+async function generateBoardJobDocs(id) {
+  try {
+    await runJobDocGeneration(id, 'CV and cover letter generated!');
+  } catch (e) {
+    toast('Generation failed: ' + e.message, 'error');
+  }
+}
+async function regenerateJobDocs(job) {
+  if (!job) return;
+  try {
+    await runJobDocGeneration(job.id, 'CV and cover letter regenerated!');
+  } catch (e) {
+    toast('Regeneration failed: ' + e.message, 'error');
+  }
+}
+async function generateAllBoardDocs() {
+  const btn = document.getElementById('board-gen-all');
+  if (!btn || btn.disabled) return;
+
+  const ACTIVE_COLS = ['new', 'applying', 'applied', 'interview'];
+  const idsToGen = [];
+  for (const colId of ACTIVE_COLS) {
+    for (const job of (S.board[colId] || [])) {
+      if (!job.hasDocx && !job.generating && !docGenerationInFlight.has(job.id)) idsToGen.push(job.id);
+    }
+  }
+
+  if (idsToGen.length === 0) {
+    toast('All active board jobs already have CV \u0026 CL docs.', 'info');
+    return;
+  }
+
+  const origHtml = btn.innerHTML;
+  btn.disabled = true;
+  let doneCount = 0, failCount = 0;
+  const total = idsToGen.length;
+
+  const spinBtn = () => {
+    btn.innerHTML = `<span style="display:inline-flex;animation:spin 1s linear infinite">${IC.spin}</span> ${doneCount + failCount}\u202f/\u202f${total}\u2026`;
+  };
+  spinBtn();
+
+  await Promise.all(idsToGen.map(async (id) => {
+    try {
+      const r = await runJobDocGeneration(id);
+      if (r) doneCount++;
+      else if (!boardFind(id)?.generating) failCount++;
+    } catch {
+      failCount++;
+    }
+    spinBtn();
+  }));
+
+  btn.disabled = false;
+  btn.innerHTML = origHtml;
+
+  if (failCount === 0) {
+    toast(`CV \u0026 CL generated for ${doneCount} job${doneCount === 1 ? '' : 's'}.`, 'success');
+  } else if (doneCount === 0) {
+    toast(`Generation failed for all ${failCount} jobs.`, 'error');
+  } else {
+    toast(`Generated ${doneCount}\u202fof\u202f${total}\u202f\u2014\u202f${failCount} failed.`, 'warning');
+  }
+}
 async function moveToCol(id, col) {
   const before = S.board;
   let job = boardFind(id);
   if (!job) return;
   try {
     const moved = await api(`/api/board/items/${encodeURIComponent(id)}`, { method:'PATCH', body: JSON.stringify({ columnId: col }) });
-    S.board = normalizeBoardShape(moved.board);
+    applyBoardFromApi(moved.board);
   } catch(e) {
     S.board = before; renderBoard(); toast('Move failed: ' + e.message, 'error'); return;
   }
   job = boardFind(id);
   if (!job) return;
   renderBoard();
-  if (col === 'applying') {
-    job.generating = true; renderBoard();
-    try {
-      const d = await api(`/api/jobs/${id}/generate`, { method:'POST' });
-      job.generating = false; job.hasDocx = true; job.downloadCv = d.downloadCv; job.downloadCover = d.downloadCover;
-      renderBoard(); toast('CV and cover letter generated!', 'success');
-    } catch(e) { job.generating = false; renderBoard(); toast('Generation failed: ' + e.message, 'error'); }
-  }
   if (col === 'rejected') scheduleRejectClean(job);
 }
 function scheduleRejectClean(job) {
@@ -2259,21 +3011,40 @@ function purgeExpiredRejected() {
 async function removeFromBoard(id) {
   try {
     const res = await api(`/api/board/items/${encodeURIComponent(id)}`, { method:'DELETE' });
-    S.board = normalizeBoardShape(res.board);
+    applyBoardFromApi(res.board);
+    if (document.getElementById('view-jobs')?.classList.contains('active')) {
+      await loadJobs(true);
+    }
   } catch(e) {
     toast('Board remove failed: ' + e.message, 'error');
   }
-  if (document.getElementById('view-board').classList.contains('active')) renderBoard();
+  if (document.getElementById('view-board')?.classList.contains('active')) renderBoard();
 }
 async function addToBoard(job) {
   if (boardFind(job.id)) { toast('Already on the board', 'warning'); return; }
   try {
     const res = await api('/api/board/items', { method:'POST', body: JSON.stringify({ jobId: job.id, columnId: 'new' }) });
-    S.board = normalizeBoardShape(res.board);
+    applyBoardFromApi(res.board);
+    const wasInList = S.jobs.some(j => j.id === job.id);
     S.jobs = S.jobs.filter(j => j.id !== job.id);
+    if (wasInList && S.total > 0) S.total -= 1;
     document.querySelector(`.job-row[data-id="${job.id}"]`)?.remove();
+    if (wasInList && S.jobs.length === 0) renderJobListEmptyState();
     navCount('board', Object.values(S.board).reduce((a,arr)=>a+arr.length,0));
-    toast(`"${job.title}" added to Board → New`, 'success');
+    syncJobListNavCounts();
+    syncJobListHeaderSubtitle();
+    if (document.getElementById('view-jobs')?.classList.contains('active')) setupScrollObs();
+    const boardJob = boardFind(job.id);
+    const shouldAutoGen = boardJob && !boardJob.hasDocx && !boardJob.generating;
+    toast(
+      `"${job.title}" added to Board → New${shouldAutoGen ? ' — generating CV & CL…' : ''}`,
+      'success',
+    );
+    if (shouldAutoGen) {
+      void runJobDocGeneration(job.id).catch(e => {
+        toast('CV & CL generation failed: ' + e.message, 'error');
+      });
+    }
   } catch(e) {
     toast('Add to board failed: ' + e.message, 'error');
   }
@@ -2306,10 +3077,9 @@ function closeDrawer() {
 function fillDrawer(job) {
   const sc = scoreClass(job.fitScore);
   const colOn = boardColOf(job.id);
-  const url = job.jobUrl || job.applyUrl || '';
-  const vCls = vendorClass(url);
-  const vLbl = vendorLbl(url);
-  const srcImg = vCls === 'linkedin' ? '/assets/linkedin.png' : '/assets/google.png';
+  const logo = vendorUiLogoMeta(job);
+  const vLbl = vendorUiPublicNameFromJob(job);
+  const srcImg = logo.img;
 
   document.getElementById('drw-hdr').innerHTML = `
     <div class="drw-logo"><img src="${srcImg}" alt="${esc(vLbl)}" /></div>
@@ -2327,7 +3097,9 @@ function fillDrawer(job) {
     ['Salary', job.salaryEur !== 'N/A' ? job.salaryEur : null],
     ['Fetched', job.ingestedAtUnix ? new Date(job.ingestedAtUnix*1000).toLocaleDateString('en-GB') : null],
   ].filter(([,v])=>v);
-  const facts = (job.ingestionFacts||[]).map(f=>`<div class="pipe-fact"><span class="pipe-fact-k">${esc(f.key)}</span><span>${esc(String(f.value||''))}</span></div>`).join('');
+  const factRows = rows => (rows||[]).map(f=>`<div class="pipe-fact"><span class="pipe-fact-k">${esc(f.label || f.key || '')}</span><span>${esc(String(f.value ?? ''))}</span></div>`).join('');
+  const facts = factRows(job.ingestionFacts);
+  const rawFacts = factRows(job.apiRawFields);
 
   document.getElementById('drw-body').innerHTML = `
     <div class="drw-score-row">
@@ -2347,40 +3119,45 @@ function fillDrawer(job) {
       <div><span class="sec-lbl">Negatives</span>${cons}</div>
     </div>
     ${meta.length>0?`<div class="drw-div"></div><div><span class="sec-lbl">Details</span><div class="meta-grid">${meta.map(([k,v])=>`<div class="meta-item"><div class="meta-k">${esc(k)}</div><div class="meta-v">${esc(String(v))}</div></div>`).join('')}</div></div>`:''}
-    ${facts?`<div class="drw-div"></div><div><button class="coll-trigger" id="pipe-trig">${IC.chevR} Pipeline & Extraction</button><div class="coll-body" id="pipe-body"><div class="pipe-facts">${facts}</div></div></div>`:''}`;
+    ${facts?`<div class="drw-div"></div><div><button class="coll-trigger" id="pipe-trig">${IC.chevR} Pipeline & Extraction</button><div class="coll-body" id="pipe-body"><div class="pipe-facts">${facts}</div></div></div>`:''}
+    ${rawFacts?`<div class="drw-div"></div><div><button class="coll-trigger" id="api-raw-trig">${IC.chevR} Received API data</button><div class="coll-body" id="api-raw-body"><div class="pipe-facts">${rawFacts}</div></div></div>`:''}`;
 
   const pt = document.getElementById('pipe-trig');
   if (pt) pt.addEventListener('click', () => document.getElementById('pipe-body')?.classList.toggle('open'));
+  const art = document.getElementById('api-raw-trig');
+  if (art) art.addEventListener('click', () => document.getElementById('api-raw-body')?.classList.toggle('open'));
 
-  const colOpts = COLS.map(c=>`<option value="${c.id}" ${colOn===c.id?'selected':''}>${c.lbl}</option>`).join('');
-  const openBtn = job.jobUrl ? `<a href="${esc(job.jobUrl)}" target="_blank" rel="noopener" class="btn btn-secondary">${IC.ext} Open job</a>` : '';
-  const dlBtns = job.hasDocx ? `<a href="${esc(job.downloadCv||'')}" target="_blank" class="btn btn-secondary">${IC.dl} CV</a><a href="${esc(job.downloadCover||'')}" target="_blank" class="btn btn-secondary">${IC.dl} Cover</a>` : '';
+  const openUrl = job.applyUrl || job.jobUrl;
+  const openBtn = openUrl ? `<a href="${esc(openUrl)}" target="_blank" rel="noopener" class="btn btn-secondary">${IC.ext} Open job</a>` : '';
   document.getElementById('drw-footer').innerHTML = `
-    ${dlBtns ? `<div class="drw-footer-row">${dlBtns}</div>` : ''}
-    ${colOn!==null
-      ? `<div class="drw-footer-row">
-           ${openBtn}
-           <span style="font-size:13px;color:var(--ink-muted)">Move to</span>
-           <select class="move-select" id="drw-move-sel" aria-label="Move to column">${colOpts}</select>
-           <button class="btn btn-secondary" id="drw-move-btn">Move</button>
-           <button class="btn btn-ghost" id="drw-rm-btn" style="margin-left:auto;color:var(--danger-600)">Remove</button>
-         </div>`
-      : `<div class="drw-footer-row">
-           ${openBtn}
-           <button class="btn btn-primary" id="drw-add-btn">Add to Board</button>
-         </div>`
-    }`;
-  document.getElementById('drw-footer').insertAdjacentHTML(
-    'beforeend',
-    `<div class="drw-footer-row"><button class="btn btn-destructive" id="drw-delete-btn">${IC.trash} Delete job</button></div>`,
-  );
+    ${job.hasDocx || job.generating ? `
+    <div class="drw-footer-row">
+      ${job.generating
+        ? `<div class="gen-pill"><span class="spin">${IC.spin}</span> Generating…</div>`
+        : `<a href="${esc(job.downloadCv||'')}" target="_blank" class="btn btn-secondary">${IC.dl} CV</a>
+      <a href="${esc(job.downloadCover||'')}" target="_blank" class="btn btn-secondary">${IC.dl} Cover</a>
+      <button class="btn btn-ghost" id="drw-regen-btn" style="margin-left:auto">${IC.regen} Regenerate</button>`}
+    </div>
+    <div class="drw-footer-sep"></div>` : ''}
+    <div class="drw-footer-row">
+      <span class="drw-footer-job-actions">
+        ${openBtn}
+        <button class="btn btn-secondary" type="button" id="drw-refresh-btn">${IC.refresh} Check active</button>
+      </span>
+      ${colOn === null ? `<button class="btn btn-primary" id="drw-add-btn" style="margin-left:auto">${IC.plus} Add to Board</button>` : ''}
+    </div>
+    <div class="drw-footer-sep"></div>
+    <div class="drw-footer-row">
+      <!-- Send back to Job list: temporarily hidden -->
+      <button class="btn btn-destructive" id="drw-delete-btn">${IC.trash} Delete job</button>
+    </div>`;
 
-  document.getElementById('drw-move-btn')?.addEventListener('click', async () => {
-    const sel = document.getElementById('drw-move-sel')?.value;
-    if (sel) { await moveToCol(job.id, sel); closeDrawer(); }
+  document.getElementById('drw-refresh-btn')?.addEventListener('click', () => {
+    checkJobExpired(job.id, job);
   });
+  document.getElementById('drw-regen-btn')?.addEventListener('click', () => regenerateJobDocs(job));
   document.getElementById('drw-rm-btn')?.addEventListener('click', () => {
-    removeFromBoard(job.id).then(() => { closeDrawer(); toast('Removed from board', 'success'); });
+    removeFromBoard(job.id).then(() => { closeDrawer(); toast('Sent back to job list', 'success'); });
   });
   document.getElementById('drw-add-btn')?.addEventListener('click', () => {
     addToBoard(job).then(() => closeDrawer());
@@ -2450,9 +3227,167 @@ function toast(msg, type='info') {
 /* ── ADMIN ───────────────────────────────────────────────────────────────── */
 let _adminUserCache = {};
 
+async function loadAdminOpsIncidents() {
+  if (currentUser?.role !== 'admin') return;
+  try {
+    const signals = await api('/api/operational-signals');
+    renderOpsIncidentsAndStatus(signals);
+  } catch(e) {
+    toast('Failed to load operational status: ' + e.message, 'error');
+  }
+}
+
 async function loadAdmin() {
   if (currentUser?.role !== 'admin') return;
-  await Promise.all([loadAdminUsers(), loadAdminPipelines(), loadAdminContract(), loadAdminSetupAnalysis(), loadAdminTemplate()]);
+  await Promise.all([
+    loadAdminPipelineDebug(),
+    loadAdminLinkedInSection(),
+    loadAdminUsers(),
+    loadAdminPipelines(),
+    loadAdminContract(),
+    loadAdminSetupAnalysis(),
+    loadAdminTemplate(),
+    loadAdminOpsIncidents(),
+  ]);
+}
+
+async function loadAdminPipelineDebug() {
+  const el = document.getElementById('admin-pipeline-debug-inner');
+  if (!el) return;
+  try {
+    const d = await api('/api/admin/logging');
+    el.innerHTML = `
+      ${d.pipelineHardKillActive ? `<div class="stg-row" style="background:var(--danger-50);border-radius:var(--r-sm);margin-bottom:8px"><div class="stg-label"><div class="stg-label-main" style="color:var(--danger-700)">Hard kill active</div><div class="stg-label-sub">PIPELINE_FETCH_ENABLED=false overrides extraction toggle site-wide</div></div></div>` : ''}
+      <div class="stg-row" style="border-radius:var(--r-sm);background:var(--surface-raised)">
+        <div class="stg-label"><div class="stg-label-main">Verbose logging</div><div class="stg-label-sub">Extra detail in the Operations log (global)</div></div>
+        <label class="toggle-wrap"><input type="checkbox" class="toggle-input" id="admin-tog-verbose" ${d.verboseLoggingEnabled ? 'checked' : ''}/><span class="toggle-track"></span></label>
+      </div>`;
+    document.getElementById('admin-tog-verbose')?.addEventListener('change', async e => {
+      try {
+        await api('/api/admin/logging', { method: 'PATCH', body: JSON.stringify({ verboseLoggingEnabled: e.target.checked }) });
+        toast('Saved', 'success');
+      } catch {
+        e.target.checked = !e.target.checked;
+      }
+    });
+  } catch(e) {
+    el.innerHTML = `<div style="color:var(--danger-600);font-size:13px">${esc(e.message)}</div>`;
+  }
+}
+
+async function loadAdminLinkedInSection() {
+  const el = document.getElementById('admin-linkedin-inner');
+  if (!el) return;
+  try {
+    const res = await api('/api/admin/linkedin-session');
+    const manualSet = !!res.linkedinManualCookieSet;
+    const savedAt = res.linkedinManualCookieSavedAt;
+    const savedStr = savedAt
+      ? new Date(savedAt * 1000).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
+      : '';
+    const ls = res.session;
+    const now = Math.floor(Date.now() / 1000);
+
+    let badge = '', detail = '';
+    if (manualSet) {
+      badge = `<span style="background:#DCFCE7;color:#166534;padding:2px 8px;border-radius:4px;font-size:12px;font-weight:600">Active (manual)</span>`;
+      detail = `Manual cookie set${savedStr ? ' — ' + savedStr : ''}. Overrides auto-login. Expiration checks use this session.`;
+    } else if (ls && !ls.disabledUntilNextCron && (ls.cookieCount ?? 0) > 0 && ls.liAtExpiresAt > now) {
+      const exp = new Date(ls.liAtExpiresAt * 1000).toLocaleDateString('en-GB');
+      badge = `<span style="background:#DCFCE7;color:#166534;padding:2px 8px;border-radius:4px;font-size:12px;font-weight:600">Active (auto)</span>`;
+      detail = `Auto-login session valid until ${exp}.`;
+    } else if (ls && ls.disabledUntilNextCron) {
+      badge = `<span style="background:#FEE2E2;color:#991B1B;padding:2px 8px;border-radius:4px;font-size:12px;font-weight:600">Disabled</span>`;
+      detail = ls.lastError ? `Last error: ${esc(ls.lastError)}` : 'Auto-login failed. Retry with Connect or paste a manual cookie.';
+    } else {
+      badge = `<span style="background:var(--warning-100);color:var(--warning-800);padding:2px 8px;border-radius:4px;font-size:12px;font-weight:600">Not set</span>`;
+      detail = 'No LinkedIn session. Use Connect (auto-login via proxy) or paste a manual li_at cookie.';
+    }
+
+    el.innerHTML = `
+      <div style="background:var(--surface);border:1px solid var(--hairline);border-radius:var(--r-md);padding:14px 18px">
+        <div style="margin-bottom:12px">
+          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:4px"><span style="font-weight:600;color:var(--ink-strong)">Status</span>${badge}</div>
+          <div style="font-size:13px;color:var(--ink-muted);line-height:1.45">${detail}</div>
+        </div>
+        <div style="margin-bottom:14px">
+          <div style="font-size:11px;font-weight:600;color:var(--ink-muted);letter-spacing:.06em;text-transform:uppercase;margin-bottom:8px">Auto-login via proxy</div>
+          <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+            <button class="btn btn-secondary" id="admin-linkedin-connect-btn">Connect LinkedIn</button>
+            <span id="admin-linkedin-connect-status" style="font-size:13px;color:var(--ink-muted)"></span>
+          </div>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:8px">
+          <div style="font-size:11px;font-weight:600;color:var(--ink-muted);letter-spacing:.06em;text-transform:uppercase">Manual cookie (overrides auto-login)</div>
+          <div style="font-size:12px;color:var(--ink-muted);line-height:1.5">
+            LinkedIn → DevTools (F12) → Application → Cookies → www.linkedin.com → copy <code style="background:var(--surface-raised);padding:1px 4px;border-radius:3px;font-family:var(--f-mono)">li_at</code> value.
+          </div>
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+            <input type="password" id="admin-linkedin-li-at" placeholder="AQEDATxxxxxxx…" autocomplete="off" spellcheck="false"
+              style="flex:1;min-width:14rem;font-family:var(--f-mono);font-size:12px;padding:6px 10px;border:1px solid var(--border);border-radius:6px;background:#fff;color:var(--ink)"/>
+            <button class="btn btn-primary" id="admin-save-linkedin-cookie">Save cookie</button>
+            ${manualSet ? `<button class="btn btn-ghost" id="admin-clear-linkedin-cookie" style="color:var(--danger-600);border:1px solid var(--border)">Clear</button>` : ''}
+          </div>
+          <span id="admin-linkedin-cookie-status" style="font-size:12px;color:var(--ink-muted)"></span>
+        </div>
+      </div>`;
+
+    document.getElementById('admin-linkedin-connect-btn')?.addEventListener('click', async () => {
+      const btn = document.getElementById('admin-linkedin-connect-btn');
+      const status = document.getElementById('admin-linkedin-connect-status');
+      if (btn) { btn.disabled = true; btn.innerHTML = `${IC.spin} Connecting…`; }
+      if (status) status.textContent = 'Logging in via proxy, please wait…';
+      try {
+        const r = await api('/api/admin/linkedin-session/refresh', { method: 'POST' });
+        if (status) status.textContent = '';
+        if (r.ok && r.session?.lastStatus === 'active') {
+          toast('LinkedIn connected successfully.', 'success');
+          loadAdminLinkedInSection();
+        } else {
+          const err = r.session?.lastError || r.session?.lastStatus || 'unknown error';
+          toast(`LinkedIn login failed: ${err}`, 'error');
+          loadAdminLinkedInSection();
+        }
+      } catch {
+        if (status) status.textContent = '';
+        toast('Connection attempt timed out or failed. Check Moderate incidents for details.', 'error');
+        loadAdminLinkedInSection();
+      } finally {
+        if (btn) { btn.disabled = false; btn.innerHTML = 'Connect LinkedIn'; }
+      }
+    });
+
+    document.getElementById('admin-save-linkedin-cookie')?.addEventListener('click', async () => {
+      const input = /** @type {HTMLInputElement|null} */ (document.getElementById('admin-linkedin-li-at'));
+      const statusEl = document.getElementById('admin-linkedin-cookie-status');
+      const val = input?.value.trim() || '';
+      if (!val) { toast('Paste your li_at cookie value first', 'warning'); return; }
+      if (statusEl) statusEl.textContent = 'Saving…';
+      try {
+        await api('/api/admin/linkedin-manual-cookie', { method: 'PATCH', body: JSON.stringify({ linkedinLiAt: val }) });
+        if (input) input.value = '';
+        if (statusEl) statusEl.textContent = '';
+        toast('Cookie saved', 'success');
+        loadAdminLinkedInSection();
+      } catch(e) {
+        if (statusEl) statusEl.textContent = '';
+        toast('Save failed: ' + e.message, 'error');
+      }
+    });
+
+    document.getElementById('admin-clear-linkedin-cookie')?.addEventListener('click', async () => {
+      if (!confirm('Clear the saved LinkedIn cookie? Expiration checks will stop working until you add a new one.')) return;
+      try {
+        await api('/api/admin/linkedin-manual-cookie', { method: 'PATCH', body: JSON.stringify({ linkedinLiAt: '' }) });
+        toast('Cookie cleared', 'success');
+        loadAdminLinkedInSection();
+      } catch(e) {
+        toast('Failed: ' + e.message, 'error');
+      }
+    });
+  } catch(e) {
+    el.innerHTML = `<div style="color:var(--danger-600);font-size:13px">${esc(e.message)}</div>`;
+  }
 }
 
 async function loadAdminUsers() {
@@ -2481,7 +3416,10 @@ async function loadAdminUsers() {
 
 function capsDisplay(caps) {
   if (!caps || !Object.keys(caps).length) return 'defaults';
-  return Object.entries(caps).map(([k, v]) => `${k.replace('_max_api_calls_per_run','').replace('linkedin_jobs','li').replace('jsearch','js').replace('jobs_api','ja')}: ${v}`).join(', ');
+  return Object.entries(caps).map(([k, v]) => {
+    const abbrev = vendorUiCapsAbbrevFromKey(k);
+    return `${abbrev}${vendorUiAdminParenSuffixForCapsAbbrev(abbrev)}: ${v}`;
+  }).join(', ');
 }
 
 async function loadAdminPipelines() {
@@ -2524,7 +3462,7 @@ async function loadAdminSetupAnalysis() {
     const current = await api('/api/ai-instructions');
     const ta = document.getElementById('admin-setup-analysis-ta');
     if (ta) ta.value = current.setupAnalysis || '';
-  } catch(e) { toast('Failed to load setup analysis instruction: ' + e.message, 'error'); }
+  } catch(e) { toast('Failed to load CV analysis prompt: ' + e.message, 'error'); }
 }
 
 async function loadAdminTemplate() {
@@ -2605,48 +3543,127 @@ function openEditUser(userId) {
         <option value="admin" ${u.role==='admin'?'selected':''}>Admin</option>
       </select>
     </div>
-    <div style="font-size:13px;font-weight:500;color:var(--ink-body);margin-bottom:8px;margin-top:4px">Per-provider daily caps</div>
-    <div id="eu-caps-inner"><div style="font-size:12px;color:var(--ink-muted)">Loading caps…</div></div>
+    <div style="font-size:13px;font-weight:500;color:var(--ink-body);margin-bottom:8px;margin-top:8px">Pipeline debug (job detail)</div>
+    <div id="eu-debug-inner"><div style="font-size:12px;color:var(--ink-muted)">Loading…</div></div>
+    <div style="font-size:13px;font-weight:500;color:var(--ink-body);margin-bottom:8px;margin-top:12px">Vendors</div>
+    <div id="eu-vendors-inner"><div style="font-size:12px;color:var(--ink-muted)">Loading…</div></div>
+    <div style="font-size:13px;font-weight:500;color:var(--ink-body);margin-bottom:8px;margin-top:12px">Daily request caps <span style="font-weight:400;color:var(--ink-muted);font-size:11px">(0 = unlimited, blank = env default)</span></div>
+    <div id="eu-caps-inner"><div style="font-size:12px;color:var(--ink-muted)">Loading…</div></div>
     <div id="eu-err" style="display:none;color:var(--danger-600);font-size:13px;margin-bottom:12px"></div>
     <div style="display:flex;gap:8px;margin-top:16px">
       <button class="btn btn-primary" id="eu-submit-btn">Save</button>
       <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
     </div>
   `);
-  api(`/api/admin/users/${encodeURIComponent(u.id)}/caps`).then(({ caps }) => {
-    const providers = ['linkedin_jobs', 'jsearch', 'jobs_api'];
-    const rows = providers.map(p => `
-      <div style="display:flex;align-items:center;gap:12px;margin-bottom:8px">
-        <span style="flex:1;font-size:13px;font-family:var(--f-mono)">${p}</span>
-        <input type="number" min="0" step="1" id="cap-${p}" value="${caps[p] ?? ''}" placeholder="env default" style="width:100px;height:32px;padding:0 8px;border:1px solid var(--hairline);border-radius:var(--r-sm);font-size:13px;font-family:var(--f-mono)"/>
-      </div>`).join('');
-    const el = document.getElementById('eu-caps-inner');
-    if (el) el.innerHTML = rows;
-  }).catch(() => {});
-  document.getElementById('eu-submit-btn')?.addEventListener('click', async () => {
-    const btn = document.getElementById('eu-submit-btn');
+  const submitBtn = /** @type {HTMLButtonElement|null} */ (document.getElementById('eu-submit-btn'));
+  api(`/api/admin/users/${encodeURIComponent(u.id)}/preferences`)
+    .then((pref) => {
+      const dbg = document.getElementById('eu-debug-inner');
+      if (dbg) {
+        dbg.innerHTML = `
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:10px">
+            <span style="font-size:13px;color:var(--ink-body)">Show pipeline params in job detail</span>
+            <label class="toggle-wrap"><input type="checkbox" class="toggle-input" id="eu-tog-pipeline-params" ${pref.dashboardShowJobPipelineParams ? 'checked' : ''}/><span class="toggle-track"></span></label>
+          </div>
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:10px">
+            <span style="font-size:13px;color:var(--ink-body)">Show received API data in job detail</span>
+            <label class="toggle-wrap"><input type="checkbox" class="toggle-input" id="eu-tog-api-raw" ${pref.dashboardShowJobApiRaw ? 'checked' : ''}/><span class="toggle-track"></span></label>
+          </div>
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:12px">
+            <span style="font-size:13px;color:var(--ink-body)">AI debug re-score button</span>
+            <label class="toggle-wrap"><input type="checkbox" class="toggle-input" id="eu-tog-ai-debug" ${pref.dashboardAiDebugRescoreEnabled ? 'checked' : ''}/><span class="toggle-track"></span></label>
+          </div>`;
+      }
+      const vend = document.getElementById('eu-vendors-inner');
+      const vendors = pref.vendors || [];
+      if (vend) {
+        vend.innerHTML = vendors.length
+          ? vendors.map(
+              (v) => `
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:8px">
+            <span style="font-size:13px">${esc(v.label)}${vendorUiAdminParenSuffix(v.id)} <span style="font-family:var(--f-mono);font-size:11px;color:var(--ink-muted)">${esc(v.id)}</span></span>
+            <label class="toggle-wrap"><input type="checkbox" class="toggle-input eu-vendor-tog" data-id="${esc(v.id)}" ${v.enabled ? 'checked' : ''}/><span class="toggle-track"></span></label>
+          </div>`,
+            ).join('')
+          : '<div style="font-size:12px;color:var(--ink-muted)">No vendors.</div>';
+      }
+      const capsEl = document.getElementById('eu-caps-inner');
+      const detail = pref.requestCapsDetail || {};
+      if (capsEl) {
+        const entries = Object.entries(detail);
+        capsEl.innerHTML = entries.length
+          ? entries
+              .map(([id, c]) => {
+                const rawDb = c.databaseOverride;
+                const valAttr =
+                  rawDb !== undefined && rawDb !== null && Number.isFinite(Number(rawDb))
+                    ? String(Math.floor(Number(rawDb)))
+                    : '';
+                const ph =
+                  c.envDefault !== undefined && c.envDefault !== null ? String(c.envDefault) : '';
+                return `
+            <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;flex-wrap:wrap">
+              <span style="flex:1;font-size:13px;font-family:var(--f-mono);min-width:100px">${esc(id)}<span style="font-family:var(--f-ui);font-size:13px">${vendorUiAdminParenSuffix(id)}</span></span>
+              <span style="font-size:11px;color:var(--ink-muted);white-space:nowrap">env ${ph !== '' ? esc(ph) : '—'}</span>
+              <input type="number" min="0" step="1" id="eu-cap-${esc(id)}" value="${valAttr}" placeholder="${ph !== '' ? esc(ph) : 'default'}" style="width:108px;height:32px;padding:0 8px;border:1px solid var(--hairline);border-radius:var(--r-sm);font-size:13px;font-family:var(--f-mono)"/>
+            </div>`;
+              })
+              .join('')
+          : '<div style="font-size:12px;color:var(--ink-muted)">No caps.</div>';
+      }
+    })
+    .catch((e) => {
+      const msg = esc(e.message || 'Failed to load');
+      document.getElementById('eu-debug-inner').innerHTML = `<div style="color:var(--danger-600);font-size:12px">${msg}</div>`;
+      document.getElementById('eu-vendors-inner').innerHTML = '';
+      document.getElementById('eu-caps-inner').innerHTML = '';
+    });
+
+  submitBtn?.addEventListener('click', async () => {
+    const btn = submitBtn;
     const errEl = document.getElementById('eu-err');
+    if (!btn || !errEl) return;
     errEl.style.display = 'none';
-    btn.disabled = true; btn.textContent = 'Saving…';
+    btn.disabled = true;
+    btn.textContent = 'Saving…';
     try {
       const body = {};
       const pw = document.getElementById('eu-password')?.value || '';
       if (pw) body.password = pw;
       body.role = document.getElementById('eu-role')?.value;
       await api(`/api/admin/users/${encodeURIComponent(u.id)}`, { method: 'PATCH', body: JSON.stringify(body) });
-      const providers = ['linkedin_jobs', 'jsearch', 'jobs_api'];
-      const caps = {};
-      for (const p of providers) {
-        const v = document.getElementById(`cap-${p}`)?.value;
-        if (v !== '' && v != null) { const n = parseInt(v, 10); if (!isNaN(n)) caps[p] = n; }
+
+      const togglesReady = !!document.getElementById('eu-tog-pipeline-params');
+      if (togglesReady) {
+        const overrides = {};
+        document.querySelectorAll('input[id^="eu-cap-"]').forEach((inp) => {
+          const id = inp.id.replace('eu-cap-', '');
+          const v = /** @type {HTMLInputElement} */ (inp).value.trim();
+          overrides[id] = v === '' ? null : Number(v);
+        });
+        const enabled = [...document.querySelectorAll('.eu-vendor-tog:checked')]
+          .map((el) => /** @type {HTMLElement} */ (el).dataset.id)
+          .filter(Boolean);
+        await api(`/api/admin/users/${encodeURIComponent(u.id)}/preferences`, {
+          method: 'PATCH',
+          body: JSON.stringify({
+            dashboardShowJobPipelineParams: !!document.getElementById('eu-tog-pipeline-params')?.checked,
+            dashboardShowJobApiRaw: !!document.getElementById('eu-tog-api-raw')?.checked,
+            dashboardAiDebugRescoreEnabled: !!document.getElementById('eu-tog-ai-debug')?.checked,
+            enabledJobSources: enabled,
+            requestCapOverrides: overrides,
+          }),
+        });
       }
-      await api(`/api/admin/users/${encodeURIComponent(u.id)}/caps`, { method: 'PATCH', body: JSON.stringify({ caps }) });
+
       closeModal();
       toast('User updated', 'success');
       loadAdminUsers();
-    } catch(e) {
-      errEl.textContent = e.message; errEl.style.display = '';
-      btn.disabled = false; btn.textContent = 'Save';
+    } catch (e) {
+      errEl.textContent = e instanceof Error ? e.message : String(e);
+      errEl.style.display = '';
+      btn.disabled = false;
+      btn.textContent = 'Save';
     }
   });
 }
@@ -2911,6 +3928,62 @@ async function init() {
   document.addEventListener('keydown', e => { if (e.key==='Escape') { closeDrawer(); closePopovers(); closeModal(); } });
   document.addEventListener('click', e => { if (!e.target.closest('.popover-wrap')) closePopovers(); });
 
+  document.getElementById('board-canvas')?.addEventListener('scroll', syncBoardScrollAffordance, { passive: true });
+  window.addEventListener('resize', syncBoardScrollAffordance);
+  document.getElementById('board-canvas')?.addEventListener('dragover', e => {
+    if (!dragId) return;
+    boardEdgeScrollFromDrag(e.clientX);
+  });
+  document.getElementById('board-canvas')?.addEventListener('pointerdown', e => {
+    const canvas = document.getElementById('board-canvas');
+    if (!canvas || e.button !== 0) return;
+    // Let cards, buttons, and column internals keep their own drag/click behavior.
+    if (e.target.closest('.kcol')) return;
+    const maxScroll = canvas.scrollWidth - canvas.clientWidth;
+    if (maxScroll <= 0) return;
+    e.preventDefault();
+    const startX = e.clientX;
+    const startScrollLeft = canvas.scrollLeft;
+    boardPanPointerDown(canvas);
+    boardHScroll.lastX = startX;
+    canvas.classList.add('drag-panning');
+    canvas.setPointerCapture?.(e.pointerId);
+    const onMove = (ev) => boardPanByPointer(canvas, startX, startScrollLeft, ev.clientX, 1.08);
+    const onUp = () => {
+      canvas.classList.remove('drag-panning');
+      boardPanPointerUp();
+      canvas.removeEventListener('pointermove', onMove);
+      canvas.removeEventListener('pointerup', onUp);
+      canvas.removeEventListener('pointercancel', onUp);
+    };
+    canvas.addEventListener('pointermove', onMove);
+    canvas.addEventListener('pointerup', onUp);
+    canvas.addEventListener('pointercancel', onUp);
+  });
+  document.getElementById('board-scroll-track')?.addEventListener('pointerdown', e => {
+    const canvas = document.getElementById('board-canvas');
+    const track = document.getElementById('board-scroll-track');
+    if (!canvas || !track) return;
+    const maxScroll = canvas.scrollWidth - canvas.clientWidth;
+    if (maxScroll <= 0) return;
+    e.preventDefault();
+    const startX = e.clientX;
+    const startScrollLeft = canvas.scrollLeft;
+    boardPanPointerDown(canvas);
+    boardHScroll.lastX = startX;
+    track.setPointerCapture?.(e.pointerId);
+    const onMove = (ev) => boardPanRailByPointer(canvas, startX, startScrollLeft, ev.clientX, 2.05);
+    const onUp = () => {
+      boardPanPointerUp();
+      track.removeEventListener('pointermove', onMove);
+      track.removeEventListener('pointerup', onUp);
+      track.removeEventListener('pointercancel', onUp);
+    };
+    track.addEventListener('pointermove', onMove);
+    track.addEventListener('pointerup', onUp);
+    track.addEventListener('pointercancel', onUp);
+  });
+
   document.getElementById('jobs-list')?.addEventListener('click', e => {
     const row = e.target.closest('.job-row'); if (row) handleRowClick(e, row.dataset.id);
   });
@@ -2935,6 +4008,9 @@ async function init() {
   });
 
   // Statistics
+  document.getElementById('board-gen-all')?.addEventListener('click', generateAllBoardDocs);
+  document.getElementById('board-refresh-all')?.addEventListener('click', refreshAllBoard);
+
   document.getElementById('stats-refresh')?.addEventListener('click', () => loadStats());
   document.getElementById('stats-days')?.addEventListener('change', () => loadStats());
 
@@ -3013,17 +4089,17 @@ async function init() {
     if (!setupAnalysis.trim()) { toast('Prompt cannot be empty', 'warning'); return; }
     try {
       await api('/api/ai-instructions', { method: 'PATCH', body: JSON.stringify({ setupAnalysis }) });
-      toast('Setup analysis instruction saved', 'success');
+      toast('CV analysis prompt saved', 'success');
       loadAdminSetupAnalysis();
     } catch(e) { toast('Failed: ' + e.message, 'error'); }
   });
   document.getElementById('admin-setup-analysis-reset-btn')?.addEventListener('click', async () => {
-    if (!confirm('Reset setup analysis instruction to built-in default?')) return;
+    if (!confirm('Reset CV analysis prompt to built-in default?')) return;
     try {
       const r = await api('/api/ai-instructions', { method: 'PATCH', body: JSON.stringify({ resetSetupAnalysis: true }) });
       const ta = document.getElementById('admin-setup-analysis-ta');
       if (ta) ta.value = r.setupAnalysis || '';
-      toast('Setup analysis instruction reset', 'success');
+      toast('CV analysis prompt reset', 'success');
     } catch(e) { toast('Failed: ' + e.message, 'error'); }
   });
   document.getElementById('admin-template-sync-btn')?.addEventListener('click', async () => {

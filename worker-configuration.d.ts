@@ -21,6 +21,36 @@ interface Env {
   /** Comma- or newline-separated list; only the first key is used (extras ignored). */
   RAPIDAPI_KEYS?: string;
   OPENAI_API_KEY?: string;
+  /** LinkedIn account email for Bright Data login (expiration scanner). */
+  LINKEDIN_EMAIL?: string;
+  /** LinkedIn account password for Bright Data login (expiration scanner). */
+  LINKEDIN_PASSWORD?: string;
+  /** Max invocations for Bright Data Browser API login (≥1). Default 6 when unset. `2` = one retry after first failure. */
+  LINKEDIN_LOGIN_MAX_ATTEMPTS?: string;
+  /** When `"true"`, login uses a single invocation (overrides `LINKEDIN_LOGIN_MAX_ATTEMPTS`). */
+  LINKEDIN_LOGIN_NO_RETRY?: string;
+  /** Bright Data account-level API key (for HTTP APIs; BD Browser auth is embedded in the WSS URL). */
+  BRIGHTDATA_API_KEY?: string;
+  /** Bright Data hosted Chromium WSS endpoint: wss://brd-customer-…@brd.superproxy.io:9222 */
+  BRIGHTDATA_BROWSER_WS_ENDPOINT?: string;
+  /** Bright Data ISP-proxy super-proxy host (default `brd.superproxy.io`). */
+  BRIGHTDATA_ISP_PROXY_HOST?: string;
+  /** Bright Data ISP-proxy super-proxy port as a string (default `"33335"`). */
+  BRIGHTDATA_ISP_PROXY_PORT?: string;
+  /** Bright Data ISP-proxy username: `brd-customer-<id>-zone-<zone_name>`. */
+  BRIGHTDATA_ISP_PROXY_USERNAME?: string;
+  /** Bright Data ISP-proxy password (per-zone). */
+  BRIGHTDATA_ISP_PROXY_PASSWORD?: string;
+  /** Browserbase account API key — header `X-BB-API-Key`. */
+  BROWSERBASE_API_KEY?: string;
+  /** Browserbase project ID (UUID) to bill the session to. */
+  BROWSERBASE_PROJECT_ID?: string;
+  /** `"true"` to request a Browserbase residential proxy (paid tier). Default off. */
+  BROWSERBASE_USE_PROXIES?: string;
+  /** Stealth mode: `""` (off, default), `"basic"`, or `"advanced"` (paid tier). */
+  BROWSERBASE_STEALTH?: string;
+  /** ISO-2 country to pin the LinkedIn login proxy/browser to (default `pl`). */
+  LINKEDIN_AUTH_COUNTRY?: string;
   /** Scoring model (default gpt-5-mini; override in env). */
   OPENAI_MODEL?: string;
   /** CV + cover letter drafts (default gpt-5.5). */

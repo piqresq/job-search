@@ -24,6 +24,7 @@ import {
 import { parsePostedAtUnixSeconds } from "./postedAt";
 import type { FetchJobsParams, JobSourceProvider, ProviderChunkResult } from "./types";
 import { flatHttpGetRequestRecord } from "../lib/httpRequestParamsRecord";
+import { pickJsearchApplyUrl, pickJsearchJobUrl } from "./jsearchLinks";
 import { parseRapidApiKeys } from "./rapidapiKeys";
 import { rapidApiFetchFirstKey } from "./rapidapiFetch";
 
@@ -205,6 +206,7 @@ type JSearchJob = {
   job_description?: string;
   job_apply_link?: string;
   job_google_link?: string;
+  apply_options?: unknown;
   job_city?: string;
   job_state?: string;
   job_country?: string;
@@ -250,12 +252,12 @@ function normalizeOne(
   const externalId = pickString(raw.job_id);
   const title = pickString(raw.job_title);
   const company = pickString(raw.employer_name);
-  const applyUrl = pickString(raw.job_apply_link) ?? pickString(raw.job_google_link);
+  const applyUrl = pickJsearchApplyUrl(raw);
   const description = pickString(raw.job_description) ?? "";
 
   if (!externalId || !title || !company) return null;
 
-  const jobUrl = pickString(raw.job_google_link) ?? applyUrl ?? "";
+  const jobUrl = pickJsearchJobUrl(raw) ?? "";
   const location = [raw.job_city, raw.job_state, raw.job_country]
     .map((x) => (typeof x === "string" ? x : ""))
     .filter(Boolean)

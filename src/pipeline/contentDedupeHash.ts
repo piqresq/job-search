@@ -22,15 +22,26 @@ export function isContentDedupeHashable(job: NormalizedJob): boolean {
   return seg(job.company).length > 0 && seg(job.title).length > 0;
 }
 
+function countrySeg(job: NormalizedJob, includeRemoteCountry: boolean): string {
+  // Remote listings are often syndicated per country for market reach; keep one canonical copy.
+  if (job.workplaceType === "Remote" && !includeRemoteCountry) return "";
+  return seg(job.country || job.searchCountryLabel || "");
+}
+
 /**
  * Pipe-separated material before SHA-256 (order: company|title|workplace|country|employmentType|salary).
+ * For remote listings, country is intentionally blank so per-country reposts dedupe together.
  * Caller should pass a job with {@link assignWorkplaceTypeToJob} applied so `workplaceType` is set.
  */
 export function buildContentDedupeFingerprint(job: NormalizedJob): string {
+  return buildContentDedupeFingerprintInternal(job, false);
+}
+
+function buildContentDedupeFingerprintInternal(job: NormalizedJob, includeRemoteCountry: boolean): string {
   const company = seg(job.company);
   const title = seg(job.title);
   const wp = seg(job.workplaceType || "");
-  const country = seg(job.country || job.searchCountryLabel || "");
+  const country = countrySeg(job, includeRemoteCountry);
   const empRaw = job.employmentType != null ? String(job.employmentType).trim() : "";
   const emp = empRaw ? normalizeEmploymentMatchKey(empRaw) : "";
   const sal = salarySeg(job);
@@ -47,4 +58,13 @@ export async function sha256Hex32Utf8(s: string): Promise<string> {
 export async function computeContentDedupeHash(job: NormalizedJob): Promise<string | null> {
   if (!isContentDedupeHashable(job)) return null;
   return sha256Hex32Utf8(buildContentDedupeFingerprint(job));
+}
+
+/**
+ * Previous stored hash contract, used only to match older rows whose remote
+ * fingerprints still include country.
+ */
+export async function computeCountryInclusiveContentDedupeHash(job: NormalizedJob): Promise<string | null> {
+  if (!isContentDedupeHashable(job)) return null;
+  return sha256Hex32Utf8(buildContentDedupeFingerprintInternal(job, true));
 }

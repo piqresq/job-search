@@ -104,6 +104,12 @@ function deriveFingerprint(row: AppLogWrite): string | null {
   return parts.join("|").slice(0, 255);
 }
 
+function userIdFromMeta(meta: unknown): string | undefined {
+  if (!meta || typeof meta !== "object" || Array.isArray(meta)) return undefined;
+  const value = (meta as { userId?: unknown }).userId;
+  return typeof value === "string" && value.trim() ? value.trim().slice(0, 128) : undefined;
+}
+
 /**
  * Uniform app logging: always logs to console; persists to D1 when DB is available.
  */
@@ -112,7 +118,7 @@ export async function writeAppLog(env: Env, row: AppLogWrite): Promise<void> {
   if (!shouldPersist(row.level)) return;
   try {
     await insertAppLog(env.DB, {
-      userId: row.userId ?? undefined,
+      userId: row.userId ?? userIdFromMeta(row.meta),
       level: row.level,
       scope: row.scope,
       message: row.message,

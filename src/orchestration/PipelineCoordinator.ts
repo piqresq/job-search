@@ -1,7 +1,7 @@
 import { DurableObject } from "cloudflare:workers";
 import { getPipelineFetchAllowed, getResolvedProviderDailyRequestCap } from "../db/appSettings";
 import { clearProviderExhaustionState, rolloverProviderCycleState } from "../db/providerScheduler";
-import { BOOTSTRAP_ADMIN_ID } from "../db/users";
+import { BOOTSTRAP_ADMIN_ID, getUserById } from "../db/users";
 import {
   getProviderUtcDayRequestCount,
   setLinkedinFreezeUntil,
@@ -198,6 +198,36 @@ export class PipelineCoordinator extends DurableObject<Env> {
     await this.ctx.storage.put(STATE_KEY, state);
   }
 
+  private async isActiveOwner(): Promise<boolean> {
+    const user = await getUserById(this.env.DB, this.userId);
+    return user?.status === "active";
+  }
+
+  private async resetInactiveUserState(now = Math.floor(Date.now() / 1000)): Promise<CoordinatorState> {
+    const state = newState(now);
+    await this.ctx.storage.delete(STATE_KEY);
+    await this.ctx.storage.deleteAlarm();
+    return state;
+  }
+
+  private async pauseIfInactiveOwner(now: number): Promise<CoordinatorState | null> {
+    if (await this.isActiveOwner()) return null;
+    const state = await this.resetInactiveUserState(now);
+    observabilityLog(
+      "debug",
+      "orchestrator",
+      "Coordinator reset for deleted or disabled user",
+      { userId: this.userId },
+      {
+        category: "orchestration",
+        eventType: "coordinator_inactive_user_reset",
+        phase: "inactive_user_guard",
+        statusKind: "paused",
+      },
+    );
+    return state;
+  }
+
   private async recordOrchestrationError(
     state: CoordinatorState,
     message: string,
@@ -216,10 +246,12 @@ export class PipelineCoordinator extends DurableObject<Env> {
       "orchestrator",
       "Orchestration failure",
       {
+        userId: this.userId,
         phase: err.phase,
         message: err.message.slice(0, 500),
       },
       {
+        userId: this.userId,
         category: "orchestration",
         eventType: "orchestration_failure",
         cycleId: state.cycleId,
@@ -239,8 +271,9 @@ export class PipelineCoordinator extends DurableObject<Env> {
         this.env,
         "orchestrator",
         "Coordinator step interrupted by Durable Object deploy/reset (benign)",
-        { phase, detail: errMsg(e).slice(0, 500) },
+        { userId: this.userId, phase, detail: errMsg(e).slice(0, 500) },
         {
+          userId: this.userId,
           category: "orchestration",
           eventType: "do_deploy_reset",
           phase,
@@ -336,12 +369,14 @@ export class PipelineCoordinator extends DurableObject<Env> {
       "orchestrator",
       "Starting new pipeline cycle",
       {
+        userId: this.userId,
         cycleId: state.cycleId,
         previousCycleId,
         providers: enabled,
         reason: "utc_day_rollover",
       },
       {
+        userId: this.userId,
         category: "orchestration",
         eventType: "cycle_started",
         cycleId: state.cycleId,
@@ -394,10 +429,12 @@ export class PipelineCoordinator extends DurableObject<Env> {
       "orchestrator",
       "Fetch gate blocked coordinator",
       {
+        userId: this.userId,
         reason: gate.reason,
         nextAllowedAt: state.wakeAt,
       },
       {
+        userId: this.userId,
         category: "orchestration",
         eventType: "fetch_gate_blocked",
         cycleId: state.cycleId,
@@ -552,6 +589,9 @@ export class PipelineCoordinator extends DurableObject<Env> {
 
   private async pump(state: CoordinatorState, now: number): Promise<CoordinatorState> {
     try {
+      const inactiveState = await this.pauseIfInactiveOwner(now);
+      if (inactiveState) return inactiveState;
+
       let enabled: JobSourceId[];
       try {
         enabled = await this.enabledProviderIds();
@@ -598,11 +638,13 @@ export class PipelineCoordinator extends DurableObject<Env> {
             "orchestrator",
             "Starting new pipeline cycle",
             {
+              userId: this.userId,
               cycleId: state.cycleId,
               providers: enabled,
               reason: "completed_cycle_wait_elapsed",
             },
             {
+              userId: this.userId,
               category: "orchestration",
               eventType: "cycle_started",
               cycleId: state.cycleId,
@@ -619,10 +661,12 @@ export class PipelineCoordinator extends DurableObject<Env> {
           "orchestrator",
           "Starting new pipeline cycle",
           {
+            userId: this.userId,
             cycleId: state.cycleId,
             providers: enabled,
           },
           {
+            userId: this.userId,
             category: "orchestration",
             eventType: "cycle_started",
             cycleId: state.cycleId,
@@ -664,6 +708,7 @@ export class PipelineCoordinator extends DurableObject<Env> {
             "orchestrator",
             "Pending provider chunk lease expired; releasing slot",
             {
+              userId: this.userId,
               cycleId: state.cycleId,
               pendingSeq: state.pendingSeq,
               pendingProviderId: state.pendingProviderId,
@@ -671,6 +716,7 @@ export class PipelineCoordinator extends DurableObject<Env> {
               pendingLeaseExpiresAt: state.pendingLeaseExpiresAt,
             },
             {
+              userId: this.userId,
               category: "queue",
               eventType: "pending_chunk_lease_expired",
               cycleId: state.cycleId,
@@ -777,11 +823,13 @@ export class PipelineCoordinator extends DurableObject<Env> {
           "orchestrator",
           "Queued provider chunk",
           {
+            userId: this.userId,
             cycleId: state.cycleId,
             providerId: runnableProvider,
             seq: state.pendingSeq,
           },
           {
+            userId: this.userId,
             category: "queue",
             eventType: "provider_chunk_queued",
             cycleId: state.cycleId,
@@ -812,11 +860,13 @@ export class PipelineCoordinator extends DurableObject<Env> {
           "orchestrator",
           "All providers done for cycle; sleeping",
           {
+            userId: this.userId,
             cycleId: state.cycleId,
             wakeAt,
             wakeAtIso: new Date(wakeAt * 1000).toISOString(),
           },
           {
+            userId: this.userId,
             category: "orchestration",
             eventType: "cycle_sleeping",
             cycleId: state.cycleId,
@@ -873,6 +923,16 @@ export class PipelineCoordinator extends DurableObject<Env> {
   private async handleClearRequestCapPause(body: { providerIds?: unknown }): Promise<Response> {
     try {
       const now = Math.floor(Date.now() / 1000);
+      const inactiveState = await this.pauseIfInactiveOwner(now);
+      if (inactiveState) {
+        return json({
+          ok: true,
+          cleared: 0,
+          status: inactiveState.status,
+          wakeAt: inactiveState.wakeAt,
+        });
+      }
+
       let state = await this.loadState();
       const rawIds = Array.isArray(body.providerIds) ? body.providerIds : [];
       const clearedIds: JobSourceId[] = [];
@@ -905,9 +965,11 @@ export class PipelineCoordinator extends DurableObject<Env> {
         "orchestrator",
         "Cleared request-cap pause (dashboard raised cap)",
         {
+          userId: this.userId,
           providerIds: clearedIds,
         },
         {
+          userId: this.userId,
           category: "dashboard",
           eventType: "request_cap_pause_cleared",
           phase: "clear_request_cap_pause",
@@ -939,6 +1001,17 @@ export class PipelineCoordinator extends DurableObject<Env> {
   private async handleClearExhaustPause(): Promise<Response> {
     try {
       const now = Math.floor(Date.now() / 1000);
+      const inactiveState = await this.pauseIfInactiveOwner(now);
+      if (inactiveState) {
+        return json({
+          ok: true,
+          clearedProviders: 0,
+          status: inactiveState.status,
+          wakeAt: inactiveState.wakeAt,
+          cycleId: inactiveState.cycleId,
+        });
+      }
+
       await setLinkedinFreezeUntil(this.env.DB, this.userId, 0, now);
 
       let state = await this.loadState();
@@ -977,6 +1050,7 @@ export class PipelineCoordinator extends DurableObject<Env> {
         "orchestrator",
         "Exhaust / freeze pause cleared (manual)",
         {
+          userId: this.userId,
           clearedProviders,
           plannerResetProviders,
           cycleId: state.cycleId,
@@ -985,6 +1059,7 @@ export class PipelineCoordinator extends DurableObject<Env> {
           enabled,
         },
         {
+          userId: this.userId,
           category: "orchestration",
           eventType: "exhaust_pause_cleared",
           cycleId: state.cycleId,
@@ -1011,6 +1086,19 @@ export class PipelineCoordinator extends DurableObject<Env> {
   private async handleStart(body: { reason?: string }): Promise<Response> {
     try {
       const now = Math.floor(Date.now() / 1000);
+      const inactiveState = await this.pauseIfInactiveOwner(now);
+      if (inactiveState) {
+        const out: CoordinatorStartResponse = {
+          ok: true,
+          started: false,
+          status: inactiveState.status,
+          cycleId: inactiveState.cycleId,
+          wakeAt: inactiveState.wakeAt,
+          note: "inactive_user",
+        };
+        return json(out);
+      }
+
       const enabled = await this.enabledProviderIds();
       let state = await this.loadState();
       if (cycleNeedsUtcDayRollover(state.cycleId, now)) {
@@ -1076,6 +1164,23 @@ export class PipelineCoordinator extends DurableObject<Env> {
 
   private async handleGetStatus(): Promise<Response> {
     try {
+      const now = Math.floor(Date.now() / 1000);
+      const inactiveState = await this.pauseIfInactiveOwner(now);
+      if (inactiveState) {
+        const out: CoordinatorStatusResponse = {
+          ok: true,
+          status: inactiveState.status,
+          wakeAt: inactiveState.wakeAt,
+          cycleId: inactiveState.cycleId,
+          pendingSeq: inactiveState.pendingSeq,
+          pendingProviderId: inactiveState.pendingProviderId,
+          orchestrationError: inactiveState.orchestrationError,
+          lastEventAt: inactiveState.lastEventAt,
+          providerOrchestration: {},
+        };
+        return json(out);
+      }
+
       const state = await this.loadState();
       const providerOrchestration: CoordinatorStatusResponse["providerOrchestration"] = {};
       for (const id of Object.keys(state.providerStates) as JobSourceId[]) {
@@ -1112,8 +1217,9 @@ export class PipelineCoordinator extends DurableObject<Env> {
         this.env,
         "orchestrator",
         "Coordinator GET /status failed",
-        { error: errMsg(e).slice(0, 500) },
+        { userId: this.userId, error: errMsg(e).slice(0, 500) },
         {
+          userId: this.userId,
           category: "orchestration",
           eventType: "coordinator_status_failed",
           phase: "handleGetStatus",
@@ -1127,6 +1233,9 @@ export class PipelineCoordinator extends DurableObject<Env> {
   private async handleOrchestrationErrorPost(body: { message?: string; phase?: string }): Promise<Response> {
     try {
       const now = Math.floor(Date.now() / 1000);
+      const inactiveState = await this.pauseIfInactiveOwner(now);
+      if (inactiveState) return json({ ok: true });
+
       const state = await this.loadState();
       const msg = String(body.message ?? "unknown").slice(0, 2000);
       const phase = String(body.phase ?? "external").slice(0, 200);
@@ -1138,10 +1247,12 @@ export class PipelineCoordinator extends DurableObject<Env> {
         "orchestrator",
         "Orchestration error (external)",
         {
+          userId: this.userId,
           phase,
           message: msg.slice(0, 500),
         },
         {
+          userId: this.userId,
           category: "orchestration",
           eventType: "orchestration_error_external",
           cycleId: state.cycleId,
@@ -1155,8 +1266,9 @@ export class PipelineCoordinator extends DurableObject<Env> {
         this.env,
         "orchestrator",
         "Persist external orchestration error failed",
-        { error: errMsg(e).slice(0, 500) },
+        { userId: this.userId, error: errMsg(e).slice(0, 500) },
         {
+          userId: this.userId,
           category: "orchestration",
           eventType: "orchestration_error_post_persist_failed",
           phase: "handleOrchestrationErrorPost",
@@ -1167,11 +1279,10 @@ export class PipelineCoordinator extends DurableObject<Env> {
     }
   }
 
-  private async handleResetDeletedUser(): Promise<Response> {
+  private async handleResetInactiveUser(): Promise<Response> {
     const now = Math.floor(Date.now() / 1000);
-    await this.ctx.storage.delete(STATE_KEY);
-    await this.ctx.storage.deleteAlarm();
-    return json({ ok: true, status: newState(now).status });
+    const state = await this.resetInactiveUserState(now);
+    return json({ ok: true, status: state.status, cleared: true });
   }
 
   private async handleClaim(body: {
@@ -1180,8 +1291,14 @@ export class PipelineCoordinator extends DurableObject<Env> {
     providerId?: JobSourceId;
   }): Promise<Response> {
     try {
-      const state = await this.loadState();
       const now = Math.floor(Date.now() / 1000);
+      const inactiveState = await this.pauseIfInactiveOwner(now);
+      if (inactiveState) {
+        const out: CoordinatorClaimResponse = { ok: true, execute: false, reason: "inactive_user" };
+        return json(out);
+      }
+
+      const state = await this.loadState();
       let gate: Awaited<ReturnType<typeof getPipelineFetchAllowed>>;
       try {
         gate = await getPipelineFetchAllowed(this.env, this.userId);
@@ -1235,6 +1352,7 @@ export class PipelineCoordinator extends DurableObject<Env> {
           "orchestrator",
           "Re-claiming pending provider chunk after queue redelivery",
           {
+            userId: this.userId,
             cycleId: body.cycleId,
             seq: body.seq,
             providerId: body.providerId,
@@ -1242,6 +1360,7 @@ export class PipelineCoordinator extends DurableObject<Env> {
             previousLeaseExpiresAt: state.pendingLeaseExpiresAt,
           },
           {
+            userId: this.userId,
             category: "queue",
             eventType: "pending_chunk_reclaimed",
             cycleId: body.cycleId,
@@ -1273,8 +1392,19 @@ export class PipelineCoordinator extends DurableObject<Env> {
     stage?: string;
   }): Promise<Response> {
     try {
-      const state = await this.loadState();
       const now = Math.floor(Date.now() / 1000);
+      const inactiveState = await this.pauseIfInactiveOwner(now);
+      if (inactiveState) {
+        const out: CoordinatorHeartbeatResponse = {
+          ok: true,
+          extended: false,
+          leaseExpiresAt: inactiveState.pendingLeaseExpiresAt,
+          reason: "inactive_user",
+        };
+        return json(out);
+      }
+
+      const state = await this.loadState();
       if (
         !body.cycleId ||
         typeof body.seq !== "number" ||
@@ -1326,6 +1456,13 @@ export class PipelineCoordinator extends DurableObject<Env> {
 
   private async handleDedupe(body: { cycleId?: string; keys?: string[] }): Promise<Response> {
     try {
+      const inactiveState = await this.pauseIfInactiveOwner(Math.floor(Date.now() / 1000));
+      if (inactiveState) {
+        const keys = Array.isArray(body.keys) ? body.keys : [];
+        const out: CoordinatorDedupeResponse = { ok: true, keep: keys.map(() => false) };
+        return json(out);
+      }
+
       const state = await this.loadState();
       const keys = Array.isArray(body.keys) ? body.keys : [];
       const keep: boolean[] = [];
@@ -1361,6 +1498,16 @@ export class PipelineCoordinator extends DurableObject<Env> {
   private async handleReport(body: ProviderChunkReport): Promise<Response> {
     const now = Math.floor(Date.now() / 1000);
     try {
+      const inactiveState = await this.pauseIfInactiveOwner(now);
+      if (inactiveState) {
+        const out: CoordinatorReportResponse = {
+          ok: true,
+          status: inactiveState.status,
+          wakeAt: inactiveState.wakeAt,
+        };
+        return json(out);
+      }
+
       let state = await this.loadState();
       if (
         !body.cycleId ||
@@ -1423,6 +1570,7 @@ export class PipelineCoordinator extends DurableObject<Env> {
           "orchestrator",
           "Vendor quota exhausted; provider paused until next cycle window",
           {
+            userId: this.userId,
             cycleId: body.cycleId,
             providerId: body.providerId,
             seq: body.seq,
@@ -1430,6 +1578,7 @@ export class PipelineCoordinator extends DurableObject<Env> {
             meta: body.providerResult.meta ?? null,
           },
           {
+            userId: this.userId,
             category: "vendor",
             eventType: "provider_vendor_quota_exhausted",
             cycleId: body.cycleId,
@@ -1448,6 +1597,7 @@ export class PipelineCoordinator extends DurableObject<Env> {
         "orchestrator",
         "Provider chunk finished",
         {
+          userId: this.userId,
           cycleId: body.cycleId,
           providerId: body.providerId,
           seq: body.seq,
@@ -1455,6 +1605,7 @@ export class PipelineCoordinator extends DurableObject<Env> {
           processing: body.processing,
         },
         {
+          userId: this.userId,
           category: "queue",
           eventType: "provider_chunk_finished",
           cycleId: body.cycleId,
@@ -1500,8 +1651,11 @@ export class PipelineCoordinator extends DurableObject<Env> {
       if (request.method === "POST" && url.pathname === "/orchestration-error") {
         return this.handleOrchestrationErrorPost((body ?? {}) as { message?: string; phase?: string });
       }
-      if (request.method === "POST" && url.pathname === "/reset-deleted-user") {
-        return this.handleResetDeletedUser();
+      if (
+        request.method === "POST" &&
+        (url.pathname === "/reset-inactive-user" || url.pathname === "/reset-deleted-user")
+      ) {
+        return this.handleResetInactiveUser();
       }
       if (request.method === "POST" && url.pathname === "/start") {
         return this.handleStart((body ?? {}) as { reason?: string });
@@ -1533,11 +1687,13 @@ export class PipelineCoordinator extends DurableObject<Env> {
         "orchestrator",
         "Coordinator fetch handler threw",
         {
+          userId: this.userId,
           pathname: url.pathname,
           method: request.method,
           error: errMsg(e).slice(0, 500),
         },
         {
+          userId: this.userId,
           category: "orchestration",
           eventType: "coordinator_fetch_failed",
           phase: url.pathname,
@@ -1551,6 +1707,9 @@ export class PipelineCoordinator extends DurableObject<Env> {
   async alarm(): Promise<void> {
     try {
       const now = Math.floor(Date.now() / 1000);
+      const inactiveState = await this.pauseIfInactiveOwner(now);
+      if (inactiveState) return;
+
       let state = await this.loadState();
       const enabled = await this.enabledProviderIds();
       if (this.allEnabledProvidersDone(state, enabled) && state.wakeAt && state.wakeAt <= now) {
@@ -1560,9 +1719,11 @@ export class PipelineCoordinator extends DurableObject<Env> {
           "orchestrator",
           "Alarm woke coordinator for a new cycle",
           {
+            userId: this.userId,
             cycleId: state.cycleId,
           },
           {
+            userId: this.userId,
             category: "orchestration",
             eventType: "alarm_cycle_started",
             cycleId: state.cycleId,

@@ -40,6 +40,15 @@ const OPENAI_SCORING_INSTRUCTION_KEY = "openai_scoring_instruction";
 const OPENAI_SCORING_POLICY_INSTRUCTION_KEY = "openai_scoring_policy_instruction";
 const OPENAI_DRAFT_INSTRUCTION_KEY = "openai_draft_instruction";
 const SETUP_ANALYSIS_PROMPT_KEY = "setup_analysis_prompt";
+const DASHBOARD_JOB_LIST_PREFS_KEY = "dashboard_job_list_prefs";
+const DASHBOARD_FILTERED_JOB_LIST_PREFS_KEY = "dashboard_filtered_job_list_prefs";
+const BOARD_AUTO_EXPIRATION_CHECK_ENABLED_KEY = "board_auto_expiration_check_enabled";
+/** Stores the UTC date (YYYY-MM-DD) of the last scan run that had blocked/transient failures,
+ *  so the login banner is shown at most once per day. Empty string = no pending notice. */
+const LAST_FAILED_EXPIRATION_SCAN_NOTICE_DATE_KEY = "last_failed_expiration_scan_notice_date";
+/** JSON-serialised summary of the most recent expiration scan (automated or manual Refresh All).
+ *  Replaced each scan; cleared on dismiss. */
+const LAST_EXPIRATION_SCAN_SUMMARY_KEY = "last_expiration_scan_summary";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Internal helpers — all user-scoped
@@ -61,6 +70,15 @@ async function setSettingValue(db: D1Database, userId: string, key: string, valu
     )
     .bind(userId, key, value)
     .run();
+}
+
+function setSettingStatement(db: D1Database, userId: string, key: string, value: string): D1PreparedStatement {
+  return db
+    .prepare(
+      `INSERT INTO app_settings (user_id, key, value) VALUES (?, ?, ?)
+       ON CONFLICT(user_id, key) DO UPDATE SET value = excluded.value`,
+    )
+    .bind(userId, key, value);
 }
 
 async function getJsonStringArray(db: D1Database, userId: string, key: string): Promise<string[] | null> {
@@ -157,7 +175,8 @@ export async function getDashboardShowJobPipelineParams(
     .prepare("SELECT value FROM app_settings WHERE user_id = ? AND key = ?")
     .bind(userId, DASHBOARD_SHOW_JOB_PIPELINE_PARAMS_KEY)
     .first<{ value: string }>();
-  return parseTruthySetting(row?.value, true);
+  // Default off when unset (new users have no row; admin enables per user).
+  return parseTruthySetting(row?.value, false);
 }
 
 export async function setDashboardShowJobPipelineParams(
@@ -173,7 +192,8 @@ export async function getDashboardShowJobApiRaw(db: D1Database, userId: string):
     .prepare("SELECT value FROM app_settings WHERE user_id = ? AND key = ?")
     .bind(userId, DASHBOARD_SHOW_JOB_API_RAW_KEY)
     .first<{ value: string }>();
-  return parseTruthySetting(row?.value, true);
+  // Default off when unset (new users have no row; admin enables per user).
+  return parseTruthySetting(row?.value, false);
 }
 
 export async function setDashboardShowJobApiRaw(
@@ -202,6 +222,91 @@ export async function setDashboardAiDebugRescoreEnabled(
   enabled: boolean,
 ): Promise<void> {
   await setSettingValue(db, userId, DASHBOARD_AI_DEBUG_RESCORE_ENABLED_KEY, enabled ? "1" : "0");
+}
+
+/** Auto-check expired board listings daily (default: true). */
+export async function getBoardAutoExpirationCheckEnabled(
+  db: D1Database,
+  userId: string,
+): Promise<boolean> {
+  const row = await db
+    .prepare("SELECT value FROM app_settings WHERE user_id = ? AND key = ?")
+    .bind(userId, BOARD_AUTO_EXPIRATION_CHECK_ENABLED_KEY)
+    .first<{ value: string }>();
+  return parseTruthySetting(row?.value, true);
+}
+
+export async function setBoardAutoExpirationCheckEnabled(
+  db: D1Database,
+  userId: string,
+  enabled: boolean,
+): Promise<void> {
+  await setSettingValue(db, userId, BOARD_AUTO_EXPIRATION_CHECK_ENABLED_KEY, enabled ? "1" : "0");
+}
+
+/**
+ * Returns the UTC date string (YYYY-MM-DD) of the last failed expiration scan
+ * that hasn't been dismissed yet, or null if there is no pending notice.
+ */
+export async function getLastFailedExpirationScanNoticeDate(
+  db: D1Database,
+  userId: string,
+): Promise<string | null> {
+  const row = await db
+    .prepare("SELECT value FROM app_settings WHERE user_id = ? AND key = ?")
+    .bind(userId, LAST_FAILED_EXPIRATION_SCAN_NOTICE_DATE_KEY)
+    .first<{ value: string }>();
+  const v = row?.value?.trim();
+  return v || null;
+}
+
+export async function setLastFailedExpirationScanNoticeDate(
+  db: D1Database,
+  userId: string,
+  dateYmd: string | null,
+): Promise<void> {
+  await setSettingValue(db, userId, LAST_FAILED_EXPIRATION_SCAN_NOTICE_DATE_KEY, dateYmd ?? "");
+}
+
+// ─── Expiration scan summary (replaces the old "failed date" approach) ────────
+
+export interface ExpirationScanSummary {
+  /** UTC date (YYYY-MM-DD) the scan was written. */
+  date: string;
+  /** Total board jobs processed in the scan. */
+  scanned: number;
+  /** Jobs confirmed expired (moved to Expired column). */
+  expired: number;
+  /** Jobs that couldn't be determined (blocked + transient + unclear). */
+  failed: number;
+}
+
+export async function getLastExpirationScanSummary(
+  db: D1Database,
+  userId: string,
+): Promise<ExpirationScanSummary | null> {
+  const raw = await getSettingValue(db, userId, LAST_EXPIRATION_SCAN_SUMMARY_KEY);
+  if (!raw?.trim()) return null;
+  try {
+    return JSON.parse(raw) as ExpirationScanSummary;
+  } catch {
+    return null;
+  }
+}
+
+export async function setLastExpirationScanSummary(
+  db: D1Database,
+  userId: string,
+  summary: ExpirationScanSummary,
+): Promise<void> {
+  await setSettingValue(db, userId, LAST_EXPIRATION_SCAN_SUMMARY_KEY, JSON.stringify(summary));
+}
+
+export async function clearLastExpirationScanSummary(
+  db: D1Database,
+  userId: string,
+): Promise<void> {
+  await setSettingValue(db, userId, LAST_EXPIRATION_SCAN_SUMMARY_KEY, "");
 }
 
 export async function getSearchRoleTiers(db: D1Database, userId: string): Promise<SearchRoleTiers> {
@@ -416,6 +521,14 @@ export async function setEnabledJobSourceIds(
   await setSettingValue(db, userId, ENABLED_JOB_SOURCES_KEY, JSON.stringify(unique));
 }
 
+export type AdminUserPreferencePatch = {
+  dashboardShowJobPipelineParams?: boolean;
+  dashboardShowJobApiRaw?: boolean;
+  dashboardAiDebugRescoreEnabled?: boolean;
+  enabledJobSources?: readonly JobSourceId[];
+  requestCapOverrides?: Partial<Record<JobSourceId, number | null>>;
+};
+
 const PROVIDER_CAP_IDS: readonly JobSourceId[] = ["linkedin_jobs", "jsearch", "jobs_api"];
 
 function parsePositiveIntFromEnv(raw: string | undefined): number {
@@ -497,6 +610,68 @@ export async function patchProviderRequestCapOverrides(
   }
 }
 
+export async function patchAdminUserPreferences(
+  db: D1Database,
+  userId: string,
+  patch: AdminUserPreferencePatch,
+): Promise<void> {
+  const statements: D1PreparedStatement[] = [];
+  if (typeof patch.dashboardShowJobPipelineParams === "boolean") {
+    statements.push(
+      setSettingStatement(
+        db,
+        userId,
+        DASHBOARD_SHOW_JOB_PIPELINE_PARAMS_KEY,
+        patch.dashboardShowJobPipelineParams ? "1" : "0",
+      ),
+    );
+  }
+  if (typeof patch.dashboardShowJobApiRaw === "boolean") {
+    statements.push(
+      setSettingStatement(db, userId, DASHBOARD_SHOW_JOB_API_RAW_KEY, patch.dashboardShowJobApiRaw ? "1" : "0"),
+    );
+  }
+  if (typeof patch.dashboardAiDebugRescoreEnabled === "boolean") {
+    statements.push(
+      setSettingStatement(
+        db,
+        userId,
+        DASHBOARD_AI_DEBUG_RESCORE_ENABLED_KEY,
+        patch.dashboardAiDebugRescoreEnabled ? "1" : "0",
+      ),
+    );
+  }
+  // Non-empty only: `[]` is truthy in JS — never persist an empty vendor list from this helper.
+  if (patch.enabledJobSources?.length) {
+    statements.push(setSettingStatement(db, userId, ENABLED_JOB_SOURCES_KEY, JSON.stringify(patch.enabledJobSources)));
+  }
+  const overridesPatch = patch.requestCapOverrides;
+  const capKeys = overridesPatch !== undefined ? Object.keys(overridesPatch) : [];
+  if (capKeys.length > 0) {
+    const current = await getProviderRequestCapOverrides(db, userId);
+    const next: Partial<Record<JobSourceId, number>> = { ...current };
+    const overridesIn = overridesPatch!;
+    for (const id of PROVIDER_CAP_IDS) {
+      if (!Object.prototype.hasOwnProperty.call(overridesIn, id)) continue;
+      const override = overridesIn[id];
+      if (override === null) {
+        delete next[id];
+      } else if (typeof override === "number" && Number.isFinite(override) && override >= 0) {
+        next[id] = Math.floor(override);
+      }
+    }
+    if (Object.keys(next).length === 0) {
+      statements.push(
+        db.prepare("DELETE FROM app_settings WHERE user_id = ? AND key = ?").bind(userId, PROVIDER_REQUEST_CAPS_KEY),
+      );
+    } else {
+      statements.push(setSettingStatement(db, userId, PROVIDER_REQUEST_CAPS_KEY, JSON.stringify(next)));
+    }
+  }
+
+  if (statements.length > 0) await db.batch(statements);
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // OpenAI instruction keys (per-user)
 // ─────────────────────────────────────────────────────────────────────────────
@@ -561,6 +736,26 @@ export async function setStoredSetupAnalysisPrompt(
   await setSettingValue(db, userId, SETUP_ANALYSIS_PROMPT_KEY, value);
 }
 
+export async function getDashboardJobListPrefs(db: D1Database, userId: string): Promise<string | null> {
+  return getSettingValue(db, userId, DASHBOARD_JOB_LIST_PREFS_KEY);
+}
+
+export async function setDashboardJobListPrefs(db: D1Database, userId: string, value: string): Promise<void> {
+  await setSettingValue(db, userId, DASHBOARD_JOB_LIST_PREFS_KEY, value);
+}
+
+export async function getDashboardFilteredJobListPrefs(db: D1Database, userId: string): Promise<string | null> {
+  return getSettingValue(db, userId, DASHBOARD_FILTERED_JOB_LIST_PREFS_KEY);
+}
+
+export async function setDashboardFilteredJobListPrefs(
+  db: D1Database,
+  userId: string,
+  value: string,
+): Promise<void> {
+  await setSettingValue(db, userId, DASHBOARD_FILTERED_JOB_LIST_PREFS_KEY, value);
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Setup wizard completion marker
 // ─────────────────────────────────────────────────────────────────────────────
@@ -583,6 +778,39 @@ export async function setSetupWizardCompletedAt(
   ts: number,
 ): Promise<void> {
   await setSettingValue(db, userId, SETUP_WIZARD_COMPLETED_AT_KEY, String(Math.floor(ts)));
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// LinkedIn manual session cookie (global, stored under admin user)
+// ─────────────────────────────────────────────────────────────────────────────
+
+const LINKEDIN_MANUAL_LI_AT_KEY = "linkedin_manual_li_at";
+const LINKEDIN_MANUAL_LI_AT_SAVED_AT_KEY = "linkedin_manual_li_at_saved_at";
+
+/** Returns the stored li_at value, or null if not set / empty. */
+export async function getLinkedinManualCookie(db: D1Database): Promise<string | null> {
+  const v = await getSettingValue(db, BOOTSTRAP_ADMIN_ID, LINKEDIN_MANUAL_LI_AT_KEY);
+  return v?.trim() || null;
+}
+
+/** Returns the Unix timestamp when the manual cookie was last saved, or null. */
+export async function getLinkedinManualCookieSavedAt(db: D1Database): Promise<number | null> {
+  const v = await getSettingValue(db, BOOTSTRAP_ADMIN_ID, LINKEDIN_MANUAL_LI_AT_SAVED_AT_KEY);
+  if (!v?.trim()) return null;
+  const n = parseInt(v.trim(), 10);
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
+
+/** Store (or clear when `liAt` is empty) the manual li_at cookie. */
+export async function setLinkedinManualCookie(db: D1Database, liAt: string): Promise<void> {
+  const trimmed = liAt.trim();
+  await setSettingValue(db, BOOTSTRAP_ADMIN_ID, LINKEDIN_MANUAL_LI_AT_KEY, trimmed);
+  await setSettingValue(
+    db,
+    BOOTSTRAP_ADMIN_ID,
+    LINKEDIN_MANUAL_LI_AT_SAVED_AT_KEY,
+    trimmed ? String(Math.floor(Date.now() / 1000)) : "",
+  );
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

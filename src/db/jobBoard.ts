@@ -1,6 +1,7 @@
 import type { DashboardListRow } from "./jobs";
+import { deleteJobsByIdsWithR2Cleanup } from "./jobs";
 
-export type JobBoardColumnId = "new" | "applying" | "applied" | "interview" | "rejected";
+export type JobBoardColumnId = "new" | "applying" | "applied" | "interview" | "rejected" | "expired";
 
 export const JOB_BOARD_COLUMNS: readonly JobBoardColumnId[] = [
   "new",
@@ -8,7 +9,24 @@ export const JOB_BOARD_COLUMNS: readonly JobBoardColumnId[] = [
   "applied",
   "interview",
   "rejected",
+  "expired",
 ] as const;
+
+/** Columns whose items are eligible for the daily expiration scan. */
+export const EXPIRATION_SCAN_COLUMNS: readonly JobBoardColumnId[] = ["new", "applying", "applied"] as const;
+
+/** Minimal job fields returned by selectBoardItemsForExpirationScan. */
+export type BoardItemForExpirationScan = {
+  job_id: string;
+  source: string;
+  title: string;
+  company: string;
+  job_url: string | null;
+  apply_url: string | null;
+  normalized_json: string | null;
+  /** ISO2 country key from searchCountryKey (lowercase, e.g. "gb") */
+  search_country_key: string | null;
+};
 
 export type JobBoardRow = DashboardListRow & {
   board_column_id: JobBoardColumnId;
@@ -18,7 +36,7 @@ export type JobBoardRow = DashboardListRow & {
   board_generating: number;
 };
 
-const DASHBOARD_LIST_COLUMNS_FOR_BOARD = `j.id AS id, j.title AS title, j.company AS company,
+const DASHBOARD_LIST_COLUMNS_FOR_BOARD = `j.id AS id, j.source AS source, j.title AS title, j.company AS company,
               j.job_url AS job_url, j.apply_url AS apply_url, j.salary_raw AS salary_raw,
               j.salary_min AS salary_min, j.salary_max AS salary_max, j.salary_currency AS salary_currency,
               j.salary_monthly_eur AS salary_monthly_eur, j.salary_display_eur AS salary_display_eur,
@@ -61,7 +79,8 @@ export async function listBoardItems(db: D1Database, userId: string): Promise<Jo
            WHEN 'applied' THEN 3
            WHEN 'interview' THEN 4
            WHEN 'rejected' THEN 5
-           ELSE 6
+           WHEN 'expired' THEN 6
+           ELSE 7
          END,
          b.position ASC,
          b.entered_at DESC,
@@ -94,8 +113,7 @@ export async function addBoardItem(
          column_id = excluded.column_id,
          position = excluded.position,
          entered_at = excluded.entered_at,
-         updated_at = excluded.updated_at,
-         generating = 0`,
+         updated_at = excluded.updated_at`,
     )
     .bind(userId, jobId, columnId, position, now, now)
     .run();
@@ -113,7 +131,7 @@ export async function moveBoardItem(
   const res = await db
     .prepare(
       `UPDATE job_board_items
-       SET column_id = ?, position = ?, entered_at = ?, updated_at = ?, generating = 0
+       SET column_id = ?, position = ?, entered_at = ?, updated_at = ?
        WHERE user_id = ? AND job_id = ?`,
     )
     .bind(columnId, position, now, now, userId, jobId)
@@ -138,6 +156,50 @@ export async function reorderBoardItems(
       .bind(idx * 10, now, userId, jobId, columnId),
   );
   await db.batch(stmts);
+}
+
+export type BoardItemGeneratingClaim = "claimed" | "already" | "not_on_board";
+
+/** Atomically mark a board item as generating (only when not already generating). */
+export async function claimBoardItemGenerating(
+  db: D1Database,
+  userId: string,
+  jobId: string,
+  now: number,
+): Promise<BoardItemGeneratingClaim> {
+  const row = await db
+    .prepare("SELECT generating FROM job_board_items WHERE user_id = ? AND job_id = ?")
+    .bind(userId, jobId)
+    .first<{ generating: number }>();
+  if (!row) return "not_on_board";
+  if (row.generating === 1) return "already";
+  const res = await db
+    .prepare(
+      `UPDATE job_board_items
+       SET generating = 1, updated_at = ?
+       WHERE user_id = ? AND job_id = ? AND generating = 0`,
+    )
+    .bind(now, userId, jobId)
+    .run();
+  return (res.meta?.changes ?? 0) > 0 ? "claimed" : "already";
+}
+
+export async function setBoardItemGenerating(
+  db: D1Database,
+  userId: string,
+  jobId: string,
+  generating: boolean,
+  now: number,
+): Promise<boolean> {
+  const res = await db
+    .prepare(
+      `UPDATE job_board_items
+       SET generating = ?, updated_at = ?
+       WHERE user_id = ? AND job_id = ?`,
+    )
+    .bind(generating ? 1 : 0, now, userId, jobId)
+    .run();
+  return (res.meta?.changes ?? 0) > 0;
 }
 
 export async function removeBoardItem(db: D1Database, userId: string, jobId: string): Promise<number> {
@@ -200,6 +262,73 @@ export async function importBoardSnapshot(
     imported += results.reduce((sum, r) => sum + (r.meta?.changes ?? 0), 0);
   }
   return imported;
+}
+
+/**
+ * Return board items eligible for the daily expiration scan (columns: new, applying, applied).
+ * Joins with jobs to get the URL and company fields needed by the detection module.
+ */
+export async function selectBoardItemsForExpirationScan(
+  db: D1Database,
+  userId: string,
+): Promise<BoardItemForExpirationScan[]> {
+  const placeholders = EXPIRATION_SCAN_COLUMNS.map(() => "?").join(",");
+  const binds: string[] = [userId, ...EXPIRATION_SCAN_COLUMNS];
+  const { results } = await db
+    .prepare(
+      `SELECT b.job_id,
+              j.source,
+              j.title,
+              j.company,
+              j.job_url,
+              j.apply_url,
+              j.normalized_json,
+              json_extract(j.normalized_json, '$.searchCountryKey') AS search_country_key
+       FROM job_board_items b
+       INNER JOIN jobs j ON j.user_id = b.user_id AND j.id = b.job_id
+       WHERE b.user_id = ? AND b.column_id IN (${placeholders})`,
+    )
+    .bind(...binds)
+    .all<BoardItemForExpirationScan>();
+  return results ?? [];
+}
+
+/**
+ * Move a board item to the 'expired' column, resetting its entered_at to now
+ * so the 3-day hard-delete countdown starts from the time of detection.
+ */
+export async function moveBoardItemToExpired(
+  db: D1Database,
+  userId: string,
+  jobId: string,
+  now: number,
+): Promise<boolean> {
+  return moveBoardItem(db, userId, jobId, "expired", now);
+}
+
+/**
+ * Hard-delete jobs that have been in the 'expired' board column for ≥ 3 days.
+ * Uses deleteJobsByIdsWithR2Cleanup so favorites, board items, and R2 docs are
+ * all cleaned up atomically.
+ */
+export async function purgeExpiredBoardItemsHardDelete(
+  env: Env,
+  userId: string,
+  now: number,
+): Promise<{ deletedJobs: number; r2Deleted: number }> {
+  const cutoff = now - 3 * 86400;
+  const { results } = await env.DB
+    .prepare(
+      "SELECT job_id FROM job_board_items WHERE user_id = ? AND column_id = 'expired' AND entered_at <= ?",
+    )
+    .bind(userId, cutoff)
+    .all<{ job_id: string }>();
+
+  const ids = (results ?? []).map((r) => r.job_id).filter(Boolean);
+  if (ids.length === 0) return { deletedJobs: 0, r2Deleted: 0 };
+
+  const { r2Deleted } = await deleteJobsByIdsWithR2Cleanup(env.DB, env.DOCS_BUCKET, ids, userId);
+  return { deletedJobs: ids.length, r2Deleted };
 }
 
 async function nextBoardPosition(db: D1Database, userId: string, columnId: JobBoardColumnId): Promise<number> {

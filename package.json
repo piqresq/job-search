@@ -23,6 +23,7 @@
     "test:rapidapi-quota": "tsx scripts/test-rapidapi-quota-classification.ts",
     "test:jobs-api-merge": "tsx scripts/test-jobs-api-merge.ts",
     "test:employment-type-canonical": "tsx scripts/test-employment-type-canonical.ts",
+    "test:content-dedupe-hash": "tsx scripts/test-content-dedupe-hash.ts",
     "test:title-query-health": "tsx scripts/test-title-query-health.ts"
   },
   "dependencies": {
@@ -30,6 +31,7 @@
     "franc-min": "^6.2.0",
     "html-to-docx": "^1.8.0",
     "mammoth": "^1.12.0",
+    "puppeteer-core": "^23.11.1",
     "skill": "^1.0.2"
   },
   "devDependencies": {

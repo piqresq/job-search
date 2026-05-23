@@ -101,6 +101,7 @@ export type CoordinatorReportResponse = {
 export type CoordinatorResetResponse = {
   ok: true;
   status: PipelineStatus;
+  cleared: boolean;
 };
 
 export type ProviderChunkReport = {

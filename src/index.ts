@@ -8,6 +8,10 @@ import { PipelineCoordinator } from "./orchestration/PipelineCoordinator";
 import { PipelineDispatcher } from "./orchestration/PipelineDispatcher";
 import { handlePipelineQueue } from "./orchestration/queueConsumer";
 import { purgeExpiredDashboardJobs } from "./dashboard/retention";
+import { runDailyExpirationScan } from "./lib/expirationScanner";
+import { purgeExpiredBoardItemsHardDelete } from "./db/jobBoard";
+import { ensureFresh } from "./lib/linkedinSessionService";
+import { listActiveUserIds } from "./db/users";
 import {
   backfillSalaryEurCacheBatch,
   countJobsMissingSalaryEurCache,
@@ -345,6 +349,35 @@ export default {
               eventType: "salary_eur_cache_backfill_failed",
               phase: "scheduled",
               statusKind: "degraded",
+            },
+          );
+        }
+        // Daily expiration scan — check board items for expired listings and
+        // hard-delete any that have been in the Expired column for ≥ 3 days.
+        try {
+          const nowScan = Math.floor(Date.now() / 1000);
+          // ensureFresh clears day-long flags and refreshes the session if needed.
+          await ensureFresh(env);
+          await runDailyExpirationScan(env, nowScan);
+          // Purge expired-column items older than 3 days (hard-delete the jobs)
+          const userIds = await listActiveUserIds(env.DB);
+          for (const uid of userIds) {
+            const purged = await purgeExpiredBoardItemsHardDelete(env, uid, nowScan);
+            if (purged.deletedJobs > 0) {
+              await log.info(env, "cron", "Purged expired board items", { userId: uid, ...purged });
+            }
+          }
+        } catch (e) {
+          await log.critical(
+            env,
+            "cron",
+            "Daily expiration scan failed",
+            { err: e instanceof Error ? e.message : String(e) },
+            {
+              category: "system",
+              eventType: "expiration_scan_failed",
+              phase: "scheduled",
+              statusKind: "failed",
             },
           );
         }

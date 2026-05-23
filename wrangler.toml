@@ -16,7 +16,16 @@ invocation_logs = true
 required = [
   "OPENAI_API_KEY",
   "REVIEW_TOKEN_SECRET",
+  "LINKEDIN_EMAIL",
+  "LINKEDIN_PASSWORD",
 ]
+# Optional Browserbase secrets — set via `wrangler secret put`:
+#   wrangler secret put BROWSERBASE_API_KEY
+#   wrangler secret put BROWSERBASE_PROJECT_ID
+# When set, the "Connect LinkedIn" button in Settings runs a real Chromium
+# session server-side (proper TLS fingerprint + stealth + residential proxy)
+# and stores the resulting `li_at` cookie. When unset, only the manual cookie
+# path in Settings → LinkedIn Session works.
 # Optional: `wrangler secret put RESEND_API_KEY`, `wrangler secret put ADMIN_RUN_KEY`,
 # `wrangler secret put DASHBOARD_PASSWORD` (required for /dashboard login if not using .dev.vars).
 # Soft-disabled outbound review email (restore later). See `src/notify/email.ts`.
@@ -125,3 +134,20 @@ REVIEW_EMAIL_TO = "piqresq@gmail.com"
 REVIEW_EMAIL_FROM = "job-search@teltel-providers.com"
 # Set "true" locally (.dev.vars) to inject one synthetic low incident ("It's a dummy") for pipeline status / ops testing.
 DASHBOARD_DUMMY_LOW_INCIDENT = "false"
+# Bright Data Browser API exit-IP country (ISO-2). LinkedIn geo-redirects `www.linkedin.com/login`
+# to country subdomains (e.g. `at.linkedin.com/login`) which return 404. Pinning to a country where
+# LinkedIn serves `/login` on `www.` (and ideally matches where the account normally signs in) avoids
+# this and reduces "new location" checkpoint challenges. Override per env if needed.
+LINKEDIN_AUTH_COUNTRY = "pl"
+# How many times to run the Bright Data Browser API login invocation (includes the first try).
+# `2` = one retry after the first transient failure. Default when unset is 6 (see retryWithBackoff).
+LINKEDIN_LOGIN_MAX_ATTEMPTS = "2"
+# Legacy: `"true"` forces a single invocation (same as LINKEDIN_LOGIN_MAX_ATTEMPTS=1).
+LINKEDIN_LOGIN_NO_RETRY = "false"
+# Static residential proxy host + port for LinkedIn login and expiration scans (IPRoyal, PL).
+# Cloudflare Workers' fetch() cannot route through HTTP proxies, so we open a raw
+# TCP socket via `cloudflare:sockets`, send HTTP CONNECT for the target host, and
+# upgrade to TLS with `socket.startTls()`. Credentials in BRIGHTDATA_ISP_PROXY_USERNAME
+# + BRIGHTDATA_ISP_PROXY_PASSWORD (Wrangler secrets).
+BRIGHTDATA_ISP_PROXY_HOST = "91.149.249.40"
+BRIGHTDATA_ISP_PROXY_PORT = "12323"

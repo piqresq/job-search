@@ -67,13 +67,16 @@ export async function clearExhaustPause(env: Env, userId: string): Promise<{
   return postJson(env, userId, "/clear-exhaust-pause", {});
 }
 
-/** Clears one user's Durable Object coordinator state after admin hard-delete. */
-export async function resetCoordinatorStateForDeletedUser(
+/** Clears one user's Durable Object coordinator state after admin hard-delete or disable. */
+export async function resetCoordinatorStateForInactiveUser(
   env: Env,
   userId: string,
 ): Promise<CoordinatorResetResponse> {
-  return postJson<CoordinatorResetResponse>(env, userId, "/reset-deleted-user", {});
+  return postJson<CoordinatorResetResponse>(env, userId, "/reset-inactive-user", {});
 }
+
+/** Backwards-compatible alias for existing hard-delete cleanup call sites. */
+export const resetCoordinatorStateForDeletedUser = resetCoordinatorStateForInactiveUser;
 
 export async function claimQueueMessage(
   env: Env,
