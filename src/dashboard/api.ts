@@ -12,6 +12,7 @@ import {
   deleteJobsByIdsWithR2Cleanup,
   type DashboardJobListPrefs,
   type DashboardJobListTab,
+  findOtherJobIdWithContentDedupeHash,
   getFavoriteJobIdsSet,
   getJobR2Keys,
   invalidateDashboardListMemoCaches,
@@ -31,6 +32,7 @@ import { fetchUsdGbpToEurRates } from "../pipeline/hardFilters";
 import { rescoreJobBypassingHardFilters, retryFailedJobProcessing } from "../pipeline/debugAiRescore";
 import {
   DUPLICATE_LISTING_JOB_ID_LINE_PREFIX,
+  duplicateListingHardRejectReasons,
   isDuplicateListingRejectText,
 } from "../pipeline/contentDedupeHash";
 import { generateTailoredDrafts } from "../pipeline/generateDrafts";
@@ -734,6 +736,56 @@ async function buildRequestCapsPayload(
   return { requestCapsPerDay, requestCapsDetail };
 }
 
+async function refreshOperationalDailyLimits(
+  env: Env,
+  userId: string,
+): Promise<{
+  ok: true;
+  utcDate: string;
+  deletedRows: number;
+  coordinatorCleared: number;
+  coordinatorError: string | null;
+}> {
+  const nowSec = Math.floor(Date.now() / 1000);
+  const ymd = utcYmdFromUnix(nowSec);
+  const { deletedRows } = await clearAllProviderUtcDayRequestCountsForUtcDate(env.DB, userId, ymd);
+  let coordinatorCleared = 0;
+  let coordinatorError: string | null = null;
+  try {
+    const r = await clearRequestCapPauseForProviders(env, userId, { providerIds: [...getRegisteredProviderIds()] });
+    coordinatorCleared = r.cleared;
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    coordinatorError = msg.slice(0, 500);
+    await log.moderate(
+      env,
+      "dashboard",
+      "clearRequestCapPauseForProviders failed after refresh limits",
+      { error: coordinatorError, utcDate: ymd },
+      {
+        category: "dashboard",
+        eventType: "clear_request_cap_pause_failed",
+        phase: "refresh_daily_limits",
+        statusKind: "degraded",
+      },
+    );
+  }
+  await log.info(env, "dashboard", "Cleared UTC daily provider request counters (refresh limits)", {
+    utcDate: ymd,
+    deletedRows,
+    coordinatorCleared,
+    coordinatorError,
+    userId,
+  });
+  return {
+    ok: true,
+    utcDate: ymd,
+    deletedRows,
+    coordinatorCleared,
+    coordinatorError,
+  };
+}
+
 async function buildOperationalVendorStates(
   env: Env,
   userId: string,
@@ -1046,6 +1098,7 @@ type FilterReasonSourceRow = {
   fit_score: number | null;
   scoring_notes: string | null;
   content_dedupe_hash?: string | null;
+  created_at?: number | null;
 };
 
 async function buildFilterReasonsByJobId(
@@ -1054,48 +1107,36 @@ async function buildFilterReasonsByJobId(
   rows: FilterReasonSourceRow[],
 ): Promise<Map<string, string[]>> {
   const out = new Map<string, string[]>();
-  const needsLookup: string[] = [];
 
-  for (const row of rows) {
-    const lines = filterOutExplanationLines(row);
-    out.set(row.id, lines);
-    if (
-      row.status === "hard_rejected" &&
-      lines.some(isDuplicateListingRejectText) &&
-      !lines.some((line) => line.startsWith(DUPLICATE_LISTING_JOB_ID_LINE_PREFIX)) &&
-      row.content_dedupe_hash
-    ) {
-      needsLookup.push(row.id);
-    }
-  }
-
-  if (needsLookup.length === 0) return out;
-
-  const chunkSize = 80;
-  for (let i = 0; i < needsLookup.length; i += chunkSize) {
-    const chunk = needsLookup.slice(i, i + chunkSize);
-    const placeholders = chunk.map(() => "?").join(",");
-    const { results } = await db
-      .prepare(
-        `SELECT j.id AS job_id,
-                (SELECT o.id FROM jobs o
-                 WHERE o.user_id = j.user_id
-                   AND o.content_dedupe_hash = j.content_dedupe_hash
-                   AND o.id != j.id
-                 ORDER BY o.created_at ASC, o.id ASC
-                 LIMIT 1) AS duplicate_of
-         FROM jobs j
-         WHERE j.user_id = ? AND j.id IN (${placeholders})`,
-      )
-      .bind(userId, ...chunk)
-      .all<{ job_id: string; duplicate_of: string | null }>();
-
-    for (const hit of results ?? []) {
-      if (!hit.duplicate_of) continue;
-      const lines = out.get(hit.job_id) ?? [];
-      out.set(hit.job_id, [...lines, `${DUPLICATE_LISTING_JOB_ID_LINE_PREFIX}${hit.duplicate_of}`]);
-    }
-  }
+  await Promise.all(
+    rows.map(async (row) => {
+      let lines = filterOutExplanationLines(row);
+      if (
+        row.status === "hard_rejected" &&
+        lines.some(isDuplicateListingRejectText) &&
+        row.content_dedupe_hash &&
+        typeof row.created_at === "number" &&
+        row.created_at > 0
+      ) {
+        const anchorId = await findOtherJobIdWithContentDedupeHash(
+          db,
+          userId,
+          row.content_dedupe_hash,
+          row.id,
+          row.created_at,
+        );
+        lines = lines.filter(
+          (line) =>
+            !isDuplicateListingRejectText(line) &&
+            !line.startsWith(DUPLICATE_LISTING_JOB_ID_LINE_PREFIX),
+        );
+        if (anchorId) {
+          lines = [...lines, ...duplicateListingHardRejectReasons(anchorId, row.content_dedupe_hash)];
+        }
+      }
+      out.set(row.id, lines);
+    }),
+  );
 
   return out;
 }
@@ -1375,43 +1416,8 @@ export async function handleDashboardApi(
   }
 
   if (path === "/api/operational-dashboard/refresh-limits" && request.method === "POST") {
-    const nowSec = Math.floor(Date.now() / 1000);
-    const ymd = utcYmdFromUnix(nowSec);
-    const { deletedRows } = await clearAllProviderUtcDayRequestCountsForUtcDate(env.DB, userId, ymd);
-    let coordinatorCleared = 0;
-    let coordinatorError: string | null = null;
-    try {
-      const r = await clearRequestCapPauseForProviders(env, userId, { providerIds: [...getRegisteredProviderIds()] });
-      coordinatorCleared = r.cleared;
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
-      coordinatorError = msg.slice(0, 500);
-      await log.moderate(
-        env,
-        "dashboard",
-        "clearRequestCapPauseForProviders failed after refresh limits",
-        { error: coordinatorError, utcDate: ymd },
-        {
-          category: "dashboard",
-          eventType: "clear_request_cap_pause_failed",
-          phase: "refresh_daily_limits",
-          statusKind: "degraded",
-        },
-      );
-    }
-    await log.info(env, "dashboard", "Cleared UTC daily RapidAPI counters (refresh limits)", {
-      utcDate: ymd,
-      deletedRows,
-      coordinatorCleared,
-      coordinatorError,
-    });
-    return json({
-      ok: true,
-      utcDate: ymd,
-      deletedRows,
-      coordinatorCleared,
-      coordinatorError,
-    });
+    const result = await refreshOperationalDailyLimits(env, userId);
+    return json(result);
   }
 
   if (path === "/api/operational-signals" && request.method === "GET") {
@@ -3309,6 +3315,69 @@ async function handleAdminApi(
   }
 
   // ── Per-user dashboard prefs (vendors, caps, debug toggles) ───────────────
+  const adminRefreshLimitsMatch = path.match(/^\/api\/admin\/users\/([^/]+)\/refresh-limits$/);
+  if (adminRefreshLimitsMatch && request.method === "POST") {
+    const targetId = decodeURIComponent(adminRefreshLimitsMatch[1]!);
+    const targetUser = await getUserById(env.DB, targetId);
+    if (!targetUser) return json({ ok: false, error: "user_not_found" }, 404);
+    if (targetUser.status !== "active") {
+      return json(
+        {
+          ok: false,
+          error: "user_disabled",
+          message: "Enable the user before running pipeline controls.",
+        },
+        409,
+      );
+    }
+    const result = await refreshOperationalDailyLimits(env, targetId);
+    return json(result);
+  }
+
+  const adminClearExhaustMatch = path.match(/^\/api\/admin\/users\/([^/]+)\/clear-exhaust-pause$/);
+  if (adminClearExhaustMatch && request.method === "POST") {
+    const targetId = decodeURIComponent(adminClearExhaustMatch[1]!);
+    const targetUser = await getUserById(env.DB, targetId);
+    if (!targetUser) return json({ ok: false, error: "user_not_found" }, 404);
+    if (targetUser.status !== "active") {
+      return json(
+        {
+          ok: false,
+          error: "user_disabled",
+          message: "Enable the user before running pipeline controls.",
+        },
+        409,
+      );
+    }
+    try {
+      const r = await clearExhaustPause(env, targetId);
+      await log.info(env, "dashboard", "Pipeline orchestration pause(s) cleared (admin)", {
+        clearedProviders: r.clearedProviders,
+        status: r.status,
+        wakeAt: r.wakeAt,
+        cycleId: r.cycleId,
+        targetUserId: targetId,
+        adminUserId,
+      });
+      return json(r);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      await log.moderate(
+        env,
+        "dashboard",
+        "clearExhaustPause failed (admin)",
+        { error: msg.slice(0, 500), targetUserId: targetId, adminUserId },
+        {
+          category: "dashboard",
+          eventType: "clear_exhaust_pause_failed",
+          phase: "pipeline_clear_exhaust",
+          statusKind: "degraded",
+        },
+      );
+      return json({ ok: false, error: msg.slice(0, 500) }, 502);
+    }
+  }
+
   const prefsMatch = path.match(/^\/api\/admin\/users\/([^/]+)\/preferences$/);
   if (prefsMatch) {
     const rawTargetId = prefsMatch[1]!;

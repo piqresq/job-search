@@ -25,7 +25,12 @@ import {
 } from "../db/jobs";
 import { log, observabilityLog } from "../logging/appLog";
 import { getEnabledProviders } from "../providers";
-import { computeContentDedupeHash, computeCountryInclusiveContentDedupeHash, duplicateListingHardRejectReasons } from "./contentDedupeHash";
+import {
+  computeContentDedupeHash,
+  computeCountryInclusiveContentDedupeHash,
+  duplicateListingHardRejectReasons,
+  isContentDedupeAnchorJob,
+} from "./contentDedupeHash";
 import { dedupeJobs } from "./dedupe";
 import { applyHardFilters, fetchUsdGbpToEurRates, getSalaryBelowFloorReasons } from "./hardFilters";
 import { stableJobId } from "./ids";
@@ -101,11 +106,22 @@ async function findRemoteDuplicateByCurrentContentFingerprint(
   userId: string,
   job: NormalizedJob,
   excludeId: string,
+  excludeCreatedAtUnix: number,
 ): Promise<string | null> {
   if (job.workplaceType !== "Remote") return null;
 
-  const candidates = await listContentDedupeCandidateJobsByCompanyTitle(db, userId, job.company, job.title, excludeId);
+  const candidates = await listContentDedupeCandidateJobsByCompanyTitle(
+    db,
+    userId,
+    job.company,
+    job.title,
+    excludeId,
+    excludeCreatedAtUnix,
+  );
   for (const candidate of candidates) {
+    if (candidate.created_at > excludeCreatedAtUnix) continue;
+    if (candidate.created_at === excludeCreatedAtUnix && candidate.id >= excludeId) continue;
+    if (!isContentDedupeAnchorJob(candidate)) continue;
     if (!candidate.content_dedupe_hash || !candidate.normalized_json) continue;
     try {
       const normalized = JSON.parse(candidate.normalized_json) as NormalizedJob;
@@ -393,10 +409,17 @@ export async function processFetchedJobs(
     }
 
     if (contentDedupeHash) {
+      const excludeCreatedAt = existing?.created_at ?? now;
       let dupOf: string | null = null;
       let dedupeMatchPath: ContentDedupeMatchPath | null = null;
       try {
-        dupOf = await findOtherJobIdWithContentDedupeHash(env.DB, userId, contentDedupeHash, id);
+        dupOf = await findOtherJobIdWithContentDedupeHash(
+          env.DB,
+          userId,
+          contentDedupeHash,
+          id,
+          excludeCreatedAt,
+        );
         if (dupOf) dedupeMatchPath = "exact_hash";
         if (!dupOf) {
           dupOf = await findRemoteDuplicateByCurrentContentFingerprint(
@@ -404,6 +427,7 @@ export async function processFetchedJobs(
             userId,
             jobWithFetchMeta,
             id,
+            excludeCreatedAt,
           );
           if (dupOf) dedupeMatchPath = "remote_countryless_fingerprint";
         }

@@ -113,7 +113,7 @@ export async function buildSearchPathExhaustionPayload(env: Env, userId: string)
         .sort((a, b) => a.tier - b.tier || a.query_value.localeCompare(b.query_value))
         .map((u) => ({
           unitId: u.unit_id,
-          label: clip(`(T${u.tier}) ${u.query_value}`),
+          label: clip(u.query_value),
           exhausted: forceExhaustedFromCoordinator || u.exhausted === 1,
           tier: u.tier,
         }));

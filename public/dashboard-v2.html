@@ -270,12 +270,14 @@ a{color:inherit;text-decoration:none}
 .spin{animation:spin 4.6s linear infinite;display:inline-flex;align-items:center}
 @keyframes spin{to{transform:rotate(360deg)}}
 .rej-cd{font-family:var(--f-mono);font-size:11px;font-weight:500;color:var(--warning-800);margin-bottom:6px}
-#expiration-scan-notice{display:flex;align-items:center;gap:10px;padding:10px 16px;background:var(--warning-50);border-bottom:1px solid #FDE68A;font-size:13px;color:var(--warning-800);line-height:1.4}
+#expiration-scan-notice,#ops-scan-notice{display:flex;align-items:center;gap:10px;padding:10px 16px;background:var(--warning-50);border-bottom:1px solid #FDE68A;font-size:13px;color:var(--warning-800);line-height:1.4}
 #expiration-scan-notice.esn-green{background:var(--success-50);border-bottom-color:#86EFAC;color:var(--success-800)}
-#expiration-scan-notice .esn-icon{flex-shrink:0;font-size:15px}
-#expiration-scan-notice .esn-msg{flex:1}
-#expiration-scan-notice .esn-dismiss{flex-shrink:0;font-size:12px;font-weight:500;cursor:pointer;opacity:.7;transition:opacity var(--dur-fast) var(--ease-out);background:none;border:none;color:inherit;padding:2px 4px}
-#expiration-scan-notice .esn-dismiss:hover{opacity:1}
+#expiration-scan-notice .esn-icon,#ops-scan-notice .esn-icon{flex-shrink:0;font-size:15px}
+#expiration-scan-notice .esn-msg,#ops-scan-notice .esn-msg{flex:1}
+#expiration-scan-notice .esn-actions,#ops-scan-notice .esn-actions{display:inline-flex;align-items:center;gap:8px;flex-shrink:0}
+#expiration-scan-notice .esn-countdown{font-family:var(--f-mono);font-size:12px;font-weight:500;opacity:.85;min-width:2.5em;text-align:right;font-variant-numeric:tabular-nums}
+#expiration-scan-notice .esn-dismiss,#ops-scan-notice .esn-dismiss{flex-shrink:0;font-size:12px;font-weight:500;cursor:pointer;opacity:.7;transition:opacity var(--dur-fast) var(--ease-out);background:none;border:none;color:inherit;padding:2px 4px}
+#expiration-scan-notice .esn-dismiss:hover,#ops-scan-notice .esn-dismiss:hover{opacity:1}
 .kcard-danger{margin-top:10px;width:100%;justify-content:center}
 .kcard-footer{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:10px;min-height:32px}
 .kcard-footer-acts{display:flex;align-items:center;gap:6px;flex-wrap:wrap;flex:1;min-width:0}
@@ -375,11 +377,52 @@ a{color:inherit;text-decoration:none}
 .ops-vendor-name{font-size:13px;font-weight:500;color:var(--ink-body)}
 .ops-vendor-badge{font-size:10px;padding:1px 6px;border-radius:var(--r-xs);font-weight:600;letter-spacing:.04em}
 .ops-vendor-badge.ok{background:var(--success-50);color:var(--success-700);border:1px solid var(--success-200)}
-.ops-vendor-badge.exhausted{background:var(--danger-50);color:var(--danger-700);border:1px solid #FECACA}
+.ops-vendor-badge.exhausted{background:var(--success-50);color:var(--success-700);border:1px solid var(--success-200)}
 .ops-vendor-badge.disabled{background:var(--neutral-50);color:var(--neutral-500);border:1px solid var(--hairline)}
 .ops-vendor-bar-wrap{height:5px;background:var(--hairline);border-radius:3px;overflow:hidden;margin:5px 0 3px}
-.ops-vendor-bar-fill{height:100%;border-radius:3px;background:var(--brand-600)}
+.ops-vendor-bar-fill{height:100%;border-radius:3px;background:var(--brand-600);transition:width var(--dur-base) var(--ease-out),background var(--dur-base) var(--ease-out)}
+.ops-vendor-bar-fill.complete{background:var(--success-600)}
 .ops-vendor-usage{font-size:11px;font-family:var(--f-mono);color:var(--ink-muted)}
+
+/* Search path exhaustion tree */
+.spt-toolbar{display:flex;align-items:center;gap:6px;padding:8px 14px;border-bottom:1px solid var(--hairline);background:var(--surface-sunken);flex-wrap:wrap}
+.spt-toolbar-lbl{font-size:10px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-faint)}
+.spt-toolbar-spacer{flex:1;min-width:8px}
+.spt-action-btn{height:22px;padding:0 10px;border-radius:var(--r-xs);border:1px solid var(--hairline);background:var(--surface);font-size:11px;font-weight:600;color:var(--ink-muted);cursor:pointer;transition:background var(--dur-fast) var(--ease-out),border-color var(--dur-fast) var(--ease-out),color var(--dur-fast) var(--ease-out)}
+.spt-action-btn:hover{border-color:var(--hairline-strong);color:var(--ink-body);background:var(--surface-sunken)}
+.spt-action-btn:focus-visible{outline:none;box-shadow:0 0 0 3px var(--brand-50),0 0 0 4px var(--brand-600)}
+.spt-mode-btn{height:22px;padding:0 10px;border-radius:var(--r-xs);border:1px solid var(--hairline);background:var(--surface);font-size:11px;font-weight:600;color:var(--ink-muted);cursor:pointer;transition:background var(--dur-fast) var(--ease-out),border-color var(--dur-fast) var(--ease-out),color var(--dur-fast) var(--ease-out)}
+.spt-mode-btn:hover{border-color:var(--hairline-strong);color:var(--ink-body)}
+.spt-mode-btn.active{background:var(--info-50);border-color:var(--info-600);color:var(--info-800)}
+.spt-mode-btn:focus-visible{outline:none;box-shadow:0 0 0 3px var(--brand-50),0 0 0 4px var(--brand-600)}
+.spt-vendor-block{border-bottom:1px solid var(--hairline)}
+.spt-vendor-block:last-child{border-bottom:none}
+.spt-vendor-btn{display:flex;align-items:center;gap:8px;width:100%;padding:8px 14px;border:none;background:none;text-align:left;cursor:pointer;font-size:13px;font-weight:500;color:var(--ink-body);transition:background var(--dur-fast) var(--ease-out)}
+.spt-vendor-btn:hover{background:var(--surface-sunken)}
+.spt-vendor-btn:focus-visible{outline:none;box-shadow:inset 0 0 0 2px var(--brand-600)}
+.spt-vendor-chevron{margin-left:auto;color:var(--ink-faint);transition:transform var(--dur-base) var(--ease-out);flex-shrink:0}
+.spt-vendor-btn[aria-expanded="true"] .spt-vendor-chevron{transform:rotate(90deg)}
+.spt-vendor-name{flex:1;min-width:0}
+.spt-vendor-counts{font-size:10px;font-family:var(--f-mono);color:var(--ink-faint);white-space:nowrap}
+.spt-vendor-branch{display:none;flex-direction:column;padding:4px 0 8px 14px;border-left:2px solid var(--hairline);margin:0 14px 8px 26px}
+.spt-vendor-branch.open{display:flex}
+.spt-l2-row{display:flex;flex-direction:column;gap:4px;margin-bottom:2px}
+.spt-l2-btn{display:inline-flex;align-items:center;gap:6px;padding:3px 10px 3px 6px;border-radius:var(--r-xs);border:1px solid transparent;background:none;font-size:12px;font-weight:500;color:var(--ink-body);cursor:pointer;text-align:left;transition:background var(--dur-fast) var(--ease-out);max-width:100%}
+.spt-l2-btn:hover{background:var(--surface-sunken)}
+.spt-l2-btn:focus-visible{outline:none;box-shadow:0 0 0 2px var(--brand-600)}
+.spt-l2-btn .spt-vendor-chevron{transition:transform var(--dur-base) var(--ease-out)}
+.spt-l2-btn[aria-expanded="true"] .spt-vendor-chevron{transform:rotate(90deg)}
+.spt-l2-counts{font-size:10px;font-family:var(--f-mono);color:var(--ink-faint)}
+.spt-l3-branch{display:none;flex-wrap:wrap;gap:4px 6px;padding:4px 0 4px 18px}
+.spt-l3-branch.open{display:flex}
+.spt-leaf{display:inline-flex;align-items:center;gap:5px;height:20px;padding:0 8px;border-radius:var(--r-xs);font-size:11px;font-weight:500;border:1px solid var(--hairline);white-space:nowrap}
+.spt-leaf.active{background:var(--info-50);border-color:var(--info-600);color:var(--info-800)}
+.spt-leaf.exhausted{background:var(--neutral-50);border-color:var(--hairline-strong);color:var(--ink-muted)}
+.spt-status-dot{width:6px;height:6px;border-radius:50%;flex-shrink:0}
+.spt-status-dot.ok{background:var(--success-600)}
+.spt-status-dot.done{background:var(--neutral-600)}
+.spt-status-dot.partial{background:var(--warning-600)}
+.spt-cycle-badge{font-size:10px;font-family:var(--f-mono);color:var(--ink-faint);margin-left:auto}
 .textbot-split{display:flex;max-height:280px;min-height:140px}
 .textbot-col{flex:1;min-width:0;display:flex;flex-direction:column;overflow:hidden;border-right:1px solid var(--hairline)}
 .textbot-col:last-child{border-right:none}
@@ -715,7 +758,7 @@ a{color:inherit;text-decoration:none}
       </header>
       <div id="expiration-scan-notice" style="display:none" role="alert"></div>
       <div class="board-shell">
-        <div class="board-canvas" id="board-canvas"></div>
+      <div class="board-canvas" id="board-canvas"></div>
         <div class="board-scroll-affordance" id="board-scroll-affordance" aria-hidden="true">
           <span class="board-scroll-label">More columns<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg></span>
           <div class="board-scroll-track" id="board-scroll-track">
@@ -758,6 +801,7 @@ a{color:inherit;text-decoration:none}
         </div>
         <button class="btn btn-secondary" id="ops-refresh-btn">Refresh</button>
       </header>
+      <div id="ops-scan-notice" style="display:none" role="status"></div>
       <div class="ops-outer">
         <!-- LEFT: main scrollable column -->
         <div class="ops-main">
@@ -771,33 +815,12 @@ a{color:inherit;text-decoration:none}
             <div class="ops-card-title">Vendor usage
               <span id="ops-vendor-meta" style="font-weight:400;font-size:10px;color:var(--ink-faint);margin-left:auto"></span>
             </div>
-            <div class="ops-vendor-actions">
-              <button class="btn btn-secondary" id="ops-refresh-limits" style="font-size:12px">Refresh limits</button>
-              <button class="btn btn-secondary" id="ops-clear-exhaust" style="font-size:12px">Resume after exhaustion / freeze</button>
-            </div>
             <div id="ops-vendor-rows"><div class="ops-empty">Loading…</div></div>
           </div>
           <!-- Search path exhaustion -->
-          <div class="ops-card">
+          <div class="ops-card" style="overflow:visible">
             <div class="ops-card-title">Search path exhaustion — current cycle</div>
-            <div id="ops-exhaustion"><div class="ops-empty">Loading…</div></div>
-          </div>
-          <!-- Textbot -->
-          <div class="ops-card">
-            <div class="ops-card-title">Pipeline log
-              <button class="btn btn-ghost" id="textbot-refresh-btn" style="font-size:11px;padding:2px 8px;margin-left:auto">Refresh</button>
-              <button class="btn btn-ghost" id="clear-logs-btn" style="font-size:11px;padding:2px 8px">Clear</button>
-            </div>
-            <div class="textbot-split">
-              <div class="textbot-col">
-                <div class="textbot-col-lbl">Info · Warn · Error · Verbose</div>
-                <div class="textbot-log" id="textbot-main"></div>
-              </div>
-              <div class="textbot-col">
-                <div class="textbot-col-lbl">Debug</div>
-                <div class="textbot-log" id="textbot-debug"></div>
-              </div>
-            </div>
+            <div id="ops-exhaustion"></div>
           </div>
         </div>
       </div>
@@ -908,7 +931,7 @@ a{color:inherit;text-decoration:none}
             </div>
           </div>
 
-          </div>
+        </div>
           <aside class="admin-col-right" aria-label="Operational status and incidents" data-admin-only>
             <div class="ops-card">
               <div class="ops-card-title">Operational status</div>
@@ -916,7 +939,7 @@ a{color:inherit;text-decoration:none}
                 <div id="ops-status-headline" style="font-size:13px;font-weight:600;color:var(--ink-strong);margin-bottom:2px">—</div>
                 <div id="ops-status-driver" style="font-size:12px;color:var(--ink-muted);margin-bottom:6px"></div>
                 <ul id="ops-status-list" style="list-style:none;padding:0;margin:0;display:flex;flex-direction:column;gap:2px"></ul>
-              </div>
+      </div>
               <div style="border-top:1px solid var(--hairline);padding:8px 12px">
                 <div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--ink-faint);margin-bottom:6px">Per-vendor state</div>
                 <div id="ops-vendor-state"></div>
@@ -1069,6 +1092,8 @@ function normalizeBoardShape(board) {
 }
 /** Job ids with an active POST /generate in this tab (merged into board until API confirms). */
 const docGenerationInFlight = new Set();
+const EXPIRATION_BANNER_AUTO_DISMISS_SEC = 30;
+let expirationBannerCountdownTimer = null;
 
 function applyBoardFromApi(board) {
   const prevDrawerDoc = S.drawerJob ? {
@@ -1253,6 +1278,7 @@ async function checkExpirationScanNotice() {
   // Merged into showApp
 }
 function switchView(name) {
+  const leavingBoard = document.getElementById('view-board')?.classList.contains('active') && name !== 'board';
   const isFiltered = name === 'filtered';
   const viewName = isFiltered ? 'jobs' : name;
   const newTab = isFiltered ? 'filtered' : 'active';
@@ -1277,6 +1303,7 @@ function switchView(name) {
   if (name === 'ops') loadOps();
   if (name === 'settings') loadSettings();
   if (name === 'admin') loadAdmin();
+  if (leavingBoard) dismissExpirationBanner();
 }
 
 /* ── STATISTICS ───────────────────────────────────────────────────────────── */
@@ -1388,21 +1415,18 @@ async function loadOps() {
   const sub = document.getElementById('ops-sub');
   if (sub) sub.textContent = 'Loading…';
   try {
-    const [logsResp, signals, dashboard, exhaustion, settings] = await Promise.all([
-      api('/api/logs?limit=300'),
+    const [signals, dashboard, exhaustion, settings] = await Promise.all([
       api('/api/operational-signals'),
       api('/api/operational-dashboard'),
       api('/api/search-path-exhaustion'),
       api('/api/settings'),
     ]);
-    const logs = logsResp.logs || [];
     renderOpsPipelineNotice(settings);
     renderOpsVendors(dashboard, signals);
+    renderOpsScanSuggestion(dashboard, exhaustion);
     renderSearchExhaustion(exhaustion);
-    renderTextbot('textbot-main', logs.filter(l => l.level !== 'debug'));
-    renderTextbot('textbot-debug', logs.filter(l => l.level === 'debug'));
     renderOpsIncidentsAndStatus(signals);
-    if (sub) sub.textContent = logs.length + ' log lines · status & incidents in Admin';
+    if (sub) sub.textContent = 'Operation information.';
   } catch(e) {
     if (sub) sub.textContent = 'Error';
     toast('Failed to load operations: ' + e.message, 'error');
@@ -1426,48 +1450,222 @@ function renderOpsVendors(dashboard, signals) {
   const el = document.getElementById('ops-vendor-rows');
   const metaEl = document.getElementById('ops-vendor-meta');
   if (!el) return;
-  const vendors = dashboard.vendors || [];
+  const vendors = (dashboard.vendors || []).filter(v => v.enabled);
   const oh = dashboard.operationalHours || {};
   if (metaEl) {
     const openTxt = oh.isOpenNow ? '🟢 Open' : '🔴 Closed';
     metaEl.textContent = `${dashboard.utcDate || ''} · ${oh.startHourUtc ?? '?'}–${oh.endHourUtc ?? '?'} UTC · ${openTxt}`;
   }
-  if (!vendors.length) { el.innerHTML = '<div class="ops-empty">No vendor data.</div>'; return; }
+  if (!vendors.length) { el.innerHTML = '<div class="ops-empty">No enabled vendors.</div>'; return; }
   el.innerHTML = vendors.map(v => {
     const used = v.usedUtcDay ?? 0;
     const cap = v.cap ?? 0;
-    const pct = (cap > 0) ? Math.min(100, Math.round((used / cap) * 100)) : 0;
-    const budgetOk = !v.exhaustedForDay;
-    const badge = !v.enabled ? 'disabled' : budgetOk ? 'ok' : 'exhausted';
-    const badgeTxt = !v.enabled ? 'Disabled' : budgetOk ? 'Budget OK' : 'Exhausted';
+    const hasCap = cap > 0;
+    const pct = hasCap ? Math.min(100, Math.round((used / cap) * 100)) : 0;
+    const exhausted = Boolean(v.exhaustedForDay) || (hasCap && pct >= 100);
+    const badge = exhausted ? 'exhausted' : 'ok';
+    const badgeTxt = exhausted ? 'Exhausted' : 'Budget OK';
+    const barFillClass = exhausted ? 'ops-vendor-bar-fill complete' : 'ops-vendor-bar-fill';
+    let barColor = 'var(--brand-600)';
+    if (exhausted) barColor = 'var(--success-600)';
+    else if (pct > 70) barColor = 'var(--warning-600)';
+    const usageTxt = hasCap ? `${pct}%` : '—';
     return `<div class="ops-vendor-row">
       <div class="ops-vendor-hdr">
         <span class="ops-vendor-name">${esc(vendorUiPublicLabelFromProviderId(v.id, v.label || v.id))}</span>
         <span class="ops-vendor-badge ${badge}">${badgeTxt}</span>
       </div>
-      ${cap > 0 ? `<div class="ops-vendor-bar-wrap"><div class="ops-vendor-bar-fill" style="width:${pct}%;background:${pct >= 100 ? 'var(--danger-500)' : pct > 70 ? 'var(--warning-500)' : 'var(--brand-600)'}"></div></div>` : ''}
-      <div class="ops-vendor-usage">${used} / ${cap > 0 ? cap : '∞'} RapidAPI calls today (UTC)</div>
+      ${hasCap ? `<div class="ops-vendor-bar-wrap"><div class="${barFillClass}" style="width:${pct}%;background:${barColor}"></div></div>` : ''}
+      <div class="ops-vendor-usage">${usageTxt}</div>
     </div>`;
   }).join('');
 }
 
+function renderOpsScanSuggestion(dashboard, exhaustion) {
+  const el = document.getElementById('ops-scan-notice');
+  if (!el) return;
+
+  const enabledVendors = (dashboard.vendors || []).filter(v => v.enabled);
+  const hasBudgetLeft = enabledVendors.some(v => {
+    const cap = v.cap ?? 0;
+    if (cap <= 0) return true;
+    return !v.exhaustedForDay;
+  });
+
+  const pathVendors = exhaustion?.ok ? (exhaustion.vendors || []) : [];
+  const allPathsExhausted = pathVendors.length > 0 && pathVendors.every(v => v.exhausted);
+  const shouldShow = hasBudgetLeft && allPathsExhausted;
+
+  if (!shouldShow) {
+    try { localStorage.removeItem('opsScanSuggestionDismissed'); } catch(e) {}
+    el.style.display = 'none';
+    el.innerHTML = '';
+    return;
+  }
+
+  let dismissed = false;
+  try { dismissed = localStorage.getItem('opsScanSuggestionDismissed') === '1'; } catch(e) {}
+  if (dismissed) {
+    el.style.display = 'none';
+    return;
+  }
+
+  const msg = 'Suggestion - add more job positions for scanning or make the job position name more loose.';
+  el.classList.remove('esn-green');
+  el.innerHTML = `<span class="esn-icon" aria-hidden="true">\u26A0\uFE0F</span><span class="esn-msg">${esc(msg)}</span><span class="esn-actions"><button type="button" class="esn-dismiss" aria-label="Dismiss">Dismiss \u00D7</button></span>`;
+  el.style.display = 'flex';
+  el.querySelector('.esn-dismiss')?.addEventListener('click', () => {
+    try { localStorage.setItem('opsScanSuggestionDismissed', '1'); } catch(e) {}
+    el.style.display = 'none';
+  });
+}
+
+/** Transpose vendor country→role data into role-first view.
+ *  Mirrors v1 `sptGroupByRole`. */
+function sptGroupByRole(v) {
+  const map = new Map();
+  (v.countries || []).forEach(c => {
+    (c.roles || []).forEach(r => {
+      const id = r.unitId || r.label;
+      if (!map.has(id)) map.set(id, { unitId: id, label: r.label, tier: r.tier, countries: [] });
+      map.get(id).countries.push({ key: c.key, label: c.label, exhausted: Boolean(c.exhausted || r.exhausted) });
+    });
+  });
+  const roles = Array.from(map.values());
+  roles.forEach(role => {
+    role.countries.sort((a, b) => String(a.label).localeCompare(String(b.label)));
+    const ex = role.countries.filter(x => x.exhausted).length;
+    role.exhaustedCountries = ex;
+    role.totalCountries = role.countries.length;
+    role.exhausted = role.totalCountries > 0 && ex === role.totalCountries;
+  });
+  roles.sort((a, b) => String(a.label).localeCompare(String(b.label)));
+  return roles;
+}
+
+/** Persistent hierarchy mode for search path exhaustion tree. */
+const sptState = {
+  mode: (() => { try { return localStorage.getItem('sptMode') === 'role_first' ? 'role_first' : 'country_first'; } catch(e) { return 'country_first'; } })(),
+  payload: null,
+};
+
+function sptSetMode(m) {
+  sptState.mode = m;
+  try { localStorage.setItem('sptMode', m); } catch(e) {}
+  renderSearchExhaustion(sptState.payload);
+}
+
+function sptSetTreeExpanded(expanded) {
+  const root = document.getElementById('ops-exhaustion');
+  if (!root) return;
+  root.querySelectorAll('.spt-vendor-branch').forEach(el => el.classList.toggle('open', expanded));
+  root.querySelectorAll('[data-spt-vendor]').forEach(btn => btn.setAttribute('aria-expanded', expanded ? 'true' : 'false'));
+  root.querySelectorAll('.spt-l3-branch').forEach(el => el.classList.toggle('open', expanded));
+  root.querySelectorAll('[data-spt-l2]').forEach(btn => btn.setAttribute('aria-expanded', expanded ? 'true' : 'false'));
+}
+
+function sptToolbarHtml() {
+  return `<div class="spt-toolbar">
+    <span class="spt-toolbar-lbl">Group by</span>
+    <button type="button" class="spt-mode-btn${sptState.mode === 'country_first' ? ' active' : ''}" data-spt-mode="country_first">Country</button>
+    <button type="button" class="spt-mode-btn${sptState.mode === 'role_first' ? ' active' : ''}" data-spt-mode="role_first">Job role</button>
+    <span class="spt-toolbar-spacer"></span>
+    <button type="button" class="spt-action-btn" data-spt-expand-all>Expand all</button>
+    <button type="button" class="spt-action-btn" data-spt-collapse-all>Collapse all</button>
+  </div>`;
+}
+
 function renderSearchExhaustion(payload) {
+  sptState.payload = payload;
   const el = document.getElementById('ops-exhaustion');
   if (!el) return;
-  if (!payload.ok) { el.innerHTML = `<div class="ops-empty">${esc(payload.error || 'Unavailable')}</div>`; return; }
-  if (payload.hint) { el.innerHTML = `<div class="ops-empty">${esc(payload.hint)}</div>`; return; }
+
+  if (!payload || !payload.ok) {
+    const msg = payload?.error || 'Search path state is unavailable.';
+    el.innerHTML = `<div class="ops-empty">${esc(msg)}</div>`;
+    return;
+  }
+
   const vendors = payload.vendors || [];
-  if (!vendors.length) { el.innerHTML = '<div class="ops-empty">No search paths tracked.</div>'; return; }
-  el.innerHTML = vendors.map(v => {
-    const vDot = v.exhausted ? 'done' : 'ok';
-    const countries = v.countries || [];
-    const countryHtml = countries.map(c => {
-      const cDot = c.exhausted ? 'done' : (c.exhaustedRoles > 0 ? 'partial' : 'ok');
-      const roleHtml = c.roles.map(r => `<div class="exh-role"><span class="exh-dot ${r.exhausted ? 'done' : 'ok'}"></span>${esc(r.label)}</div>`).join('');
-      return `<div class="exh-country"><span class="exh-dot ${cDot}"></span>${esc(c.label)} <span style="font-size:10px;color:var(--ink-faint);font-family:var(--f-mono)">${c.exhaustedRoles}/${c.totalRoles} roles</span></div>${roleHtml}`;
+
+  const toolbar = sptToolbarHtml();
+
+  if (!vendors.length) {
+    el.innerHTML = toolbar + '<div class="ops-empty">No search paths tracked.</div>';
+    return;
+  }
+
+  if (payload.hint && !vendors.length) {
+    el.innerHTML = toolbar + `<div class="ops-empty">${esc(payload.hint)}</div>`;
+    return;
+  }
+
+  const mode = sptState.mode;
+
+  const vendorBlocks = vendors.map(v => {
+    const label = esc(vendorUiPublicLabelFromProviderId(v.providerId, v.providerId));
+    const vStatus = v.exhausted ? 'done' : 'ok';
+
+    let countsText, innerHtml;
+
+    if (mode === 'role_first') {
+      const roles = sptGroupByRole(v);
+      const exRoles = roles.filter(r => r.exhausted).length;
+      countsText = `${exRoles}/${roles.length} roles exhausted`;
+      innerHtml = roles.map(role => {
+        const rStatus = role.exhausted ? 'done' : role.exhaustedCountries > 0 ? 'partial' : 'ok';
+        const rCounts = `${role.exhaustedCountries}/${role.totalCountries} countries exhausted`;
+        const leaves = role.countries.map(co =>
+          `<span class="spt-leaf ${co.exhausted ? 'exhausted' : 'active'}"><span class="spt-status-dot ${co.exhausted ? 'done' : 'ok'}"></span>${esc(co.label)}</span>`
+        ).join('');
+        return `<div class="spt-l2-row">
+          <button class="spt-l2-btn" data-spt-l2="1" aria-expanded="false">
+            <span class="spt-status-dot ${rStatus}"></span>
+            <span>${esc(role.label)}</span>
+            <span class="spt-l2-counts">${esc(rCounts)}</span>
+            <svg class="spt-vendor-chevron" width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 2 8 6 4 10"/></svg>
+          </button>
+          <div class="spt-l3-branch">${leaves}</div>
+        </div>`;
     }).join('');
-    return `<div class="exh-vendor-row"><div class="exh-vendor-hdr"><span class="exh-dot ${vDot}"></span><span>${esc(vendorUiPublicLabelFromProviderId(v.providerId, v.providerId))}</span><span style="font-size:11px;color:var(--ink-faint);font-family:var(--f-mono)">${v.exhaustedCountries}/${v.totalCountries} countries</span>${v.orchestrationDoneForCycle ? '<span style="font-size:10px;color:var(--ink-faint)">· done for cycle</span>' : ''}</div>${countryHtml}</div>`;
+    } else {
+      const exCountries = v.exhaustedCountries ?? 0;
+      const totalCountries = v.totalCountries ?? 0;
+      countsText = `${exCountries}/${totalCountries} countries exhausted`;
+      innerHtml = (v.countries || []).map(c => {
+        const cStatus = c.exhausted ? 'done' : c.exhaustedRoles > 0 ? 'partial' : 'ok';
+        const cCounts = `${c.exhaustedRoles}/${c.totalRoles} roles exhausted`;
+        const leaves = (c.roles || []).map(r =>
+          `<span class="spt-leaf ${r.exhausted ? 'exhausted' : 'active'}"><span class="spt-status-dot ${r.exhausted ? 'done' : 'ok'}"></span>${esc(r.label)}</span>`
+        ).join('');
+        return `<div class="spt-l2-row">
+          <button class="spt-l2-btn" data-spt-l2="1" aria-expanded="false">
+            <span class="spt-status-dot ${cStatus}"></span>
+            <span>${esc(c.label)}</span>
+            <span class="spt-l2-counts">${esc(cCounts)}</span>
+            <svg class="spt-vendor-chevron" width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 2 8 6 4 10"/></svg>
+          </button>
+          <div class="spt-l3-branch">${leaves}</div>
+        </div>`;
   }).join('');
+    }
+
+    const cycleDone = v.orchestrationDoneForCycle
+      ? `<span class="spt-cycle-badge">done for cycle</span>` : '';
+
+    return `<div class="spt-vendor-block">
+      <button class="spt-vendor-btn" data-spt-vendor="1" aria-expanded="false">
+        <span class="spt-status-dot ${vStatus}"></span>
+        <span class="spt-vendor-name">${label}</span>
+        <span class="spt-vendor-counts">${esc(countsText)}</span>
+        ${cycleDone}
+        <svg class="spt-vendor-chevron" width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 2 8 6 4 10"/></svg>
+      </button>
+      <div class="spt-vendor-branch">${innerHtml}</div>
+    </div>`;
+  });
+
+  el.innerHTML = toolbar + vendorBlocks.join('');
 }
 
 function renderTextbot(elId, logs) {
@@ -1598,7 +1796,7 @@ function renderSettings(d) {
         <div class="stg-label"><div class="stg-label-main">Auto-check expired board listings</div><div class="stg-label-sub">Daily scan moves expired jobs to the Expired column (3-day auto-clear)</div></div>
         <label class="toggle-wrap"><input type="checkbox" class="toggle-input" id="tog-expiration-check" ${d.boardAutoExpirationCheckEnabled ? 'checked' : ''}/><span class="toggle-track"></span></label>
       </div>
-    </div>
+      </div>
 
     <!-- CV -->
     <div class="stg-sec">
@@ -2110,18 +2308,18 @@ function renderToolbar() {
         <button class="chip${sortActive?' active':''}" id="ch-sort">${IC.sort} ${sortLbl} ${IC.chevD}</button>
         <div class="popover" id="pop-sort" style="min-width:220px">
           <div style="${relSortGrpCls}">
-            <div class="pop-lbl">Sort by relevance</div>
-            ${[['high-first','Highest first'],['low-first','Lowest first'],['as-fetched','As fetched']].map(([v,l])=>`<label class="pop-item"><input type="radio" name="sRel" value="${v}" ${prefs.sortRel===v?'checked':''}/>${l}</label>`).join('')}
+          <div class="pop-lbl">Sort by relevance</div>
+            ${[['high-first','Highest first'],['low-first','Lowest first'],['as-fetched','Off']].map(([v,l])=>`<label class="pop-item"><input type="radio" name="sRel" value="${v}" ${prefs.sortRel===v?'checked':''}/>${l}</label>`).join('')}
           </div>
           <div class="pop-div"></div>
           <div style="${salSortGrpCls}">
-            <div class="pop-lbl">Sort by salary</div>
-            ${[['off','Off'],['high-first','Highest first'],['low-first','Lowest first']].map(([v,l])=>`<label class="pop-item"><input type="radio" name="sSal" value="${v}" ${prefs.sortSalary===v?'checked':''}/>${l}</label>`).join('')}
+          <div class="pop-lbl">Sort by salary</div>
+            ${[['high-first','Highest first'],['low-first','Lowest first'],['off','Off']].map(([v,l])=>`<label class="pop-item"><input type="radio" name="sSal" value="${v}" ${prefs.sortSalary===v?'checked':''}/>${l}</label>`).join('')}
           </div>
           <div class="pop-div"></div>
           <div style="${dateSortGrpCls}">
-            <div class="pop-lbl">Sort by date</div>
-            ${[['off','Off'],['new-first','Newest first'],['old-first','Oldest first']].map(([v,l])=>`<label class="pop-item"><input type="radio" name="sDate" value="${v}" ${prefs.sortDate===v?'checked':''}/>${l}</label>`).join('')}
+          <div class="pop-lbl">Sort by date</div>
+            ${[['new-first','Newest first'],['old-first','Oldest first'],['off','Off']].map(([v,l])=>`<label class="pop-item"><input type="radio" name="sDate" value="${v}" ${prefs.sortDate===v?'checked':''}/>${l}</label>`).join('')}
           </div>
         </div>
       </div>
@@ -2223,7 +2421,8 @@ function collectAndReload() {
   const sSal = document.querySelector('input[name="sSal"]:checked'); if (sSal) prefs.sortSalary = sSal.value;
   const sDate = document.querySelector('input[name="sDate"]:checked'); if (sDate) prefs.sortDate = sDate.value;
   const sAge = document.querySelector('input[name="sAge"]:checked'); if (sAge) prefs.filterFetchAge = sAge.value;
-  loadJobs(true); renderActiveFilters();
+  renderActiveFilters();
+  loadJobs(true);
 }
 function renderActiveFilters() {
   const row = document.getElementById('afilters'); if (!row) return;
@@ -2258,7 +2457,9 @@ function renderActiveFilters() {
       if (k==='date') prefs.sortDate='off';
       if (k==='srch') { prefs.listSearch=''; }
       if (k==='rel-sort') prefs.sortRel='as-fetched';
-      loadJobs(true); renderToolbar();
+      renderActiveFilters();
+      renderToolbar();
+      loadJobs(true);
     });
   });
 }
@@ -2324,9 +2525,25 @@ async function checkJobExpired(id, job) {
     if (btn) { btn.disabled = false; btn.innerHTML = IC.refresh; }
   }
 }
+function clearExpirationBannerTimers() {
+  if (expirationBannerCountdownTimer != null) {
+    clearInterval(expirationBannerCountdownTimer);
+    expirationBannerCountdownTimer = null;
+  }
+}
+function dismissExpirationBanner(opts = {}) {
+  clearExpirationBannerTimers();
+  const el = document.getElementById('expiration-scan-notice');
+  const wasVisible = el && el.style.display !== 'none';
+  if (el) el.style.display = 'none';
+  if (wasVisible || opts.alwaysNotify) {
+    void api('/api/notifications/dismiss-expiration-scan-notice', { method: 'POST' }).catch(() => {});
+  }
+}
 function renderExpirationBanner(summary) {
   const el = document.getElementById('expiration-scan-notice');
   if (!el) return;
+  clearExpirationBannerTimers();
   if (!summary || !summary.scanned) { el.style.display = 'none'; return; }
 
   const { scanned, expired, failed } = summary;
@@ -2349,12 +2566,20 @@ function renderExpirationBanner(summary) {
   }
 
   const icon = isGreen ? '\u2713' : '\u26A0\uFE0F';
-  el.innerHTML = `<span class="esn-icon" aria-hidden="true">${icon}</span><span class="esn-msg">${msg}</span><button class="esn-dismiss" aria-label="Dismiss">Dismiss \u00D7</button>`;
+  el.innerHTML = `<span class="esn-icon" aria-hidden="true">${icon}</span><span class="esn-msg">${msg}</span><span class="esn-actions"><span class="esn-countdown" aria-live="polite">${EXPIRATION_BANNER_AUTO_DISMISS_SEC}s</span><button class="esn-dismiss" aria-label="Dismiss">Dismiss \u00D7</button></span>`;
   el.style.display = 'flex';
-  el.querySelector('.esn-dismiss')?.addEventListener('click', async () => {
-    el.style.display = 'none';
-    try { await api('/api/notifications/dismiss-expiration-scan-notice', { method: 'POST' }); } catch {}
-  });
+  el.querySelector('.esn-dismiss')?.addEventListener('click', () => dismissExpirationBanner());
+
+  let remaining = EXPIRATION_BANNER_AUTO_DISMISS_SEC;
+  const countdownEl = el.querySelector('.esn-countdown');
+  expirationBannerCountdownTimer = setInterval(() => {
+    remaining -= 1;
+    if (countdownEl) countdownEl.textContent = `${Math.max(0, remaining)}s`;
+    if (remaining <= 0) {
+      clearExpirationBannerTimers();
+      dismissExpirationBanner();
+    }
+  }, 1000);
 }
 
 async function refreshAllBoard() {
@@ -2424,21 +2649,11 @@ async function refreshAllBoard() {
   btn.innerHTML = origHtml;
 
   const total = jobsToCheck.length;
-  const scanSummary = { scanned: total, expired: expiredCount, failed: blockedCount };
 
-  // Save results server-side so the banner persists across reloads and overwrites
-  // any stale automated-scan notice from midnight.
-  try {
-    await api('/api/notifications/expiration-scan-summary', {
-      method: 'POST',
-      body: JSON.stringify(scanSummary),
-    });
-  } catch {}
+  // Manual refresh uses toasts only — clear any stale automatic-scan banner/server notice.
+  dismissExpirationBanner({ alwaysNotify: true });
 
-  // Update the banner immediately with the Refresh All results.
-  renderExpirationBanner({ date: new Date().toISOString().slice(0, 10), ...scanSummary });
-
-  // Toast for quick feedback.
+  // Toast for quick feedback (manual refresh — no persistent banner).
   if (expiredCount === 0 && blockedCount === 0) {
     toast(`All ${total} job${total === 1 ? '' : 's'} are still active.`, 'success');
   } else if (expiredCount === 0) {
@@ -3155,7 +3370,7 @@ function fillDrawer(job) {
     <div class="drw-footer-sep"></div>` : ''}
     <div class="drw-footer-row">
       <span class="drw-footer-job-actions">
-        ${openBtn}
+      ${openBtn}
         <button class="btn btn-secondary" type="button" id="drw-refresh-btn">${IC.refresh} Check active</button>
         ${S.debugMode ? `<button class="btn btn-secondary" type="button" id="drw-debug-rescore-btn">AI debug: new copy</button>` : ''}
       </span>
@@ -3569,6 +3784,7 @@ function openCreateUser() {
 function openEditUser(userId) {
   const u = _adminUserCache[userId];
   if (!u) { toast('User not found in cache — refresh the page', 'error'); return; }
+  const pipelineControlsDisabled = u.status !== 'active';
   openModal(`
     <div style="font-size:16px;font-weight:600;color:var(--ink-strong);margin-bottom:4px">Edit user</div>
     <div style="font-family:var(--f-mono);font-size:13px;color:var(--ink-muted);margin-bottom:20px">${esc(u.username)}</div>
@@ -3585,6 +3801,14 @@ function openEditUser(userId) {
     <div id="eu-vendors-inner"><div style="font-size:12px;color:var(--ink-muted)">Loading…</div></div>
     <div style="font-size:13px;font-weight:500;color:var(--ink-body);margin-bottom:8px;margin-top:12px">Daily request caps <span style="font-weight:400;color:var(--ink-muted);font-size:11px">(0 = unlimited, blank = env default)</span></div>
     <div id="eu-caps-inner"><div style="font-size:12px;color:var(--ink-muted)">Loading…</div></div>
+    <div style="font-size:13px;font-weight:500;color:var(--ink-body);margin-bottom:8px;margin-top:12px">Pipeline controls</div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:6px">
+      <button type="button" class="btn btn-secondary" id="eu-refresh-limits" style="font-size:12px"${pipelineControlsDisabled ? ' disabled' : ''}>Refresh limits</button>
+      <button type="button" class="btn btn-secondary" id="eu-clear-exhaust" style="font-size:12px"${pipelineControlsDisabled ? ' disabled' : ''}>Resume after exhaustion / freeze</button>
+    </div>
+    <div style="font-size:12px;color:var(--ink-muted);line-height:1.45;margin-bottom:8px">${pipelineControlsDisabled
+      ? 'Enable this user before running pipeline controls.'
+      : 'Refresh limits clears today\u2019s usage counters and daily-cap pause. Resume after exhaustion / freeze clears search-path exhaustion and freeze without resetting counters.'}</div>
     <div id="eu-err" style="display:none;color:var(--danger-600);font-size:13px;margin-bottom:12px"></div>
     <div style="display:flex;gap:8px;margin-top:16px">
       <button class="btn btn-primary" id="eu-submit-btn">Save</button>
@@ -3649,6 +3873,39 @@ function openEditUser(userId) {
       document.getElementById('eu-vendors-inner').innerHTML = '';
       document.getElementById('eu-caps-inner').innerHTML = '';
     });
+
+  document.getElementById('eu-refresh-limits')?.addEventListener('click', async () => {
+    const btn = document.getElementById('eu-refresh-limits');
+    if (!btn || btn.disabled) return;
+    btn.disabled = true;
+    try {
+      const r = await api(`/api/admin/users/${encodeURIComponent(u.id)}/refresh-limits`, { method: 'POST' });
+      if (r.coordinatorError) {
+        toast(`Counters cleared for ${u.username}, but coordinator reset failed`, 'warning');
+      } else if ((r.deletedRows ?? 0) === 0 && (r.coordinatorCleared ?? 0) === 0) {
+        toast(`No daily limits were reset for ${u.username}`, 'info');
+      } else {
+        toast(`Limits refreshed for ${u.username} — ${r.deletedRows ?? 0} rows cleared`, 'success');
+      }
+    } catch(e) { toast('Failed: ' + e.message, 'error'); }
+    finally { btn.disabled = pipelineControlsDisabled; }
+  });
+  document.getElementById('eu-clear-exhaust')?.addEventListener('click', async () => {
+    const btn = document.getElementById('eu-clear-exhaust');
+    if (!btn || btn.disabled) return;
+    if (!confirm(`Clear exhaustion / freeze pause for ${u.username}?`)) return;
+    btn.disabled = true;
+    try {
+      const r = await api(`/api/admin/users/${encodeURIComponent(u.id)}/clear-exhaust-pause`, { method: 'POST' });
+      const cleared = r.clearedProviders ?? 0;
+      if (cleared === 0) {
+        toast(`No exhaustion pause was cleared for ${u.username}`, 'warning');
+      } else {
+        toast(`Exhaust pause cleared for ${u.username} (${cleared} provider${cleared === 1 ? '' : 's'})`, 'success');
+      }
+    } catch(e) { toast('Failed: ' + e.message, 'error'); }
+    finally { btn.disabled = pipelineControlsDisabled; }
+  });
 
   submitBtn?.addEventListener('click', async () => {
     const btn = submitBtn;
@@ -4045,23 +4302,6 @@ async function init() {
 
   // Operations
   document.getElementById('ops-refresh-btn')?.addEventListener('click', loadOps);
-  document.getElementById('textbot-refresh-btn')?.addEventListener('click', async () => {
-    try {
-      const r = await api('/api/logs?limit=300');
-      const logs = r.logs || [];
-      renderTextbot('textbot-main', logs.filter(l => l.level !== 'debug'));
-      renderTextbot('textbot-debug', logs.filter(l => l.level === 'debug'));
-    } catch(e) { toast('Failed: ' + e.message, 'error'); }
-  });
-  document.getElementById('clear-logs-btn')?.addEventListener('click', async () => {
-    if (!confirm('Clear all log entries?')) return;
-    try {
-      await api('/api/logs', { method: 'DELETE' });
-      renderTextbot('textbot-main', []);
-      renderTextbot('textbot-debug', []);
-      toast('Logs cleared', 'success');
-    } catch(e) { toast('Failed: ' + e.message, 'error'); }
-  });
   document.getElementById('clear-incidents-btn')?.addEventListener('click', async () => {
     try {
       await api('/api/operational-signals', { method: 'DELETE', body: JSON.stringify({ purgeAll: true }) });
@@ -4071,25 +4311,37 @@ async function init() {
       toast('Incidents cleared', 'success');
     } catch(e) { toast('Failed: ' + e.message, 'error'); }
   });
-  document.getElementById('ops-refresh-limits')?.addEventListener('click', async () => {
-    const btn = document.getElementById('ops-refresh-limits');
-    if (btn) btn.disabled = true;
-    try {
-      const r = await api('/api/operational-dashboard/refresh-limits', { method: 'POST' });
-      toast(`Limits refreshed — ${r.deletedRows ?? 0} rows cleared`, 'success');
-      loadOps();
-    } catch(e) { toast('Failed: ' + e.message, 'error'); }
-    finally { if (btn) btn.disabled = false; }
-  });
-  document.getElementById('ops-clear-exhaust')?.addEventListener('click', async () => {
-    const btn = document.getElementById('ops-clear-exhaust');
-    if (btn) btn.disabled = true;
-    try {
-      await api('/api/pipeline/clear-exhaust-pause', { method: 'POST' });
-      toast('Exhaust pause cleared — pipeline will resume', 'success');
-      loadOps();
-    } catch(e) { toast('Failed: ' + e.message, 'error'); }
-    finally { if (btn) btn.disabled = false; }
+
+  // Search path exhaustion tree — delegate clicks inside the ops view
+  document.getElementById('view-ops')?.addEventListener('click', e => {
+    const modeBtn = e.target.closest('[data-spt-mode]');
+    if (modeBtn) { sptSetMode(modeBtn.dataset.sptMode); return; }
+
+    if (e.target.closest('[data-spt-expand-all]')) { sptSetTreeExpanded(true); return; }
+    if (e.target.closest('[data-spt-collapse-all]')) { sptSetTreeExpanded(false); return; }
+
+    const vendorBtn = e.target.closest('[data-spt-vendor]');
+    if (vendorBtn) {
+      const block = vendorBtn.closest('.spt-vendor-block');
+      const branch = block?.querySelector('.spt-vendor-branch');
+      if (branch) {
+        const open = branch.classList.toggle('open');
+        vendorBtn.setAttribute('aria-expanded', open ? 'true' : 'false');
+        // Collapse all L2 when vendor collapses
+        if (!open) branch.querySelectorAll('.spt-l3-branch').forEach(b => { b.classList.remove('open'); b.closest('.spt-l2-row')?.querySelector('[data-spt-l2]')?.setAttribute('aria-expanded', 'false'); });
+      }
+      return;
+    }
+
+    const l2Btn = e.target.closest('[data-spt-l2]');
+    if (l2Btn) {
+      const row = l2Btn.closest('.spt-l2-row');
+      const branch = row?.querySelector('.spt-l3-branch');
+      if (branch) {
+        const open = branch.classList.toggle('open');
+        l2Btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+      }
+    }
   });
 
   // Admin section buttons

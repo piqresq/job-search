@@ -7,6 +7,7 @@ import {
   buildContentDedupeFingerprint,
   computeContentDedupeHash,
   computeCountryInclusiveContentDedupeHash,
+  isContentDedupeAnchorJob,
 } from "../src/pipeline/contentDedupeHash";
 import type { NormalizedJob } from "../src/types/job";
 
@@ -99,6 +100,41 @@ assert.notEqual(
   await computeContentDedupeHash(hybridUk),
   await computeContentDedupeHash(hybridGermany),
   "non-remote hashes should keep country",
+);
+
+assert.equal(
+  isContentDedupeAnchorJob({
+    dash_bucket: "active",
+    status: "dashboard_open",
+    hard_reject_reasons: null,
+    recommendation: "review",
+  }),
+  true,
+  "active list rows with a final recommendation anchor dedupe",
+);
+
+assert.equal(
+  isContentDedupeAnchorJob({
+    dash_bucket: "filtered",
+    status: "hard_rejected",
+    hard_reject_reasons: JSON.stringify(["Mandatory language requirement detected"]),
+    recommendation: null,
+  }),
+  true,
+  "filtered hard rejects without duplicate listing anchor dedupe",
+);
+
+assert.equal(
+  isContentDedupeAnchorJob({
+    dash_bucket: "filtered",
+    status: "hard_rejected",
+    hard_reject_reasons: JSON.stringify([
+      "Duplicate listing (content-hash dedupe; fingerprint 77df6ae0… matches an earlier saved job)",
+    ]),
+    recommendation: null,
+  }),
+  false,
+  "duplicate-listing filtered rows must not anchor dedupe",
 );
 
 console.log("test-content-dedupe-hash: ok");

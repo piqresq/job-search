@@ -69,11 +69,69 @@ export async function computeCountryInclusiveContentDedupeHash(job: NormalizedJo
   return sha256Hex32Utf8(buildContentDedupeFingerprintInternal(job, true));
 }
 
+/** Only rows with created_at within this window can block a newer duplicate listing. */
+export const CONTENT_DEDUPE_WINDOW_SECONDS = 7 * 86400;
+
 /** Shown in dashboard filtered-job reject copy when content-hash dedupe hard-rejects a row. */
 export const DUPLICATE_LISTING_JOB_ID_LINE_PREFIX = "Duplicate of DB job ID: ";
 
 export function isDuplicateListingRejectText(text: string): boolean {
   return /duplicate listing|content-hash dedupe/i.test(text);
+}
+
+export type ContentDedupeAnchorRow = {
+  dash_bucket: string | null;
+  status: string | null;
+  hard_reject_reasons: string | null;
+  recommendation: string | null;
+};
+
+function parseHardRejectReasonLines(raw: string | null): string[] {
+  if (!raw?.trim()) return [];
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    if (Array.isArray(parsed)) {
+      return parsed.filter((line): line is string => typeof line === "string");
+    }
+  } catch {
+    /* ignore malformed JSON */
+  }
+  return [];
+}
+
+function normalizedRecommendation(recommendation: string | null): string {
+  return (recommendation ?? "").trim().toLowerCase().replace(/\s+/g, "_");
+}
+
+/**
+ * Rows that may block a newer duplicate: visible on the active job list, or on Filtered
+ * for a reason other than content-hash duplicate listing.
+ */
+export function isContentDedupeAnchorJob(row: ContentDedupeAnchorRow): boolean {
+  const bucket = row.dash_bucket ?? "active";
+  if (bucket === "accepted" || bucket === "denied") return false;
+
+  const rec = normalizedRecommendation(row.recommendation);
+  const status = (row.status ?? "").trim();
+
+  const onActiveList =
+    bucket === "active" &&
+    (rec === "high_priority_review" || rec === "review" || rec === "low_priority_review");
+  if (onActiveList) return true;
+
+  const onFilteredTab =
+    bucket === "filtered" ||
+    status === "hard_rejected" ||
+    status === "rejected_by_ai" ||
+    rec === "reject";
+  if (!onFilteredTab) return false;
+
+  if (status === "hard_rejected") {
+    const rejectLines = parseHardRejectReasonLines(row.hard_reject_reasons);
+    if (rejectLines.some(isDuplicateListingRejectText)) return false;
+  }
+
+  return true;
 }
 
 export function duplicateListingHardRejectReasons(dupOf: string, contentDedupeHash: string): string[] {

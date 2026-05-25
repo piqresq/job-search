@@ -1,6 +1,10 @@
 import { listingLogoFromUrls, type ListingLogoKind } from "../dashboard/listingLogo";
 import { computeSalaryEurCache, type SalaryEurCache } from "../dashboard/salary";
 import type { HardFilterFxRates } from "../pipeline/hardFilters";
+import {
+  CONTENT_DEDUPE_WINDOW_SECONDS,
+  isContentDedupeAnchorJob,
+} from "../pipeline/contentDedupeHash";
 import { parseScoringFromJson, type NormalizedJob, type ScoringResult } from "../types/job";
 
 export type JobRow = {
@@ -9,12 +13,18 @@ export type JobRow = {
   fit_score: number | null;
   recommendation: string | null;
   dash_bucket: string | null;
+  created_at: number;
 };
 
 export type ContentDedupeCandidateRow = {
   id: string;
   content_dedupe_hash: string | null;
   normalized_json: string | null;
+  created_at: number;
+  dash_bucket: string | null;
+  status: string | null;
+  hard_reject_reasons: string | null;
+  recommendation: string | null;
 };
 
 export type DashboardListRow = {
@@ -175,7 +185,7 @@ export function defaultDashboardJobListPrefs(): DashboardJobListPrefs {
 export async function getJob(db: D1Database, userId: string, id: string): Promise<JobRow | null> {
   const row = await db
     .prepare(
-      "SELECT id, status, fit_score, recommendation, dash_bucket FROM jobs WHERE user_id = ? AND id = ?",
+      "SELECT id, status, fit_score, recommendation, dash_bucket, created_at FROM jobs WHERE user_id = ? AND id = ?",
     )
     .bind(userId, id)
     .first<JobRow>();
@@ -277,24 +287,39 @@ export async function upsertNormalizedJob(
     .run();
 }
 
-/** Earliest-saved row wins; used to hard-reject later listings with the same content fingerprint. */
+/** Earliest eligible anchor wins; used to hard-reject later listings with the same content fingerprint. */
 export async function findOtherJobIdWithContentDedupeHash(
   db: D1Database,
   userId: string,
   hash: string,
   excludeId: string,
+  excludeCreatedAtUnix: number,
 ): Promise<string | null> {
-  const row = await db
+  const minCreatedAt = excludeCreatedAtUnix - CONTENT_DEDUPE_WINDOW_SECONDS;
+  const { results } = await db
     .prepare(
-      `SELECT id FROM jobs
+      `SELECT id, dash_bucket, status, hard_reject_reasons, recommendation
+       FROM jobs
        WHERE user_id = ? AND content_dedupe_hash = ? AND id != ?
-       ORDER BY created_at ASC, id ASC
-       LIMIT 1`,
+         AND created_at >= ?
+         AND (created_at < ? OR (created_at = ? AND id < ?))
+       ORDER BY created_at ASC, id ASC`,
     )
-    .bind(userId, hash, excludeId)
-    .first<{ id: string }>();
-  return row?.id ?? null;
+    .bind(userId, hash, excludeId, minCreatedAt, excludeCreatedAtUnix, excludeCreatedAtUnix, excludeId)
+    .all<ContentDedupeAnchorLookupRow>();
+  for (const row of results ?? []) {
+    if (isContentDedupeAnchorJob(row)) return row.id;
+  }
+  return null;
 }
+
+type ContentDedupeAnchorLookupRow = {
+  id: string;
+  dash_bucket: string | null;
+  status: string | null;
+  hard_reject_reasons: string | null;
+  recommendation: string | null;
+};
 
 /**
  * Fallback for fingerprint contract changes. Callers still perform the final
@@ -306,19 +331,24 @@ export async function listContentDedupeCandidateJobsByCompanyTitle(
   company: string,
   title: string,
   excludeId: string,
+  excludeCreatedAtUnix: number,
 ): Promise<ContentDedupeCandidateRow[]> {
+  const minCreatedAt = excludeCreatedAtUnix - CONTENT_DEDUPE_WINDOW_SECONDS;
   const result = await db
     .prepare(
-      `SELECT id, content_dedupe_hash, normalized_json FROM jobs
+      `SELECT id, content_dedupe_hash, normalized_json, created_at,
+              dash_bucket, status, hard_reject_reasons, recommendation
+       FROM jobs
        WHERE user_id = ?
          AND id != ?
          AND content_dedupe_hash IS NOT NULL
          AND normalized_json IS NOT NULL
+         AND created_at >= ?
          AND lower(trim(company)) = lower(trim(?))
          AND lower(trim(title)) = lower(trim(?))
        ORDER BY created_at ASC, id ASC`,
     )
-    .bind(userId, excludeId, company, title)
+    .bind(userId, excludeId, minCreatedAt, company, title)
     .all<ContentDedupeCandidateRow>();
   return result.results ?? [];
 }
@@ -1044,79 +1074,83 @@ function buildDashboardJobListQuerySpec(
     params.push(userId);
   }
 
-  const enabledSources = (["linkedin", "google", "other"] as const).filter((key) => prefs.src[key]);
-  if (enabledSources.length === 0) {
-    whereClauses.push(`1 = 0`);
-  } else if (enabledSources.length < 3) {
-    whereClauses.push(`${DASHBOARD_JOB_SOURCE_EXPR} IN (${dashboardJobListPlaceholders(enabledSources.length)})`);
-    params.push(...enabledSources);
-  }
-
-  const enabledRel = (["high", "medium", "low", "failed", "none"] as const).filter((key) => prefs.rel[key]);
-  if (enabledRel.length === 0) {
-    whereClauses.push(`1 = 0`);
-  } else if (enabledRel.length < 5) {
-    whereClauses.push(`${DASHBOARD_JOB_RELEVANCE_KEY_EXPR} IN (${dashboardJobListPlaceholders(enabledRel.length)})`);
-    params.push(...enabledRel);
-  }
-
-  const enabledContracts = (["ft", "pt", "temp", "other"] as const).filter((key) => prefs.contract[key]);
-  if (enabledContracts.length === 0) {
-    whereClauses.push(`1 = 0`);
-  } else if (enabledContracts.length < 4) {
-    whereClauses.push(`${DASHBOARD_JOB_CONTRACT_BUCKET_EXPR} IN (${dashboardJobListPlaceholders(enabledContracts.length)})`);
-    params.push(...enabledContracts);
-  }
-
-  const excludedCountries = Object.entries(prefs.countries)
-    .filter(([, value]) => value === false)
-    .map(([key]) => key);
-  if (excludedCountries.length > 0) {
-    whereClauses.push(
-      `${DASHBOARD_JOB_COUNTRY_KEY_EXPR} NOT IN (${dashboardJobListPlaceholders(excludedCountries.length)})`,
-    );
-    params.push(...excludedCountries);
-  }
-
-  const excludedRoleQueries = Object.entries(prefs.roleQueries)
-    .filter(([, value]) => value === false)
-    .map(([key]) => key);
-  if (excludedRoleQueries.length > 0) {
-    whereClauses.push(
-      `${DASHBOARD_JOB_ROLE_QUERY_KEY_EXPR} NOT IN (${dashboardJobListPlaceholders(excludedRoleQueries.length)})`,
-    );
-    params.push(...excludedRoleQueries);
-  }
-
-  if (tab === "filtered") {
-    const enabledReasons = FILTERED_REASON_OPTIONS
-      .map((option) => option.key)
-      .filter((key) => prefs.filterReasons?.[key] !== false);
-    if (enabledReasons.length === 0) {
-      whereClauses.push(`1 = 0`);
-    } else if (enabledReasons.length < FILTERED_REASON_OPTIONS.length) {
-      whereClauses.push(`(${enabledReasons.map((key) => `(${DASHBOARD_FILTERED_REASON_SQL[key]})`).join(" OR ")})`);
-    }
-  }
-
   const searchTerms = String(prefs.listSearch ?? "")
     .trim()
     .toLowerCase()
     .split(/\s+/)
     .filter(Boolean);
+  const debugSearchBypassFilters = options?.debugSearchByJobId === true && searchTerms.length > 0;
+
+  if (!debugSearchBypassFilters) {
+    const enabledSources = (["linkedin", "google", "other"] as const).filter((key) => prefs.src[key]);
+    if (enabledSources.length === 0) {
+      whereClauses.push(`1 = 0`);
+    } else if (enabledSources.length < 3) {
+      whereClauses.push(`${DASHBOARD_JOB_SOURCE_EXPR} IN (${dashboardJobListPlaceholders(enabledSources.length)})`);
+      params.push(...enabledSources);
+    }
+
+    const enabledRel = (["high", "medium", "low", "failed", "none"] as const).filter((key) => prefs.rel[key]);
+    if (enabledRel.length === 0) {
+      whereClauses.push(`1 = 0`);
+    } else if (enabledRel.length < 5) {
+      whereClauses.push(`${DASHBOARD_JOB_RELEVANCE_KEY_EXPR} IN (${dashboardJobListPlaceholders(enabledRel.length)})`);
+      params.push(...enabledRel);
+    }
+
+    const enabledContracts = (["ft", "pt", "temp", "other"] as const).filter((key) => prefs.contract[key]);
+    if (enabledContracts.length === 0) {
+      whereClauses.push(`1 = 0`);
+    } else if (enabledContracts.length < 4) {
+      whereClauses.push(`${DASHBOARD_JOB_CONTRACT_BUCKET_EXPR} IN (${dashboardJobListPlaceholders(enabledContracts.length)})`);
+      params.push(...enabledContracts);
+    }
+
+    const excludedCountries = Object.entries(prefs.countries)
+      .filter(([, value]) => value === false)
+      .map(([key]) => key);
+    if (excludedCountries.length > 0) {
+      whereClauses.push(
+        `${DASHBOARD_JOB_COUNTRY_KEY_EXPR} NOT IN (${dashboardJobListPlaceholders(excludedCountries.length)})`,
+      );
+      params.push(...excludedCountries);
+    }
+
+    const excludedRoleQueries = Object.entries(prefs.roleQueries)
+      .filter(([, value]) => value === false)
+      .map(([key]) => key);
+    if (excludedRoleQueries.length > 0) {
+      whereClauses.push(
+        `${DASHBOARD_JOB_ROLE_QUERY_KEY_EXPR} NOT IN (${dashboardJobListPlaceholders(excludedRoleQueries.length)})`,
+      );
+      params.push(...excludedRoleQueries);
+    }
+
+    if (tab === "filtered") {
+      const enabledReasons = FILTERED_REASON_OPTIONS
+        .map((option) => option.key)
+        .filter((key) => prefs.filterReasons?.[key] !== false);
+      if (enabledReasons.length === 0) {
+        whereClauses.push(`1 = 0`);
+      } else if (enabledReasons.length < FILTERED_REASON_OPTIONS.length) {
+        whereClauses.push(`(${enabledReasons.map((key) => `(${DASHBOARD_FILTERED_REASON_SQL[key]})`).join(" OR ")})`);
+      }
+    }
+
+    if (prefs.filterFetchAge !== "off") {
+      const winSec = DASHBOARD_JOB_FILTER_FETCH_AGE_SECONDS[prefs.filterFetchAge];
+      if (typeof winSec === "number" && Number.isFinite(winSec) && winSec > 0) {
+        whereClauses.push(
+          `${DASHBOARD_JOB_INGEST_SORT_EXPR} >= CAST(strftime('%s', 'now') AS INTEGER) - ?`,
+        );
+        params.push(winSec);
+      }
+    }
+  }
+
   for (const term of searchTerms) {
     whereClauses.push(`${dashboardJobSearchHaystackExpr(options)} LIKE ?`);
     params.push(`%${term}%`);
-  }
-
-  if (prefs.filterFetchAge !== "off") {
-    const winSec = DASHBOARD_JOB_FILTER_FETCH_AGE_SECONDS[prefs.filterFetchAge];
-    if (typeof winSec === "number" && Number.isFinite(winSec) && winSec > 0) {
-      whereClauses.push(
-        `${DASHBOARD_JOB_INGEST_SORT_EXPR} >= CAST(strftime('%s', 'now') AS INTEGER) - ?`,
-      );
-      params.push(winSec);
-    }
   }
 
   const orderFields: DashboardJobListOrderField[] = [];
