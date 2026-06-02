@@ -1,7 +1,6 @@
 import { Document, Packer, Paragraph, TextRun } from "docx";
 // @ts-expect-error No bundled types for html-to-docx
 import HTMLtoDOCX from "html-to-docx";
-import { CV_SOURCE_HTML } from "../profile/cv-extracted-html.gen";
 import { applyDefaultCvStyles } from "../pipeline/cvHtmlDefaultStyles";
 import { reapplyCvFormatting } from "../pipeline/cvHtmlEmphasis";
 
@@ -34,7 +33,7 @@ function wrapHtmlForDocx(inner: string): string {
 /** Tailored CV HTML (from Word → mammoth → model) → .docx, preserving more layout than plain text. */
 export async function htmlToDocxArrayBuffer(
   htmlFragmentOrDocument: string,
-  referenceCvHtml: string = CV_SOURCE_HTML,
+  referenceCvHtml: string = "",
 ): Promise<ArrayBuffer> {
   const themed = htmlFragmentOrDocument.includes('data-cv-themed="1"')
     ? htmlFragmentOrDocument
@@ -42,7 +41,7 @@ export async function htmlToDocxArrayBuffer(
   const html = wrapHtmlForDocx(themed);
   const out = await HTMLtoDOCX(html, null, {
     table: { row: { cantSplit: true } },
-    // Office theme minor font for Oleg_Velikanov_CV.docx (see word/theme/theme1.xml).
+    // Default body font for exported tailored CV .docx (Calibri matches common Word themes).
     font: "Calibri",
     fontSize: 18,
   });

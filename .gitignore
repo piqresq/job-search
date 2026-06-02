@@ -9,5 +9,10 @@ scripts/.linkedin_api_tester_state.json
 scripts/.rapidapi_tester_state.json
 assets/rapidapi.txt
 
-# Optional local Word file for `npm run cv:extract` only (production CV comes from dashboard upload → D1).
+# Personal CV files (local only; production CV comes from dashboard upload → D1).
 /Oleg_Velikanov_CV.docx
+/Oleg_Velikanov_CV.pdf
+/Oleg_Velikanov_CV.*
+# Local `npm run cv:extract` output — never commit (may contain PII).
+/src/profile/cv-extracted.gen.ts
+/src/profile/cv-extracted-html.gen.ts

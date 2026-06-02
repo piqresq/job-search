@@ -1,18 +1,17 @@
 import { getCvExtractionFromDb } from "../db/cvCache";
 import { sanitizeCvTextForAiScoring } from "./cvSanitizeForScoring";
-import { CV_SOURCE_TEXT } from "./cv-extracted.gen";
-import { CV_SOURCE_HTML } from "./cv-extracted-html.gen";
+
+const EMPTY_CV = { text: "", html: "" } as const;
 
 /**
- * Single read: D1 cache is used only when **both** text and HTML rows are present and non-empty
- * (avoids mixing one DB field with bundled fallback for the other).
+ * Single read: D1 cache is used only when **both** text and HTML rows are present and non-empty.
  */
 export async function getCvSources(db: D1Database, userId: string): Promise<{ text: string; html: string }> {
   const row = await getCvExtractionFromDb(db, userId);
   if (row.text?.trim() && row.html?.trim()) {
     return { text: row.text, html: row.html };
   }
-  return { text: CV_SOURCE_TEXT, html: CV_SOURCE_HTML };
+  return { ...EMPTY_CV };
 }
 
 export async function getCvSourceText(db: D1Database, userId: string): Promise<string> {
@@ -23,9 +22,9 @@ export async function getCvSourceHtml(db: D1Database, userId: string): Promise<s
   return (await getCvSources(db, userId)).html;
 }
 
-/** For dashboard Settings: whether the Worker uses uploaded CV or bundled repository extract. */
+/** For dashboard Settings: whether the Worker uses an uploaded CV from D1. */
 export async function getCvCacheStatus(db: D1Database, userId: string): Promise<{
-  source: "database" | "bundled";
+  source: "database" | "none";
   uploadedAtUnix: number | null;
   textChars: number;
   htmlChars: number;
@@ -46,10 +45,10 @@ export async function getCvCacheStatus(db: D1Database, userId: string): Promise<
     };
   }
   return {
-    source: "bundled",
+    source: "none",
     uploadedAtUnix: null,
-    textChars: CV_SOURCE_TEXT.length,
-    htmlChars: CV_SOURCE_HTML.length,
+    textChars: 0,
+    htmlChars: 0,
     sanitizedTextChars: 0,
     hasSanitizedTextCache: false,
   };
@@ -57,7 +56,7 @@ export async function getCvCacheStatus(db: D1Database, userId: string): Promise<
 
 /**
  * Plain text sent to OpenAI **scoring** only: uses D1 `cv_sanitized_text` when present (written on upload);
- * otherwise sanitizes raw extract in memory (legacy DB row or bundled fallback).
+ * otherwise sanitizes raw extract in memory (legacy DB row).
  */
 export async function getCvTextForAiScoring(db: D1Database, userId: string): Promise<string> {
   const row = await getCvExtractionFromDb(db, userId);
@@ -65,5 +64,5 @@ export async function getCvTextForAiScoring(db: D1Database, userId: string): Pro
     if (row.sanitizedText?.trim()) return row.sanitizedText;
     return sanitizeCvTextForAiScoring(row.text);
   }
-  return sanitizeCvTextForAiScoring(CV_SOURCE_TEXT);
+  return "";
 }
