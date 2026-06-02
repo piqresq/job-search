@@ -230,5 +230,3 @@ scripts/                   tests, cv:extract, API testers
 - Production CV lives in **D1** (and optionally R2) after dashboard upload only.
 - `wrangler.toml` holds non-secret bindings and default caps — not secret values.
 - Architecture and operator detail: **`AGENTS.md`**. Cursor rules/skills: **`.cursor/`**.
-
-**Note:** Removing CV files from the latest commit does not erase them from old git history on a public fork; use [git filter-repo](https://github.com/newren/git-filter-repo) or GitHub secret scanning if you need history rewritten.
