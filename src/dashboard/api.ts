@@ -25,6 +25,7 @@ import {
   saveGeneratedDrafts,
   restoreDashboardJobToActive,
   restoreFilteredJobToActive,
+  resolveDashboardDisplayDateUnix,
   setDashboardDecision,
   setJobFavorite,
 } from "../db/jobs";
@@ -363,8 +364,26 @@ function normalizeDashboardJobListPrefs(raw: unknown): DashboardJobListPrefs {
   if (obj.sortSalary === "off" || obj.sortSalary === "high-first" || obj.sortSalary === "low-first") {
     prefs.sortSalary = obj.sortSalary;
   }
-  if (obj.sortDate === "off" || obj.sortDate === "new-first" || obj.sortDate === "old-first") {
-    prefs.sortDate = obj.sortDate;
+  if (
+    obj.sortFetchDate === "off" ||
+    obj.sortFetchDate === "new-first" ||
+    obj.sortFetchDate === "old-first"
+  ) {
+    prefs.sortFetchDate = obj.sortFetchDate;
+  }
+  if (
+    obj.sortPostedDate === "off" ||
+    obj.sortPostedDate === "new-first" ||
+    obj.sortPostedDate === "old-first"
+  ) {
+    prefs.sortPostedDate = obj.sortPostedDate;
+  }
+  // Legacy single date sort → vendor posted date.
+  if (
+    (obj.sortFetchDate == null && obj.sortPostedDate == null) &&
+    (obj.sortDate === "off" || obj.sortDate === "new-first" || obj.sortDate === "old-first")
+  ) {
+    prefs.sortPostedDate = obj.sortDate;
   }
   if (
     obj.filterFetchAge === "off" ||
@@ -530,11 +549,21 @@ function dashboardJobPayloadFromRow(
   const createdAt = typeof r.created_at === "number" ? r.created_at : 0;
   const apiRequestSec = resolveApiRequestUnixSec(apiFetched, createdAt);
   const apiRequestDateYmd = apiRequestSec != null ? formatPostedDotYmdUtc(apiRequestSec) : "";
-  const dateHoverTitle = apiRequestSec != null ? `API request (UTC): ${formatDotYmdHmUtc(apiRequestSec)}` : "";
   const postedListing = numOrNull(r.posted_at_unix);
   const listingPostedAtUnix = postedListing != null && postedListing > 0 ? postedListing : 0;
   const ingestedAtUnix = apiRequestSec != null && apiRequestSec > 0 ? apiRequestSec : createdAt > 0 ? createdAt : 0;
-  const postedAtUnix = listingPostedAtUnix > 0 ? listingPostedAtUnix : ingestedAtUnix > 0 ? ingestedAtUnix : 0;
+  const displayDateUnix = resolveDashboardDisplayDateUnix(listingPostedAtUnix, ingestedAtUnix);
+  const postedAtUnix = displayDateUnix;
+  const displayDateYmd = displayDateUnix > 0 ? formatPostedDotYmdUtc(displayDateUnix) : "";
+  const postedDateYmd = listingPostedAtUnix > 0 ? formatPostedDotYmdUtc(listingPostedAtUnix) : "";
+  const dateHoverParts: string[] = [];
+  if (listingPostedAtUnix > 0) {
+    dateHoverParts.push(`Posted (UTC): ${formatPostedDotYmdUtc(listingPostedAtUnix)}`);
+  }
+  if (ingestedAtUnix > 0 && ingestedAtUnix !== listingPostedAtUnix) {
+    dateHoverParts.push(`Fetched (UTC): ${formatDotYmdHmUtc(ingestedAtUnix)}`);
+  }
+  const dateHoverTitle = dateHoverParts.join(" · ");
   const showPipelineParams = opts.showPipelineParams === true;
   const showApiRaw = opts.showApiRaw === true;
 
@@ -552,10 +581,12 @@ function dashboardJobPayloadFromRow(
     searchQuery: r.search_query ?? "",
     searchTier: r.search_tier === 1 || r.search_tier === 2 ? 1 : null,
     apiRequestDateYmd,
-    postedDateYmd: apiRequestDateYmd,
+    postedDateYmd,
+    displayDateYmd,
     dateHoverTitle,
     postedAtUnix,
     listingPostedAtUnix,
+    displayDateUnix,
     ingestedAtUnix,
     sortSalaryMonthlyEur: typeof r.salary_monthly_eur === "number" ? r.salary_monthly_eur : null,
     salaryEur: r.salary_display_eur ?? "N/A",
@@ -628,6 +659,7 @@ const VENDOR_LABELS: Record<JobSourceId, string> = {
   linkedin_jobs: "LinkedIn (Fantastic Jobs)",
   jsearch: "JSearch",
   jobs_api: "Jobs API (Pat92)",
+  remote_jobs: "Remote Jobs",
 };
 
 async function buildVendorsPayload(
@@ -655,6 +687,7 @@ function requestCapsPerDayFromEnv(env: Env): Record<JobSourceId, number | null> 
     linkedin_jobs: parsePositiveEnvInt(env.LINKEDIN_MAX_API_CALLS_PER_RUN),
     jsearch: parsePositiveEnvInt(env.JSEARCH_MAX_API_CALLS_PER_RUN),
     jobs_api: parsePositiveEnvInt(env.JOBS_API_MAX_API_CALLS_PER_RUN),
+    remote_jobs: parsePositiveEnvInt(env.REMOTE_JOBS_MAX_API_CALLS_PER_RUN),
   };
 }
 
@@ -1057,10 +1090,14 @@ function filterOutExplanationLines(row: {
   fit_score: number | null;
   scoring_notes: string | null;
 }): string[] {
+  const hardReasons = safeJsonStringArray(row.hard_reject_reasons);
+  if (hardReasons.length > 0) {
+    return hardReasons;
+  }
+
   const st = row.status ?? "";
   if (st === "hard_rejected") {
-    const arr = safeJsonStringArray(row.hard_reject_reasons);
-    return arr.length > 0 ? arr : ["Hard filter rejected this job (no reason text was stored)."];
+    return ["Hard filter rejected this job (no reason text was stored)."];
   }
   if (st === "rejected_by_ai") {
     const note = (row.scoring_notes ?? "").trim();

@@ -551,7 +551,7 @@ export type AdminUserPreferencePatch = {
   requestCapOverrides?: Partial<Record<JobSourceId, number | null>>;
 };
 
-const PROVIDER_CAP_IDS: readonly JobSourceId[] = ["linkedin_jobs", "jsearch", "jobs_api"];
+const PROVIDER_CAP_IDS: readonly JobSourceId[] = ["linkedin_jobs", "jsearch", "jobs_api", "remote_jobs"];
 
 function parsePositiveIntFromEnv(raw: string | undefined): number {
   const n = raw ? parseInt(raw.trim(), 10) : 0;
@@ -566,6 +566,8 @@ export function getDefaultProviderRequestCapFromEnv(env: Env, providerId: JobSou
       return parsePositiveIntFromEnv(env.JSEARCH_MAX_API_CALLS_PER_RUN);
     case "jobs_api":
       return parsePositiveIntFromEnv(env.JOBS_API_MAX_API_CALLS_PER_RUN);
+    case "remote_jobs":
+      return parsePositiveIntFromEnv(env.REMOTE_JOBS_MAX_API_CALLS_PER_RUN);
   }
 }
 

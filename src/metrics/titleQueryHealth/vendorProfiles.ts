@@ -37,6 +37,7 @@ const PROFILES: Record<string, VendorTitleHealthOptions> = {
   },
   linkedin_jobs: { vendorId: "linkedin_jobs" },
   jobs_api: { vendorId: "jobs_api" },
+  remote_jobs: { vendorId: "remote_jobs" },
 };
 
 export function getVendorTitleHealthOptions(vendorId: string | undefined): VendorTitleHealthOptions | undefined {

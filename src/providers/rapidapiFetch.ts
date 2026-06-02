@@ -2,7 +2,10 @@ import { getResolvedProviderDailyRequestCap } from "../db/appSettings";
 import { applyStatisticsDeltas, type StatisticsVariantDimension } from "../db/statistics";
 import {
   bumpProviderUtcDayRequestCount,
+  bumpProviderUtcMonthRequestCount,
   getProviderUtcDayRequestCount,
+  getProviderUtcMonthRequestCount,
+  utcYmFromUnix,
   utcYmdFromUnix,
 } from "../db/pipelineState";
 import { log, observabilityLog } from "../logging/appLog";
@@ -14,7 +17,7 @@ import { parseRapidApiKeys } from "./rapidapiKeys";
 const RAPIDAPI_REQUEST_TIMEOUT_MS = 60_000;
 
 function providerIdFromScope(scope: string): JobSourceId | null {
-  if (scope === "linkedin_jobs" || scope === "jsearch" || scope === "jobs_api") return scope;
+  if (scope === "linkedin_jobs" || scope === "jsearch" || scope === "jobs_api" || scope === "remote_jobs") return scope;
   return null;
 }
 
@@ -46,6 +49,43 @@ async function ensureProviderDailyRequestCapNotReached(
       requestCap: cap,
       requestsUsed: current,
       utcDay: ymdUtc,
+    });
+  }
+}
+
+function parsePositiveInt(raw: string | undefined): number {
+  const n = raw ? parseInt(raw.trim(), 10) : 0;
+  return Number.isFinite(n) && n > 0 ? n : 0;
+}
+
+async function ensureProviderMonthlyRequestCapNotReached(
+  db: D1Database,
+  env: Env,
+  userId: string,
+  providerId: JobSourceId,
+): Promise<void> {
+  if (providerId !== "remote_jobs") return;
+  const cap = parsePositiveInt(env.REMOTE_JOBS_MAX_API_CALLS_PER_MONTH) || 500;
+  if (cap <= 0) return;
+
+  const now = Math.floor(Date.now() / 1000);
+  const ymUtc = utcYmFromUnix(now);
+  const current = await getProviderUtcMonthRequestCount(db, userId, providerId, ymUtc);
+  if (current >= cap) {
+    const d = new Date(now * 1000);
+    const nextEligibleAt = Math.floor(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 1, 0, 0, 0) / 1000);
+    await log.info(env, providerId, "Provider monthly request cap reached; skipping vendor requests until next UTC month", {
+      utcMonth: ymUtc,
+      requestCap: cap,
+      requestsUsed: current,
+      nextEligibleAt,
+      nextEligibleAtIso: new Date(nextEligibleAt * 1000).toISOString(),
+    });
+    throw new PlannedSearchDoneForCycleError(`${providerId} monthly request cap reached`, nextEligibleAt, {
+      reason: "provider_monthly_request_cap",
+      requestCap: cap,
+      requestsUsed: current,
+      utcMonth: ymUtc,
     });
   }
 }
@@ -114,6 +154,9 @@ export async function rapidApiFetch(
   );
 
   await ensureProviderDailyRequestCapNotReached(db, env, userId, scope);
+  if (providerId) {
+    await ensureProviderMonthlyRequestCapNotReached(db, env, userId, providerId);
+  }
 
   let res: Response;
   const controller = new AbortController();
@@ -190,6 +233,7 @@ export async function rapidApiFetch(
   if (providerId) {
     const requestAt = Math.floor(Date.now() / 1000);
     await bumpProviderUtcDayRequestCount(db, userId, providerId, requestAt);
+    await bumpProviderUtcMonthRequestCount(db, userId, providerId, requestAt);
     try {
       await applyStatisticsDeltas(db, [
         {

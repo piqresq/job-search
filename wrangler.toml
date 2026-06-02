@@ -106,6 +106,16 @@ JSEARCH_MAX_API_CALLS_PER_RUN = "322"
 # Daily UTC budget for Jobs API RapidAPI calls; omit or set 0 to disable.
 JOBS_API_MAX_API_CALLS_PER_RUN = "322"
 # JOBS_API_MAX_JOBS_PER_CHUNK = "15"
+# Remote Jobs (remote-jobs1.p.rapidapi.com): enable source `remote_jobs` in dashboard Vendors.
+# Runtime role/country search comes from dashboard settings. This source intentionally ignores the global
+# 24h recency policy because the vendor returns older postings; UI display uses vendor datePosted when present.
+# It is cadence-gated to a rolling 15-day cooldown after a completed sweep.
+REMOTE_JOBS_MAX_API_CALLS_PER_RUN = "250"
+REMOTE_JOBS_MAX_API_CALLS_PER_MONTH = "500"
+REMOTE_JOBS_MIN_DAYS_BETWEEN_RUNS = "15"
+REMOTE_JOBS_MAX_JOBS_PER_CHUNK = "100"
+# REMOTE_JOBS_API_PATH = "/jobs"
+# REMOTE_JOBS_QUERY = "Customer Success"
 # LinkedIn Job Search API (RapidAPI) — runtime uses shared source-of-truth policy:
 # `/active-jb-24h`, `remote=true`, `type_filter=FULL_TIME`.
 # Optional: LINKEDIN_JOBS_API_PATH = "/active-jb-7d"

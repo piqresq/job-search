@@ -5,6 +5,8 @@ const K_LINKEDIN_RR_START = "linkedin_rr_start";
 const K_LINKEDIN_SWEEP_ID = "linkedin_sweep_id";
 const K_PROVIDER_CYCLE_REQUEST_COUNT = "provider_cycle_request_count";
 const K_PROVIDER_UTC_DAY_REQUEST_COUNT = "provider_utc_day_request_count";
+const K_PROVIDER_UTC_MONTH_REQUEST_COUNT = "provider_utc_month_request_count";
+const K_PROVIDER_LAST_COMPLETED_SWEEP_AT = "provider_last_completed_sweep_at";
 
 /** UTC calendar date `YYYY-MM-DD` for daily RapidAPI usage counters. */
 export function utcYmdFromUnix(sec: number): string {
@@ -15,10 +17,28 @@ export function utcYmdFromUnix(sec: number): string {
   return `${y}-${m}-${day}`;
 }
 
+/** UTC calendar month `YYYY-MM` for monthly vendor safety counters. */
+export function utcYmFromUnix(sec: number): string {
+  return utcYmdFromUnix(sec).slice(0, 7);
+}
+
 function providerUtcDayRequestCountKey(providerId: JobSourceId, ymdUtc: string): string {
   const provider = providerId.trim().toLowerCase().replace(/[^a-z0-9:_-]+/g, "_") || "default";
   const safeYmd = ymdUtc.replace(/[^0-9-]/g, "").slice(0, 10) || "unknown";
   return `${K_PROVIDER_UTC_DAY_REQUEST_COUNT}:${provider}:${safeYmd}`;
+}
+
+function safeProviderKey(providerId: JobSourceId): string {
+  return providerId.trim().toLowerCase().replace(/[^a-z0-9:_-]+/g, "_") || "default";
+}
+
+function providerUtcMonthRequestCountKey(providerId: JobSourceId, ymUtc: string): string {
+  const safeYm = ymUtc.replace(/[^0-9-]/g, "").slice(0, 7) || "unknown";
+  return `${K_PROVIDER_UTC_MONTH_REQUEST_COUNT}:${safeProviderKey(providerId)}:${safeYm}`;
+}
+
+function providerLastCompletedSweepAtKey(providerId: JobSourceId): string {
+  return `${K_PROVIDER_LAST_COMPLETED_SWEEP_AT}:${safeProviderKey(providerId)}`;
 }
 
 export async function getProviderUtcDayRequestCount(
@@ -45,6 +65,33 @@ export async function bumpProviderUtcDayRequestCount(
          updated_at = excluded.updated_at`,
     )
     .bind(userId, providerUtcDayRequestCountKey(providerId, ymd), nowSec)
+    .run();
+}
+
+export async function getProviderUtcMonthRequestCount(
+  db: D1Database,
+  userId: string,
+  providerId: JobSourceId,
+  ymUtc: string,
+): Promise<number> {
+  return getPipelineStateInt(db, userId, providerUtcMonthRequestCountKey(providerId, ymUtc), 0);
+}
+
+export async function bumpProviderUtcMonthRequestCount(
+  db: D1Database,
+  userId: string,
+  providerId: JobSourceId,
+  nowSec: number,
+): Promise<void> {
+  const ym = utcYmFromUnix(nowSec);
+  await db
+    .prepare(
+      `INSERT INTO pipeline_state (user_id, k, v, updated_at) VALUES (?, ?, '1', ?)
+       ON CONFLICT(user_id, k) DO UPDATE SET
+         v = CAST(COALESCE(NULLIF(pipeline_state.v, ''), '0') AS INTEGER) + 1,
+         updated_at = excluded.updated_at`,
+    )
+    .bind(userId, providerUtcMonthRequestCountKey(providerId, ym), nowSec)
     .run();
 }
 
@@ -98,6 +145,24 @@ export async function setPipelineStateInt(
     )
     .bind(userId, key, String(value), now)
     .run();
+}
+
+export async function getProviderLastCompletedSweepAt(
+  db: D1Database,
+  userId: string,
+  providerId: JobSourceId,
+): Promise<number> {
+  return getPipelineStateInt(db, userId, providerLastCompletedSweepAtKey(providerId), 0);
+}
+
+export async function setProviderLastCompletedSweepAt(
+  db: D1Database,
+  userId: string,
+  providerId: JobSourceId,
+  completedAt: number,
+  now: number,
+): Promise<void> {
+  await setPipelineStateInt(db, userId, providerLastCompletedSweepAtKey(providerId), completedAt, now);
 }
 
 export async function getLinkedinFreezeUntil(db: D1Database, userId: string): Promise<number> {

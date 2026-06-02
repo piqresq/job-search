@@ -102,7 +102,7 @@ export default {
         });
       }
       const id = providerId.trim() as JobSourceId;
-      if (id !== "linkedin_jobs" && id !== "jsearch" && id !== "jobs_api") {
+      if (id !== "linkedin_jobs" && id !== "jsearch" && id !== "jobs_api" && id !== "remote_jobs") {
         return new Response(JSON.stringify({ ok: false, error: `Unknown providerId: ${providerId}` }), {
           status: 400,
           headers: { "content-type": "application/json; charset=utf-8" },

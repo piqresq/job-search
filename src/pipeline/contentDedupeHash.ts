@@ -5,6 +5,17 @@ function seg(s: string): string {
   return s.normalize("NFKC").trim().replace(/\s+/g, " ").toLowerCase();
 }
 
+/**
+ * Role title for dedupe fingerprints. Syndicated reposts often suffix location after
+ * ` - City, Country` or an em/en dash; keep the role segment only. Requires whitespace
+ * around `-` so internal hyphens (e.g. Go-to-Market) stay intact.
+ */
+function titleSegForDedupe(title: string): string {
+  const normalized = seg(title);
+  if (!normalized) return normalized;
+  return normalized.split(/\s*(?:—|–|-)\s+/)[0]?.trim() ?? normalized;
+}
+
 /** Canonical salary segment: structured min/max/currency when possible, else normalized raw text. */
 function salarySeg(job: NormalizedJob): string {
   const cur = seg(job.salaryCurrency || "").toUpperCase();
@@ -19,7 +30,7 @@ function salarySeg(job: NormalizedJob): string {
 }
 
 export function isContentDedupeHashable(job: NormalizedJob): boolean {
-  return seg(job.company).length > 0 && seg(job.title).length > 0;
+  return seg(job.company).length > 0 && titleSegForDedupe(job.title).length > 0;
 }
 
 function countrySeg(job: NormalizedJob, includeRemoteCountry: boolean): string {
@@ -39,7 +50,7 @@ export function buildContentDedupeFingerprint(job: NormalizedJob): string {
 
 function buildContentDedupeFingerprintInternal(job: NormalizedJob, includeRemoteCountry: boolean): string {
   const company = seg(job.company);
-  const title = seg(job.title);
+  const title = titleSegForDedupe(job.title);
   const wp = seg(job.workplaceType || "");
   const country = countrySeg(job, includeRemoteCountry);
   const empRaw = job.employmentType != null ? String(job.employmentType).trim() : "";

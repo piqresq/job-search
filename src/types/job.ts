@@ -1,6 +1,6 @@
 import type { TitleQueryHealthBand } from "../metrics/titleQueryHealth/types";
 
-export type JobSourceId = "jsearch" | "linkedin_jobs" | "jobs_api";
+export type JobSourceId = "jsearch" | "linkedin_jobs" | "jobs_api" | "remote_jobs";
 
 export type NormalizedJob = {
   source: JobSourceId;

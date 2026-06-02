@@ -5,10 +5,13 @@
  * Only runs for high_priority_review and review jobs — low priority and
  * AI-rejected jobs are not checked.
  *
- * Returns "expired" when the listing is confidently dead (the caller will
+ * Returns active "expired" when the listing is confidently dead (the caller will
  * markHardRejected before the job ever becomes visible in the dashboard).
- * Returns "skip" for every ambiguous outcome (blocked, transient, unclear,
+ * Returns active "skip" for every ambiguous outcome (blocked, transient, unclear,
  * auth_expired, no URL) so the job passes through normally.
+ *
+ * When the fetch succeeds with HTML, pageHtml is returned for downstream checks
+ * (e.g. workplace page verification) without a second fetch.
  *
  * Deliberately no retries and no Bright Data fallback — ingest is not the
  * right place to spend proxy budget on every new job. One attempt is enough:
@@ -33,22 +36,35 @@ import type { NormalizedJob } from "../types/job";
  */
 export const INGEST_EXPIRED_REASON = "Listing no longer active at ingest";
 
+export type IngestListingPageResult = {
+  active: "expired" | "skip";
+  /** Set when fetch kind === "ok"; reused for workplace page verification. */
+  pageHtml: string | null;
+  /** True when LinkedIn job-view HTML loaded and expiration detection returned active. */
+  pageVerifiedForWorkplaceCheck: boolean;
+};
+
 const SCOPE = "ingest_active_check";
 
 function isLinkedinSource(source: string): boolean {
   return source === "linkedin_jobs" || source === "jobs_api";
 }
 
+function skipResult(): IngestListingPageResult {
+  return { active: "skip", pageHtml: null, pageVerifiedForWorkplaceCheck: false };
+}
+
 /**
  * Fetch the listing page and check whether it is still live.
  *
- * @returns "expired" — confidently dead; caller should hard-reject.
- *          "skip"    — ambiguous or fetch failed; let the job through.
+ * @returns active "expired" — confidently dead; caller should hard-reject.
+ *          active "skip"    — ambiguous or fetch failed; let the job through.
+ *          pageHtml         — HTML body when fetch succeeded with kind "ok".
  */
 export async function checkListingActiveAtIngest(
   env: Env,
   job: NormalizedJob,
-): Promise<"expired" | "skip"> {
+): Promise<IngestListingPageResult> {
   const source = job.source;
 
   // Resolve the URL to check
@@ -65,7 +81,7 @@ export async function checkListingActiveAtIngest(
       company: job.company,
       title: job.title,
     });
-    return "skip";
+    return skipResult();
   }
 
   const countryKey = typeof job.searchCountryKey === "string" ? job.searchCountryKey : null;
@@ -89,7 +105,7 @@ export async function checkListingActiveAtIngest(
         title: job.title,
         fetchUrl,
       });
-      return "skip";
+      return skipResult();
     }
     fetchResult = await fetchPublicListingHtml(fetchUrl, "en-US,en;q=0.9", session.cookieHeader).catch(
       (err): typeof fetchResult => ({
@@ -108,6 +124,7 @@ export async function checkListingActiveAtIngest(
     via = "public";
   }
 
+  const pageHtml = fetchResult.kind === "ok" ? fetchResult.html : null;
   const detection = detectExpiration(fetchResult, jobMeta);
 
   observabilityLog(
@@ -125,8 +142,13 @@ export async function checkListingActiveAtIngest(
       fetchError: "error" in fetchResult ? fetchResult.error : undefined,
       detectionStatus: detection.status,
       detectionReason: detection.reason,
+      hasPageHtml: pageHtml != null,
     },
   );
 
-  return detection.status === "expired" ? "expired" : "skip";
+  return {
+    active: detection.status === "expired" ? "expired" : "skip",
+    pageHtml,
+    pageVerifiedForWorkplaceCheck: pageHtml != null && detection.status === "active",
+  };
 }

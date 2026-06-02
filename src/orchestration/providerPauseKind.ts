@@ -17,8 +17,15 @@ export function deriveProviderPauseKind(
   if (!meta) return "unknown";
 
   const r = meta.reason;
-  if (r === "provider_request_cap") return "request_cap";
-  if (r === "vendor_quota_exhausted") return "vendor_quota";
+  if (r === "provider_request_cap" || r === "remote_jobs_sweep_request_cap") return "request_cap";
+  if (
+    r === "vendor_quota_exhausted" ||
+    r === "provider_monthly_request_cap" ||
+    r === "remote_jobs_monthly_request_cap"
+  ) {
+    return "vendor_quota";
+  }
+  if (r === "remote_jobs_cadence_wait") return "schedule_wait";
   if (
     r === "provider_exhausted" ||
     r === "attempt_budget_exhausted" ||

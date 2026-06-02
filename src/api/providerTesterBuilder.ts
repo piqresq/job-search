@@ -1,6 +1,7 @@
 import { buildJobsApiSearchUrl } from "../providers/jobsApi";
 import { buildJsearchUrl } from "../providers/jsearch";
 import { buildLinkedinJobsUrl } from "../providers/linkedinJobs";
+import { buildRemoteJobsUrl, REMOTE_JOBS_HOST } from "../providers/remoteJobs";
 import type { JobSourceId } from "../types/job";
 
 function pickString(v: unknown): string | undefined {
@@ -80,6 +81,22 @@ export function buildProviderTesterUrl(
       employmentTypes: emp || "contractor;fulltime;parttime;intern;temporary",
     });
     return { ok: true, url: url.toString(), rapidApiHost: "jobs-api14.p.rapidapi.com" };
+  }
+
+  if (providerId === "remote_jobs") {
+    const p = params;
+    const limitRaw = Number(p.limit);
+    const url = buildRemoteJobsUrl({
+      apiPath: String(p.api_path ?? "/jobs"),
+      titleSearch: String(p.title_search ?? ""),
+      country: String(p.country ?? "us"),
+      employmentType: String(p.employment_type ?? "fulltime"),
+      cursor: pickString(p.cursor),
+      limit: Number.isFinite(limitRaw) ? limitRaw : 100,
+      includeCompany: p.include_company !== false,
+      includeTotalCount: p.include_total_count === true,
+    });
+    return { ok: true, url: url.toString(), rapidApiHost: REMOTE_JOBS_HOST };
   }
 
   return { ok: false, error: `Unknown provider: ${providerId}` };

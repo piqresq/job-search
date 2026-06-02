@@ -92,7 +92,8 @@ export type DashboardJobListSortRel = "high-first" | "low-first" | "as-fetched";
 export type DashboardJobListSortSrc = "default" | "linkedin-first" | "google-first" | "other-first";
 export type DashboardJobListSortSalary = "off" | "high-first" | "low-first";
 export type DashboardJobListSortDate = "off" | "new-first" | "old-first";
-/** Rolling window on pipeline ingest / fetch time (UTC), matching {@link DASHBOARD_JOB_INGEST_SORT_EXPR}. */
+
+/** Rolling window on posted date with fetch fallback (UTC), matching {@link DASHBOARD_JOB_DISPLAY_DATE_EXPR}. */
 export type DashboardJobListFilterFetchAge =
   | "off"
   | "24h"
@@ -113,6 +114,7 @@ export const FILTERED_REASON_OPTIONS = [
   { key: "hard_language", label: "Language mismatch" },
   { key: "hard_not_accepting", label: "Not accepting applications" },
   { key: "hard_expired_at_ingest", label: "Expired at ingest" },
+  { key: "hard_workplace_page_mismatch", label: "Workplace not on listing page" },
   { key: "ai_reject", label: "AI scoring rejected" },
   { key: "pipeline_failed", label: "Pipeline failed" },
   { key: "hard_other", label: "Other hard filter" },
@@ -132,7 +134,10 @@ export type DashboardJobListPrefs = {
   sortRel: DashboardJobListSortRel;
   sortSrc: DashboardJobListSortSrc;
   sortSalary: DashboardJobListSortSalary;
-  sortDate: DashboardJobListSortDate;
+  /** Pipeline fetch / ingest time (UTC). Mutually exclusive with {@link sortPostedDate} in UI. */
+  sortFetchDate: DashboardJobListSortDate;
+  /** Vendor listing posted date (UTC). Mutually exclusive with {@link sortFetchDate} in UI. */
+  sortPostedDate: DashboardJobListSortDate;
   filterFetchAge: DashboardJobListFilterFetchAge;
   listSearch: string;
 };
@@ -176,7 +181,8 @@ export function defaultDashboardJobListPrefs(): DashboardJobListPrefs {
     sortRel: "high-first",
     sortSrc: "default",
     sortSalary: "off",
-    sortDate: "off",
+    sortFetchDate: "off",
+    sortPostedDate: "off",
     filterFetchAge: "off",
     listSearch: "",
   };
@@ -420,6 +426,12 @@ export async function markHardRejected(
         status = 'hard_rejected',
         dash_bucket = 'filtered',
         dash_moved_at = NULL,
+        fit_score = NULL,
+        recommendation = NULL,
+        scoring_json = NULL,
+        reasons_to_apply = NULL,
+        risks = NULL,
+        scoring_notes = NULL,
         updated_at = ?
       WHERE user_id = ? AND id = ?`,
     )
@@ -741,6 +753,7 @@ type DashboardJobListSqlValue = string | number;
 type DashboardJobListCursorFieldKey =
   | "salary_null_rank"
   | "salary_value"
+  | "display"
   | "ingest"
   | "posted"
   | "relevance"
@@ -805,12 +818,13 @@ const DASHBOARD_FILTERED_REASON_SQL: Record<FilteredReasonKey, string> = {
     OR LOWER(COALESCE(j.hard_reject_reasons, '')) LIKE '%content-hash dedupe%'`,
   hard_salary: `LOWER(COALESCE(j.hard_reject_reasons, '')) LIKE '%salary below%'`,
   hard_degree: `LOWER(COALESCE(j.hard_reject_reasons, '')) LIKE '%degree requirement%'`,
-  hard_workplace: `LOWER(COALESCE(j.hard_reject_reasons, '')) LIKE '%hybrid%'
+  hard_workplace: `(LOWER(COALESCE(j.hard_reject_reasons, '')) LIKE '%hybrid%'
     OR LOWER(COALESCE(j.hard_reject_reasons, '')) LIKE '%on-site%'
     OR LOWER(COALESCE(j.hard_reject_reasons, '')) LIKE '%onsite%'
     OR LOWER(COALESCE(j.hard_reject_reasons, '')) LIKE '%office%'
     OR LOWER(COALESCE(j.hard_reject_reasons, '')) LIKE '%commuting radius%'
-    OR LOWER(COALESCE(j.hard_reject_reasons, '')) LIKE '%local country%'`,
+    OR LOWER(COALESCE(j.hard_reject_reasons, '')) LIKE '%local country%')
+    AND LOWER(COALESCE(j.hard_reject_reasons, '')) NOT LIKE '%workplace not confirmed on listing page%'`,
   hard_us_requirement: `LOWER(COALESCE(j.hard_reject_reasons, '')) LIKE '%us work authorization%'
     OR LOWER(COALESCE(j.hard_reject_reasons, '')) LIKE '%us residency%'`,
   hard_language: `LOWER(COALESCE(j.hard_reject_reasons, '')) LIKE '%language%'
@@ -818,15 +832,20 @@ const DASHBOARD_FILTERED_REASON_SQL: Record<FilteredReasonKey, string> = {
     OR LOWER(COALESCE(j.hard_reject_reasons, '')) LIKE '%detected listing language%'`,
   hard_not_accepting: `LOWER(COALESCE(j.hard_reject_reasons, '')) LIKE '%not accepting applications%'`,
   hard_expired_at_ingest: `LOWER(COALESCE(j.hard_reject_reasons, '')) LIKE '%no longer active at ingest%'`,
+  hard_workplace_page_mismatch: `LOWER(COALESCE(j.hard_reject_reasons, '')) LIKE '%workplace not confirmed on listing page%'`,
   ai_reject: `COALESCE(j.status, '') = 'rejected_by_ai'
-    OR ${DASHBOARD_JOB_RECOMMENDATION_NORM_EXPR} = 'reject'`,
+    OR (
+      COALESCE(j.status, '') NOT IN ('hard_rejected')
+      AND ${DASHBOARD_JOB_RECOMMENDATION_NORM_EXPR} = 'reject'
+    )`,
   pipeline_failed: `COALESCE(j.status, '') = 'failed'
     OR ${DASHBOARD_JOB_STALE_IMPORTED_SCOPE_EXPR}
     OR LOWER(COALESCE(j.scoring_notes, '')) LIKE '%pipeline failed%'
     OR LOWER(COALESCE(j.scoring_notes, '')) LIKE '%pipeline stopped%'`,
   hard_other: `COALESCE(j.status, '') = 'hard_rejected'
-    AND COALESCE(j.hard_reject_reasons, '') != ''
-    AND NOT (
+    AND (
+      COALESCE(j.hard_reject_reasons, '') = ''
+      OR NOT (
       LOWER(COALESCE(j.hard_reject_reasons, '')) LIKE '%duplicate listing%'
       OR LOWER(COALESCE(j.hard_reject_reasons, '')) LIKE '%content-hash dedupe%'
       OR LOWER(COALESCE(j.hard_reject_reasons, '')) LIKE '%salary below%'
@@ -844,11 +863,14 @@ const DASHBOARD_FILTERED_REASON_SQL: Record<FilteredReasonKey, string> = {
       OR LOWER(COALESCE(j.hard_reject_reasons, '')) LIKE '%detected listing language%'
       OR LOWER(COALESCE(j.hard_reject_reasons, '')) LIKE '%not accepting applications%'
       OR LOWER(COALESCE(j.hard_reject_reasons, '')) LIKE '%no longer active at ingest%'
+      OR LOWER(COALESCE(j.hard_reject_reasons, '')) LIKE '%workplace not confirmed on listing page%'
+      )
     )`,
 };
 
 const DASHBOARD_JOB_RELEVANCE_KEY_EXPR = `CASE
   WHEN COALESCE(j.status, '') = 'failed' THEN 'failed'
+  WHEN COALESCE(j.status, '') = 'hard_rejected' THEN 'none'
   WHEN ${DASHBOARD_JOB_RECOMMENDATION_NORM_EXPR} = 'high_priority_review' THEN 'high'
   WHEN ${DASHBOARD_JOB_RECOMMENDATION_NORM_EXPR} = 'review' THEN 'medium'
   WHEN ${DASHBOARD_JOB_RECOMMENDATION_NORM_EXPR} = 'low_priority_review' THEN 'low'
@@ -902,6 +924,16 @@ const DASHBOARD_JOB_INGEST_SORT_EXPR = `CASE
   WHEN j.created_at > 0 THEN j.created_at
   WHEN CAST(json_extract(j.normalized_json, '$.postedAtUnix') AS INTEGER) > 0
     THEN CAST(json_extract(j.normalized_json, '$.postedAtUnix') AS INTEGER)
+  ELSE 0
+END`;
+
+/** Posted date first; pipeline fetch / row creation when vendor omits posted (list display, sort, age filter). */
+const DASHBOARD_JOB_DISPLAY_DATE_EXPR = `CASE
+  WHEN CAST(json_extract(j.normalized_json, '$.postedAtUnix') AS INTEGER) > 0
+    THEN CAST(json_extract(j.normalized_json, '$.postedAtUnix') AS INTEGER)
+  WHEN CAST(json_extract(j.normalized_json, '$.apiFetchedAtUnix') AS INTEGER) > 0
+    THEN CAST(json_extract(j.normalized_json, '$.apiFetchedAtUnix') AS INTEGER)
+  WHEN j.created_at > 0 THEN j.created_at
   ELSE 0
 END`;
 
@@ -968,6 +1000,20 @@ function buildDashboardJobListCursorSelectSql(orderFields: DashboardJobListOrder
     selects.push(`${field.expr} AS ${dashboardJobListCursorSelectAlias(field.key)}`);
   }
   return selects.join(", ");
+}
+
+/** Date-sort cursors may still carry legacy `display`; map to `posted` when needed. */
+function migrateLegacyDashboardJobListCursor(
+  cursor: DashboardJobListCursor | null | undefined,
+  orderFields: DashboardJobListOrderField[],
+): DashboardJobListCursor | null | undefined {
+  if (!cursor || cursor.display == null) return cursor;
+  const out: DashboardJobListCursor = { ...cursor };
+  if (orderFields.some((f) => f.key === "posted") && out.posted == null) {
+    out.posted = out.display;
+  }
+  delete out.display;
+  return out;
 }
 
 function buildDashboardJobListCursorFilterClause(
@@ -1141,7 +1187,7 @@ function buildDashboardJobListQuerySpec(
       const winSec = DASHBOARD_JOB_FILTER_FETCH_AGE_SECONDS[prefs.filterFetchAge];
       if (typeof winSec === "number" && Number.isFinite(winSec) && winSec > 0) {
         whereClauses.push(
-          `${DASHBOARD_JOB_INGEST_SORT_EXPR} >= CAST(strftime('%s', 'now') AS INTEGER) - ?`,
+          `${DASHBOARD_JOB_DISPLAY_DATE_EXPR} >= CAST(strftime('%s', 'now') AS INTEGER) - ?`,
         );
         params.push(winSec);
       }
@@ -1166,10 +1212,14 @@ function buildDashboardJobListQuerySpec(
       expr: `COALESCE(${salaryExpr}, 0)`,
       direction: prefs.sortSalary === "high-first" ? "DESC" : "ASC",
     });
-  } else if (prefs.sortDate !== "off") {
-    const direction = prefs.sortDate === "new-first" ? "DESC" : "ASC";
+  } else if (prefs.sortFetchDate !== "off") {
+    const direction = prefs.sortFetchDate === "new-first" ? "DESC" : "ASC";
     orderFields.push({ key: "ingest", expr: DASHBOARD_JOB_INGEST_SORT_EXPR, direction });
     orderFields.push({ key: "posted", expr: DASHBOARD_JOB_LISTING_POSTED_SORT_EXPR, direction });
+  } else if (prefs.sortPostedDate !== "off") {
+    const direction = prefs.sortPostedDate === "new-first" ? "DESC" : "ASC";
+    orderFields.push({ key: "posted", expr: DASHBOARD_JOB_LISTING_POSTED_SORT_EXPR, direction });
+    orderFields.push({ key: "ingest", expr: DASHBOARD_JOB_INGEST_SORT_EXPR, direction });
   } else if (prefs.sortRel === "high-first") {
     orderFields.push({ key: "relevance", expr: DASHBOARD_JOB_RELEVANCE_SCORE_SORT_EXPR, direction: "DESC" });
   } else if (prefs.sortRel === "low-first") {
@@ -1180,7 +1230,7 @@ function buildDashboardJobListQuerySpec(
     orderFields.push({ key: "source_rank", expr: dashboardJobListSourceRankExpr(prefs.sortSrc), direction: "ASC" });
   }
 
-  if (prefs.sortSalary !== "off" || prefs.sortDate !== "off") {
+  if (prefs.sortSalary !== "off" || prefs.sortFetchDate !== "off" || prefs.sortPostedDate !== "off") {
     if (prefs.sortRel === "high-first") {
       orderFields.push({ key: "relevance", expr: DASHBOARD_JOB_RELEVANCE_SCORE_SORT_EXPR, direction: "DESC" });
     } else if (prefs.sortRel === "low-first") {
@@ -1190,7 +1240,10 @@ function buildDashboardJobListQuerySpec(
 
   orderFields.push({ key: "id", expr: "j.id", direction: "ASC" });
 
-  const cursorClause = buildDashboardJobListCursorFilterClause(orderFields, cursor);
+  const cursorClause = buildDashboardJobListCursorFilterClause(
+    orderFields,
+    migrateLegacyDashboardJobListCursor(cursor, orderFields),
+  );
   if (cursorClause.sql) {
     whereClauses.push(cursorClause.sql);
     params.push(...cursorClause.params);
@@ -1355,6 +1408,10 @@ function dashboardSourceRank(logo: ListingLogoKind, mode: DashboardJobListSortSr
   return base;
 }
 
+function dashboardLogoSourceKey(logo: ListingLogoKind): "linkedin" | "google" | "other" {
+  return logo === "linkedin" || logo === "google" ? logo : "other";
+}
+
 function dashboardListingPostedSortKey(row: DashboardListRow): number {
   return typeof row.posted_at_unix === "number" && Number.isFinite(row.posted_at_unix) && row.posted_at_unix > 0
     ? row.posted_at_unix
@@ -1370,6 +1427,21 @@ function dashboardIngestSortKey(row: DashboardListRow): number {
     return row.api_fetched_at_unix;
   }
   return row.created_at > 0 ? row.created_at : dashboardListingPostedSortKey(row);
+}
+
+/** Posted date first; fetch / created_at fallback — mirrors {@link DASHBOARD_JOB_DISPLAY_DATE_EXPR}. */
+export function resolveDashboardDisplayDateUnix(
+  listingPostedAtUnix: number,
+  ingestedAtUnix: number,
+): number {
+  return listingPostedAtUnix > 0 ? listingPostedAtUnix : ingestedAtUnix > 0 ? ingestedAtUnix : 0;
+}
+
+/** Posted date first; fetch / created_at fallback — mirrors {@link DASHBOARD_JOB_DISPLAY_DATE_EXPR}. */
+export function dashboardDisplayDateSortKey(row: DashboardListRow): number {
+  const posted = dashboardListingPostedSortKey(row);
+  if (posted > 0) return posted;
+  return dashboardIngestSortKey(row);
 }
 
 function buildDashboardJobListFacets(rows: DashboardListRow[]): DashboardJobListFacets {
@@ -1393,7 +1465,7 @@ function filterDashboardJobRows(rows: DashboardListRow[], prefs: DashboardJobLis
   const hasRoleQueryPrefs = Object.keys(prefs.roleQueries).length > 0;
   return rows.filter((row) => {
     const logo = dashboardRowLogo(row);
-    if (!prefs.src[logo]) return false;
+    if (!prefs.src[dashboardLogoSourceKey(logo)]) return false;
 
     const relKey = dashboardRecommendationKey(row);
     if (relKey === "high" && !prefs.rel.high) return false;
@@ -1426,7 +1498,7 @@ function filterDashboardJobRows(rows: DashboardListRow[], prefs: DashboardJobLis
       const winSec = DASHBOARD_JOB_FILTER_FETCH_AGE_SECONDS[prefs.filterFetchAge];
       if (typeof winSec === "number" && Number.isFinite(winSec) && winSec > 0) {
         const now = Math.floor(Date.now() / 1000);
-        if (dashboardIngestSortKey(row) < now - winSec) return false;
+        if (dashboardDisplayDateSortKey(row) < now - winSec) return false;
       }
     }
 

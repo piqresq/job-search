@@ -330,6 +330,60 @@ def normalize_jobs_api_job(raw: dict) -> dict | None:
     return {k: v for k, v in out.items() if v is not None}
 
 
+def normalize_remote_jobs_job(raw: dict) -> dict | None:
+    external_id = pick_str(str(raw.get("id"))) if raw.get("id") is not None else pick_str(raw.get("slug"))
+    title = pick_str(raw.get("title"))
+    company_raw = raw.get("company")
+    company = pick_str(company_raw.get("name")) if isinstance(company_raw, dict) else None
+    job_url = pick_str(raw.get("url"))
+    desc_full = pick_str(raw.get("description")) or ""
+    if not external_id or not title or not company or not job_url:
+        return None
+
+    countries = raw.get("countries")
+    country = None
+    if isinstance(countries, list) and countries and isinstance(countries[0], str):
+        country = countries[0].upper()
+    employment_types = raw.get("employmentTypes")
+    employment_type = None
+    if isinstance(employment_types, list) and employment_types and isinstance(employment_types[0], str):
+        employment_type = employment_types[0]
+    location_types = raw.get("locationTypes")
+    is_remote = isinstance(location_types, list) and any(
+        isinstance(x, str) and x.strip().lower() == "remote" for x in location_types
+    )
+    posted = None
+    for key in ("datePosted", "dateCreated", "createdAt", "created_at"):
+        v = pick_str(raw.get(key))
+        if not v:
+            continue
+        try:
+            s = v[:-1] + "+00:00" if v.endswith("Z") else v
+            dt = datetime.fromisoformat(s)
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
+            posted = int(dt.timestamp())
+            break
+        except ValueError:
+            continue
+
+    out = {
+        "source": "remote_jobs",
+        "externalId": external_id,
+        "title": title,
+        "company": company,
+        "jobUrl": job_url,
+        "applyUrl": job_url,
+        "location": country or "",
+        "country": country,
+        "isRemote": is_remote,
+        "description": desc_full,
+        "employmentType": employment_type,
+        "postedAtUnix": posted,
+    }
+    return {k: v for k, v in out.items() if v is not None}
+
+
 def normalize_job_row(provider_id: str, item: dict) -> dict | None:
     if provider_id == "linkedin_jobs":
         return normalize_linkedin_job(item)
@@ -337,6 +391,8 @@ def normalize_job_row(provider_id: str, item: dict) -> dict | None:
         return normalize_jsearch_job(item)
     if provider_id == "jobs_api":
         return normalize_jobs_api_job(item)
+    if provider_id == "remote_jobs":
+        return normalize_remote_jobs_job(item)
     return None
 
 
@@ -938,6 +994,8 @@ class App(Tk):
             ext_label = "Extracted (JSearch — full description)"
         elif ex == "jobs_api":
             ext_label = "Extracted (Jobs API — full description)"
+        elif ex == "remote_jobs":
+            ext_label = "Extracted (Remote Jobs — full description)"
         else:
             ext_label = "Extracted"
 

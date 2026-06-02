@@ -245,6 +245,7 @@ async function runProviderChunk(
         more: providerResult.more,
         doneForCycle: providerResult.doneForCycle,
         nextEligibleAt: providerResult.nextEligibleAt ?? null,
+        meta: providerResult.meta ?? null,
       },
       {
         category: "queue",

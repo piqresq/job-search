@@ -15,7 +15,7 @@ export type ProviderTesterProviderJson = {
   requestSource: string;
   rapidApiHost: string;
   /** Which normalizer the desktop tester uses for the Extracted panel */
-  extractor: "linkedin_jobs" | "jsearch" | "jobs_api";
+  extractor: "linkedin_jobs" | "jsearch" | "jobs_api" | "remote_jobs";
   jobsArrayPath: "root" | "data";
   fields: ProviderTesterFieldJson[];
   defaults: Record<string, unknown>;
@@ -102,6 +102,31 @@ const JOBS_API_FIELDS: ProviderTesterFieldJson[] = [
   },
 ];
 
+const REMOTE_JOBS_FIELDS: ProviderTesterFieldJson[] = [
+  {
+    key: "api_path",
+    label: "api_path (default /jobs)",
+    kind: "string",
+  },
+  { key: "title_search", label: "title_search", kind: "string" },
+  { key: "country", label: "country (ISO, e.g. de, us)", kind: "string" },
+  {
+    key: "employment_type",
+    label: "employment_type",
+    kind: "enum",
+    options: ["fulltime", "parttime", "contract", "internship"],
+  },
+  { key: "cursor", label: "cursor (optional)", kind: "string" },
+  { key: "limit", label: "limit", kind: "int", min: 1, max: 100 },
+  { key: "include_company", label: "include_company", kind: "bool", checkboxLabel: "include_company=true" },
+  {
+    key: "include_total_count",
+    label: "include_total_count",
+    kind: "bool",
+    checkboxLabel: "include_total_count=true",
+  },
+];
+
 /**
  * Full schema + defaults for the RapidAPI desktop tester (`scripts/linkedin_api_tester.py`).
  * Add a new row here when a new `JobSourceId` ships — no Python field list to update.
@@ -144,6 +169,16 @@ export async function getProviderTesterCatalog(env: Env): Promise<{
         jobsArrayPath: "data",
         fields: JOBS_API_FIELDS,
         defaults: d.jobs_api as Record<string, unknown>,
+      },
+      {
+        id: "remote_jobs",
+        label: "Remote Jobs",
+        requestSource: "remoteJobs.ts / buildRemoteJobsUrl",
+        rapidApiHost: "remote-jobs1.p.rapidapi.com",
+        extractor: "remote_jobs",
+        jobsArrayPath: "data",
+        fields: REMOTE_JOBS_FIELDS,
+        defaults: d.remote_jobs as Record<string, unknown>,
       },
     ],
   };

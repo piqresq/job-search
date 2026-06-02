@@ -1,7 +1,7 @@
 # RapidAPI job providers (reference)
 
-**Purpose:** Single source for Fantastic Jobs (LinkedIn Job Search) and JSearch—hosts, endpoints, params, responses, billing.  
-**Code:** `src/providers/linkedinJobs.ts`, `src/providers/jsearch.ts`, `src/providers/rapidapiFetch.ts`.
+**Purpose:** Single source for Fantastic Jobs (LinkedIn Job Search), JSearch, Jobs API, and Remote Jobs—hosts, endpoints, params, responses, billing.  
+**Code:** `src/providers/linkedinJobs.ts`, `src/providers/jsearch.ts`, `src/providers/jobsApi.ts`, `src/providers/remoteJobs.ts`, `src/providers/rapidapiFetch.ts`.
 
 **Optional verbatim pastes:** If you keep a full copy of vendor pages, use `docs/rapidapi-vendor-sources/` (see README there). You do **not** need a `.txt` unless you want a snapshot for yourself; this file is the maintained summary.
 
@@ -180,12 +180,64 @@ RapidAPI gateway may return `{ "message": "..." }` only (e.g. 403, 429).
 
 ---
 
-## 3. This repo
+## 3. Remote Jobs
+
+- **HTTP host:** `remote-jobs1.p.rapidapi.com`
+- **Auth:** `X-RapidAPI-Key`, `X-RapidAPI-Host: remote-jobs1.p.rapidapi.com`
+- **Code:** `src/providers/remoteJobs.ts`
+
+### Overview
+
+Remote Jobs returns remote postings from companies using common ATS platforms. Vendor data includes company LinkedIn-derived metadata when `include_company=true`.
+
+Supported ATS examples: Ashby, Lever, Workable, Greenhouse, Teamtailor, SmartRecruiters, Recruitee, Breezy, Personio, JazzHR, JobScore, Rippling, Manatal.
+
+### Endpoint
+
+| Path | Notes |
+|------|------|
+| `/jobs` | Main search endpoint. Response envelope contains `data`, `next_cursor`, and `has_more`. |
+
+### Query params used by this repo
+
+| Param | Value |
+|-------|-------|
+| `title_search` | Dashboard role query unit. |
+| `country` | ISO-2 lowercase country from dashboard search countries. |
+| `employment_type` | `fulltime` for the current runtime policy. |
+| `cursor` | Vendor `next_cursor`, stored by planned-search provider state. |
+| `limit` | `REMOTE_JOBS_MAX_JOBS_PER_CHUNK`, default 100, clamped 1–100. |
+| `include_company` | `true` for richer company metadata. |
+| `include_total_count` | `false` in pipeline to avoid extra counting cost. |
+
+### Cadence and limits
+
+The subscription has a 500 monthly scan limit, so this provider is intentionally not daily:
+
+- Rolling cooldown: `REMOTE_JOBS_MIN_DAYS_BETWEEN_RUNS=15` after a completed sweep.
+- Per-sweep/day guard: `REMOTE_JOBS_MAX_API_CALLS_PER_RUN=250`.
+- Monthly guard: `REMOTE_JOBS_MAX_API_CALLS_PER_MONTH=500`.
+
+The provider still uses the normal Durable Object / Queue orchestration, but returns `doneForCycle` with `nextEligibleAt` while the 15-day gate is active.
+
+### Date and recency
+
+Remote Jobs can return older postings. The pipeline does not apply a recency cutoff for this provider; it relies on same-source IDs, content dedupe, hard filters, and scoring. Normalized rows set `postedAtUnix` from vendor `datePosted` (or created timestamp if present); dashboard date display uses that first and only falls back to API fetch/row creation time when the vendor date is missing.
+
+### Logo handling
+
+Dashboard v2 uses the returned job/apply URL to select an ATS logo from `public/assets/remotejobs/` for Remote Jobs rows.
+
+---
+
+## 4. This repo
 
 | Provider ID | Module | Host |
 |-------------|--------|------|
 | `linkedin_jobs` | `linkedinJobs.ts` | Fantastic Jobs |
 | `jsearch` | `jsearch.ts` | JSearch |
+| `jobs_api` | `jobsApi.ts` | Jobs API (Pat92) |
+| `remote_jobs` | `remoteJobs.ts` | Remote Jobs |
 
 RapidAPI requests use the **first** configured key only (`RAPIDAPI_KEY` / `RAPIDAPI_KEYS`); see `src/providers/rapidapiFetch.ts`.
 

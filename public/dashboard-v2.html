@@ -130,6 +130,8 @@ a{color:inherit;text-decoration:none}
 .jobs-search input{border:none;outline:none;background:transparent;font-size:13px;color:var(--ink-strong);width:100%}
 .jobs-search input::placeholder{color:var(--ink-faint)}
 .filter-group{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.jobs-toolbar-spacer{flex:1;min-width:8px}
+#jobs-select-all{width:104px;justify-content:center;flex-shrink:0}
 .popover-wrap{display:flex;position:relative}
 .chip{display:inline-flex;align-items:center;justify-content:center;gap:6px;height:32px;min-width:84px;padding:0 12px;border-radius:var(--r-sm);border:1px solid var(--hairline);background:var(--surface);font-size:13px;font-weight:500;color:var(--ink-body);cursor:pointer;transition:background-color var(--dur-base) var(--ease-out),border-color var(--dur-base) var(--ease-out),color var(--dur-base) var(--ease-out);user-select:none;white-space:nowrap}
 #ch-rel{min-width:104px}
@@ -333,6 +335,31 @@ a{color:inherit;text-decoration:none}
 .move-select:focus{border-color:var(--brand-600);box-shadow:0 0 0 3px var(--brand-50)}
 
 /* STATISTICS */
+.stats-controls{display:flex;align-items:center;gap:8px;position:relative;flex-wrap:wrap;justify-content:flex-end}
+.stats-calendar-wrap{position:relative;display:flex}
+.stats-date-btn.active{background:var(--brand-50);border-color:var(--brand-200);color:var(--brand-800)}
+.stats-calendar-pop{position:absolute;right:0;top:calc(100% + 6px);z-index:120;width:292px;background:var(--surface);border:1px solid var(--hairline);border-radius:var(--r-md);box-shadow:var(--sh-pop);padding:10px;opacity:0;transform:translateY(-4px);pointer-events:none;transition:opacity var(--dur-base) var(--ease-out),transform var(--dur-base) var(--ease-out)}
+.stats-calendar-pop.open{opacity:1;transform:translateY(0);pointer-events:auto}
+.stats-cal-head{display:flex;align-items:center;gap:8px;margin-bottom:8px}
+.stats-cal-title{flex:1;text-align:center;font-size:12px;font-weight:600;color:var(--ink-strong);letter-spacing:.02em}
+.stats-cal-nav{width:28px;height:28px;display:inline-flex;align-items:center;justify-content:center;border:1px solid var(--hairline);border-radius:var(--r-sm);color:var(--ink-muted);background:var(--surface);transition:background var(--dur-fast) var(--ease-out),border-color var(--dur-fast) var(--ease-out),color var(--dur-fast) var(--ease-out)}
+.stats-cal-nav:hover{background:var(--surface-sunken);border-color:var(--hairline-strong);color:var(--ink-body)}
+.stats-cal-nav:focus-visible,.stats-cal-day:focus-visible{outline:none;box-shadow:0 0 0 3px var(--brand-50),0 0 0 4px var(--brand-600)}
+.stats-cal-week,.stats-cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:3px}
+.stats-cal-week{margin-bottom:4px}
+.stats-cal-week span{height:22px;display:flex;align-items:center;justify-content:center;font-family:var(--f-mono);font-size:10px;color:var(--ink-faint);text-transform:uppercase}
+.stats-cal-day{height:32px;display:flex;align-items:center;justify-content:center;border-radius:var(--r-xs);border:1px solid transparent;font-family:var(--f-mono);font-size:12px;color:var(--ink-body);background:transparent;transition:background var(--dur-fast) var(--ease-out),border-color var(--dur-fast) var(--ease-out),color var(--dur-fast) var(--ease-out)}
+.stats-cal-day:hover{background:var(--surface-sunken)}
+.stats-cal-day.outside{color:var(--ink-faint)}
+.stats-cal-day.in-range{background:var(--brand-50);border-color:var(--brand-50);color:var(--brand-800)}
+.stats-cal-day.range-edge{background:var(--brand-600);border-color:var(--brand-600);color:#fff}
+.stats-cal-foot{display:flex;align-items:center;gap:8px;margin-top:10px;padding-top:10px;border-top:1px solid var(--hairline)}
+.stats-cal-summary{flex:1;min-width:0;font-family:var(--f-mono);font-size:11px;color:var(--ink-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+@media (max-width:720px){
+  .stats-controls{justify-content:flex-start;width:100%}
+  .stats-calendar-wrap{position:static}
+  .stats-calendar-pop{position:fixed;left:16px;right:16px;top:calc(var(--header-h) + 12px);width:auto}
+}
 .stats-inner{padding:28px 32px;max-width:1100px;display:flex;flex-direction:column;gap:28px}
 .stat-sec-lbl{font-size:11px;font-weight:600;color:var(--ink-muted);letter-spacing:.08em;text-transform:uppercase;margin-bottom:12px}
 .kpi-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(155px,1fr));gap:10px}
@@ -501,6 +528,17 @@ a{color:inherit;text-decoration:none}
 .stg-note-input{flex:1;height:32px;padding:0 10px;border:1px solid var(--hairline);border-radius:var(--r-sm);font-size:13px;font-family:var(--f-ui);color:var(--ink-body);background:var(--surface);outline:none;transition:border-color var(--dur-base) var(--ease-out)}
 .stg-note-input:focus{border-color:var(--brand-600)}
 .stg-save-row{padding:10px 18px;display:flex;align-items:center;gap:8px;border-top:1px solid var(--hairline);background:var(--surface-sunken)}
+.rev-hist{padding:10px 18px 14px;border-top:1px solid var(--hairline);background:var(--surface-sunken)}
+.rev-hist-hdr{font-size:11px;font-weight:600;color:var(--ink-muted);letter-spacing:.06em;text-transform:uppercase;margin-bottom:8px}
+.rev-hist-row{display:flex;align-items:center;gap:8px}
+.rev-hist-select{flex:1;min-width:0;height:32px;padding:0 10px;border:1px solid var(--hairline);border-radius:var(--r-sm);font-size:13px;font-family:var(--f-ui);color:var(--ink-body);background:var(--surface);outline:none;transition:border-color var(--dur-base) var(--ease-out)}
+.rev-hist-select:focus{border-color:var(--brand-600);box-shadow:0 0 0 3px var(--brand-50)}
+.rev-hist-detail{margin-top:10px;padding:10px 12px;border:1px solid var(--hairline);border-radius:var(--r-sm);background:var(--surface)}
+.rev-hist-detail[hidden]{display:none}
+.rev-hist-meta{font-size:12px;color:var(--ink-muted);margin-bottom:8px;line-height:1.5}
+.rev-hist-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px;padding-top:10px;border-top:1px solid var(--hairline)}
+.rev-hist-empty{font-size:12px;color:var(--ink-faint);line-height:1.5}
+.stg-textarea.rev-hist-readonly{background:var(--canvas);color:var(--ink-body);cursor:default;resize:none}
 .country-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(136px,1fr));gap:2px;padding:10px 18px}
 .ctr-lbl{display:flex;align-items:center;gap:7px;font-size:12px;color:var(--ink-body);cursor:pointer;padding:4px 2px;border-radius:var(--r-xs);transition:background var(--dur-fast) var(--ease-out)}
 .ctr-lbl:hover{background:var(--surface-sunken)}
@@ -775,13 +813,31 @@ a{color:inherit;text-decoration:none}
           <div class="header-title">Statistics</div>
           <div class="header-sub" id="stats-sub">—</div>
         </div>
-        <div style="display:flex;align-items:center;gap:8px">
+        <div class="stats-controls">
           <select id="stats-days" class="move-select">
             <option value="7">Last 7 days</option>
             <option value="14">Last 14 days</option>
             <option value="30" selected>Last 30 days</option>
             <option value="90">Last 90 days</option>
+            <option value="custom" disabled>Custom range</option>
           </select>
+          <div class="stats-calendar-wrap" id="stats-calendar-wrap">
+            <button type="button" class="btn btn-secondary stats-date-btn" id="stats-date-btn" aria-expanded="false" aria-haspopup="dialog">Custom dates</button>
+            <div class="stats-calendar-pop" id="stats-calendar-pop" role="dialog" aria-label="Choose statistics date range">
+              <div class="stats-cal-head">
+                <button type="button" class="stats-cal-nav" id="stats-cal-prev" aria-label="Previous month">‹</button>
+                <div class="stats-cal-title" id="stats-cal-title">—</div>
+                <button type="button" class="stats-cal-nav" id="stats-cal-next" aria-label="Next month">›</button>
+              </div>
+              <div class="stats-cal-week" aria-hidden="true"><span>Mo</span><span>Tu</span><span>We</span><span>Th</span><span>Fr</span><span>Sa</span><span>Su</span></div>
+              <div class="stats-cal-grid" id="stats-cal-grid"></div>
+              <div class="stats-cal-foot">
+                <div class="stats-cal-summary" id="stats-cal-summary">Select a day or range</div>
+                <button type="button" class="btn btn-ghost" id="stats-cal-clear" style="font-size:12px;padding:4px 8px">Clear</button>
+                <button type="button" class="btn btn-secondary" id="stats-cal-apply" style="font-size:12px;padding:4px 10px">Apply</button>
+              </div>
+            </div>
+          </div>
           <button class="btn btn-secondary" id="stats-refresh">Refresh</button>
         </div>
       </header>
@@ -1038,7 +1094,8 @@ function defaultPrefs() {
     rel: { high: true, medium: true, low: true, failed: true, none: true },
     contract: { ft: true, pt: true, temp: true, other: true },
     countries: {}, roleQueries: {}, filterReasons: {},
-    sortRel: 'high-first', sortSrc: 'default', sortSalary: 'off', sortDate: 'off',
+    sortRel: 'high-first', sortSrc: 'default', sortSalary: 'off',
+    sortFetchDate: 'off', sortPostedDate: 'off',
     filterFetchAge: 'off', listSearch: '',
   };
 }
@@ -1060,6 +1117,27 @@ const FILTER_FETCH_AGE_OPTS = [
 function filterFetchAgeLabel(value) {
   const hit = FILTER_FETCH_AGE_OPTS.find(([v]) => v === value);
   return hit ? hit[1] : value;
+}
+function sortDateDirLabel(value) {
+  return value === 'new-first' ? 'new→old' : 'old→new';
+}
+function clearSortRadiosExcept(kind) {
+  if (kind !== 'rel') {
+    const selRel = document.querySelector('input[name="sRel"][value="as-fetched"]');
+    if (selRel) selRel.checked = true;
+  }
+  if (kind !== 'sal') {
+    const selSal = document.querySelector('input[name="sSal"][value="off"]');
+    if (selSal) selSal.checked = true;
+  }
+  if (kind !== 'fetch') {
+    const selFetch = document.querySelector('input[name="sFetchDate"][value="off"]');
+    if (selFetch) selFetch.checked = true;
+  }
+  if (kind !== 'posted') {
+    const selPosted = document.querySelector('input[name="sPostedDate"][value="off"]');
+    if (selPosted) selPosted.checked = true;
+  }
 }
 
 /* ── BOARD STATE ───────────────────────────────────────────────────────────
@@ -1307,13 +1385,142 @@ function switchView(name) {
 }
 
 /* ── STATISTICS ───────────────────────────────────────────────────────────── */
+const statsRange = {
+  mode: 'preset',
+  from: null,
+  to: null,
+  draftFrom: null,
+  draftTo: null,
+  visibleMonth: null,
+};
+
+function statsTodayYmd() {
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+function statsDateToYmd(d) {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+function statsYmdToDate(ymd) {
+  const parts = String(ymd || '').split('-').map(Number);
+  if (parts.length !== 3 || parts.some(n => !Number.isFinite(n))) return null;
+  return new Date(parts[0], parts[1] - 1, parts[2]);
+}
+
+function statsDateLabel(ymd) {
+  const d = statsYmdToDate(ymd);
+  if (!d) return '—';
+  return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+}
+
+function statsRangeLabel(from, to) {
+  if (!from) return 'Custom dates';
+  if (!to || from === to) return statsDateLabel(from);
+  return `${statsDateLabel(from)} – ${statsDateLabel(to)}`;
+}
+
+function statsNormalizeRange(a, b) {
+  if (!a) return { from: null, to: null };
+  if (!b) return { from: a, to: a };
+  return a <= b ? { from: a, to: b } : { from: b, to: a };
+}
+
+function statsEnsureVisibleMonth() {
+  if (statsRange.visibleMonth) return;
+  const base = statsYmdToDate(statsRange.draftFrom || statsRange.from || statsTodayYmd()) || new Date();
+  statsRange.visibleMonth = new Date(base.getFullYear(), base.getMonth(), 1);
+}
+
+function syncStatsCalendarButton() {
+  const btn = document.getElementById('stats-date-btn');
+  if (!btn) return;
+  btn.textContent = statsRange.mode === 'custom' && statsRange.from
+    ? statsRangeLabel(statsRange.from, statsRange.to)
+    : 'Custom dates';
+  btn.classList.toggle('active', statsRange.mode === 'custom' && !!statsRange.from);
+}
+
+function renderStatsCalendar() {
+  statsEnsureVisibleMonth();
+  const title = document.getElementById('stats-cal-title');
+  const grid = document.getElementById('stats-cal-grid');
+  const summary = document.getElementById('stats-cal-summary');
+  if (!statsRange.visibleMonth || !grid) return;
+
+  const month = statsRange.visibleMonth;
+  if (title) title.textContent = month.toLocaleDateString('en-GB', { month: 'long', year: 'numeric' });
+  if (summary) summary.textContent = statsRangeLabel(statsRange.draftFrom, statsRange.draftTo);
+
+  const start = new Date(month.getFullYear(), month.getMonth(), 1);
+  const mondayOffset = (start.getDay() + 6) % 7;
+  const firstCell = new Date(start);
+  firstCell.setDate(start.getDate() - mondayOffset);
+  const selected = statsNormalizeRange(statsRange.draftFrom, statsRange.draftTo);
+
+  let html = '';
+  for (let i = 0; i < 42; i++) {
+    const d = new Date(firstCell);
+    d.setDate(firstCell.getDate() + i);
+    const ymd = statsDateToYmd(d);
+    const outside = d.getMonth() !== month.getMonth();
+    const inRange = selected.from && selected.to && ymd >= selected.from && ymd <= selected.to;
+    const isEdge = selected.from && (ymd === selected.from || ymd === selected.to);
+    const cls = [
+      'stats-cal-day',
+      outside ? 'outside' : '',
+      inRange ? 'in-range' : '',
+      isEdge ? 'range-edge' : '',
+    ].filter(Boolean).join(' ');
+    html += `<button type="button" class="${cls}" data-stats-date="${ymd}" aria-label="${esc(statsDateLabel(ymd))}">${d.getDate()}</button>`;
+  }
+  grid.innerHTML = html;
+}
+
+function setStatsCalendarOpen(open) {
+  const pop = document.getElementById('stats-calendar-pop');
+  const btn = document.getElementById('stats-date-btn');
+  if (!pop || !btn) return;
+  if (open) {
+    statsRange.draftFrom = statsRange.from;
+    statsRange.draftTo = statsRange.to;
+    statsRange.visibleMonth = null;
+    renderStatsCalendar();
+  }
+  pop.classList.toggle('open', open);
+  btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+}
+
+function applyStatsCustomRange() {
+  const normalized = statsNormalizeRange(statsRange.draftFrom, statsRange.draftTo);
+  if (!normalized.from) return;
+  statsRange.mode = 'custom';
+  statsRange.from = normalized.from;
+  statsRange.to = normalized.to;
+  const sel = document.getElementById('stats-days');
+  if (sel) sel.value = 'custom';
+  syncStatsCalendarButton();
+  setStatsCalendarOpen(false);
+  loadStats();
+}
+
 async function loadStats() {
   const days = document.getElementById('stats-days')?.value || '30';
+  const qs = statsRange.mode === 'custom' && statsRange.from
+    ? `from=${encodeURIComponent(statsRange.from)}&to=${encodeURIComponent(statsRange.to || statsRange.from)}`
+    : `days=${encodeURIComponent(days === 'custom' ? '30' : days)}`;
   const sub = document.getElementById('stats-sub');
   if (sub) sub.textContent = 'Loading…';
   document.getElementById('stats-inner').innerHTML = '<div style="padding:40px;text-align:center;font-size:13px;color:var(--ink-faint)">Loading…</div>';
   try {
-    const data = await api('/api/statistics?days=' + days);
+    const data = await api('/api/statistics?' + qs);
     renderStats(data);
     if (sub) sub.textContent = (data.fromYmd || '') + ' → ' + (data.toYmd || '');
   } catch(e) {
@@ -1824,6 +2031,10 @@ function renderSettings(d) {
         <button class="btn btn-secondary" id="reset-roles-btn">Reset to defaults</button>
         <button class="btn btn-primary" id="save-roles-btn">Save roles</button>
       </div>
+      <div class="rev-hist">
+        <div class="rev-hist-hdr">Revision history</div>
+        <div id="role-rev-body"><div class="rev-hist-empty">Loading…</div></div>
+      </div>
     </div>
 
     <!-- Countries -->
@@ -1861,13 +2072,15 @@ function renderSettings(d) {
         <button class="btn btn-secondary" id="reset-ai-btn">Reset to defaults</button>
         <button class="btn btn-primary" id="save-ai-btn">Save prompts</button>
       </div>
-      <div id="ai-rev-list" style="padding:8px 18px 12px;display:flex;flex-direction:column;gap:8px">
-        <div style="font-size:11px;font-weight:600;color:var(--ink-muted);letter-spacing:.06em;text-transform:uppercase;margin-bottom:2px">Revision history</div>
-        <div id="ai-rev-rows" style="font-size:12px;color:var(--ink-faint);display:flex;flex-direction:column;gap:10px">Loading…</div>
+      <div class="rev-hist">
+        <div class="rev-hist-hdr">Revision history</div>
+        <div id="ai-rev-body"><div class="rev-hist-empty">Loading…</div></div>
       </div>
     </div>`;
 
   bindSettingsEvents();
+  bindAiPromptEvents();
+  loadRoleRevHistory();
   loadAiPrompts();
 }
 
@@ -1889,6 +2102,7 @@ function bindSettingsEvents() {
     const note = document.getElementById('roles-note')?.value.trim() || '';
     await patchSettings({ roleTiers: { tier1: t1, tier2: [] }, revisionNote: note });
     if (document.getElementById('roles-note')) document.getElementById('roles-note').value = '';
+    loadRoleRevHistory();
   });
 
   document.getElementById('ctr-all-btn')?.addEventListener('click', () => {
@@ -1926,63 +2140,159 @@ function bindSettingsEvents() {
   });
 }
 
-/* ── AI PROMPTS ──────────────────────────────────────────────────────────── */
+/* ── AI PROMPTS & REVISION HISTORY ───────────────────────────────────────── */
+function formatRevisionSelectLabel(r) {
+  const d = r.createdAt
+    ? new Date(r.createdAt * 1000).toLocaleString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+    : '—';
+  const note = (r.note || '').trim();
+  const noteBit = note ? ` — ${note.length > 36 ? note.slice(0, 35) + '…' : note}` : '';
+  const src = r.source ? ` · ${r.source}` : '';
+  return `#${r.id} · ${d}${src}${noteBit}`;
+}
+
+function initRevisionHistoryPicker(opts) {
+  const { bodyEl, kind, revisions, detailUrl, deleteUrl, revertUrl, renderDetailContent, onRestored } = opts;
+  if (!bodyEl) return;
+  if (!revisions.length) {
+    bodyEl.innerHTML = '<div class="rev-hist-empty">No revisions yet. Saves and resets create snapshots here.</div>';
+    return;
+  }
+  const uid = kind + '-rev';
+  bodyEl.innerHTML = `
+    <div class="rev-hist-row">
+      <select class="rev-hist-select" id="${uid}-select" aria-label="Select revision">
+        <option value="">Select a revision to preview…</option>
+        ${revisions.map(r => `<option value="${r.id}">${esc(formatRevisionSelectLabel(r))}</option>`).join('')}
+      </select>
+    </div>
+    <div class="rev-hist-detail" id="${uid}-detail" hidden>
+      <div class="rev-hist-meta" id="${uid}-meta"></div>
+      <div id="${uid}-content"></div>
+      <div class="rev-hist-actions">
+        <button class="btn btn-secondary" type="button" id="${uid}-restore">Restore this version</button>
+        <button class="btn btn-ghost" type="button" id="${uid}-delete" style="color:var(--danger-600)">Delete</button>
+      </div>
+    </div>`;
+
+  const sel = document.getElementById(`${uid}-select`);
+  const detail = document.getElementById(`${uid}-detail`);
+  const meta = document.getElementById(`${uid}-meta`);
+  const content = document.getElementById(`${uid}-content`);
+  let selectedId = null;
+
+  async function showDetail(id) {
+    selectedId = id;
+    if (!id) { detail.hidden = true; return; }
+    try {
+      const res = await api(detailUrl(id));
+      const rev = res.revision;
+      const when = rev.createdAt
+        ? new Date(rev.createdAt * 1000).toLocaleString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+        : '—';
+      const noteLine = rev.note ? esc(rev.note) : 'No note';
+      meta.innerHTML = `<strong>Revision #${rev.id}</strong> · ${when}${rev.source ? ` · ${esc(rev.source)}` : ''}<br><span style="color:var(--ink-faint)">${noteLine}</span>`;
+      content.innerHTML = renderDetailContent(rev);
+      detail.hidden = false;
+    } catch (e) {
+      toast('Failed to load revision: ' + e.message, 'error');
+      detail.hidden = true;
+    }
+  }
+
+  sel?.addEventListener('change', () => {
+    const v = sel.value;
+    void showDetail(v ? Number(v) : null);
+  });
+
+  document.getElementById(`${uid}-restore`)?.addEventListener('click', async () => {
+    if (!selectedId) { toast('Select a revision first', 'warning'); return; }
+    const note = prompt('Revision note for restore (optional):');
+    if (note === null) return;
+    try {
+      await api(revertUrl, { method: 'POST', body: JSON.stringify({ revisionId: selectedId, revisionNote: (note || '').trim() }) });
+      await onRestored(selectedId);
+      toast('Restored revision #' + selectedId, 'success');
+      if (kind === 'role') loadRoleRevHistory();
+      else loadAiPrompts();
+    } catch (e) { toast('Restore failed: ' + e.message, 'error'); }
+  });
+
+  document.getElementById(`${uid}-delete`)?.addEventListener('click', async () => {
+    if (!selectedId) { toast('Select a revision first', 'warning'); return; }
+    if (!confirm('Delete this revision snapshot?')) return;
+    try {
+      await api(deleteUrl(selectedId), { method: 'DELETE' });
+      toast('Revision deleted', 'success');
+      if (kind === 'role') loadRoleRevHistory();
+      else loadAiPrompts();
+    } catch (e) { toast('Delete failed: ' + e.message, 'error'); }
+  });
+}
+
+async function loadRoleRevHistory() {
+  const bodyEl = document.getElementById('role-rev-body');
+  if (!bodyEl) return;
+  try {
+    const history = await api('/api/search-role-revisions/history?limit=30');
+    initRevisionHistoryPicker({
+      bodyEl,
+      kind: 'role',
+      revisions: history.revisions || [],
+      detailUrl: (id) => '/api/search-role-revisions/history?id=' + encodeURIComponent(String(id)),
+      deleteUrl: (id) => '/api/search-role-revisions/revision?id=' + encodeURIComponent(String(id)),
+      revertUrl: '/api/search-role-revisions/revert',
+      renderDetailContent: (rev) => {
+        const t1 = (rev.tier1 || []).join('\n');
+        const t2 = (rev.tier2 || []).join('\n');
+        let html = `<div class="stg-sublbl">Positions in this version</div>
+          <textarea class="stg-textarea rev-hist-readonly" readonly rows="6" spellcheck="false">${esc(t1)}</textarea>`;
+        if (t2) {
+          html += `<div class="stg-sublbl" style="margin-top:8px">Tier 2 (legacy)</div>
+            <textarea class="stg-textarea rev-hist-readonly" readonly rows="3" spellcheck="false">${esc(t2)}</textarea>`;
+        }
+        return html;
+      },
+      onRestored: async () => {
+        const settings = await api('/api/settings');
+        const ta = document.getElementById('roles-tier1');
+        if (ta) ta.value = (settings.roleTiers?.tier1 || []).join('\n');
+      },
+    });
+  } catch (e) {
+    bodyEl.innerHTML = '<div class="rev-hist-empty">Failed to load revisions.</div>';
+  }
+}
+
 async function loadAiPrompts() {
   try {
     const [current, history] = await Promise.all([
       api('/api/ai-instructions'),
-      api('/api/ai-instructions/history?limit=20'),
+      api('/api/ai-instructions/history?limit=30'),
     ]);
     const scoringEl = document.getElementById('ai-scoring');
     const draftsEl = document.getElementById('ai-drafts');
     if (scoringEl) scoringEl.value = current.scoring || '';
     if (draftsEl) draftsEl.value = current.drafts || '';
-    renderAiRevHistory(history.revisions || []);
-    bindAiPromptEvents();
-  } catch(e) { /* silently skip if view not visible */ }
-}
-
-function renderAiRevHistory(revisions) {
-  const el = document.getElementById('ai-rev-rows');
-  if (!el) return;
-  if (!revisions.length) { el.textContent = 'No revisions yet.'; return; }
-  el.innerHTML = revisions.map(r => {
-    const d = r.createdAt ? new Date(r.createdAt * 1000).toLocaleString('en-GB') : '—';
-    return `<div class="ai-rev-card" style="border:1px solid var(--hairline);border-radius:var(--r-sm);padding:9px 12px;background:var(--surface);margin:0">
-      <div style="display:flex;align-items:center;gap:8px">
-        <span style="font-size:12px;font-weight:500;flex:1">#${r.id} · ${d}</span>
-        ${r.source ? `<span style="font-size:10px;color:var(--ink-faint)">${esc(r.source)}</span>` : ''}
-        <button class="btn btn-ghost" data-ai-rev-restore="${r.id}" style="font-size:11px;padding:2px 8px">Restore</button>
-        <button class="btn btn-ghost" data-ai-rev-del="${r.id}" style="font-size:11px;padding:2px 8px;color:var(--danger-600)">Delete</button>
-      </div>
-      ${r.note ? `<div style="font-size:11px;color:var(--ink-muted);margin-top:3px">${esc(r.note)}</div>` : ''}
-    </div>`;
-  }).join('');
-  el.querySelectorAll('[data-ai-rev-restore]').forEach(btn => {
-    btn.addEventListener('click', async () => {
-      const revisionId = Number(btn.dataset.aiRevRestore);
-      const note = prompt('Revision note for restore (optional):');
-      if (note === null) return;
-      try {
-        const r = await api('/api/ai-instructions/revert', { method: 'POST', body: JSON.stringify({ revisionId, revisionNote: (note || '').trim() }) });
-        if (document.getElementById('ai-scoring')) document.getElementById('ai-scoring').value = r.scoring || '';
-        if (document.getElementById('ai-drafts')) document.getElementById('ai-drafts').value = r.drafts || '';
-        toast('Reverted to revision #' + revisionId, 'success');
-        loadAiPrompts();
-      } catch(e) { toast('Failed: ' + e.message, 'error'); }
+    initRevisionHistoryPicker({
+      bodyEl: document.getElementById('ai-rev-body'),
+      kind: 'ai',
+      revisions: history.revisions || [],
+      detailUrl: (id) => '/api/ai-instructions/history?id=' + encodeURIComponent(String(id)),
+      deleteUrl: (id) => '/api/ai-instructions/revision?id=' + encodeURIComponent(String(id)),
+      revertUrl: '/api/ai-instructions/revert',
+      renderDetailContent: (rev) => `
+        <div class="stg-sublbl">Scoring policy in this version</div>
+        <textarea class="stg-textarea rev-hist-readonly" readonly rows="5" spellcheck="false">${esc(rev.scoring || '')}</textarea>
+        <div class="stg-sublbl" style="margin-top:8px">Drafts instruction in this version</div>
+        <textarea class="stg-textarea rev-hist-readonly" readonly rows="5" spellcheck="false">${esc(rev.drafts || '')}</textarea>`,
+      onRestored: async () => {
+        const current = await api('/api/ai-instructions');
+        if (document.getElementById('ai-scoring')) document.getElementById('ai-scoring').value = current.scoring || '';
+        if (document.getElementById('ai-drafts')) document.getElementById('ai-drafts').value = current.drafts || '';
+      },
     });
-  });
-  el.querySelectorAll('[data-ai-rev-del]').forEach(btn => {
-    btn.addEventListener('click', async () => {
-      if (!confirm('Delete this AI prompt revision?')) return;
-      const id = btn.dataset.aiRevDel;
-      try {
-        await api('/api/ai-instructions/revision?id=' + id, { method: 'DELETE' });
-        toast('Revision deleted', 'success');
-        loadAiPrompts();
-      } catch(e) { toast('Failed: ' + e.message, 'error'); }
-    });
-  });
+  } catch (e) { /* silently skip if view not visible */ }
 }
 
 function bindAiPromptEvents() {
@@ -2041,7 +2351,7 @@ function vendorUiInferSourceFromUrl(url) {
 }
 function vendorUiEffectiveJobSource(job) {
   const s = job && job.source ? String(job.source) : '';
-  if (s === 'linkedin_jobs' || s === 'jobs_api' || s === 'jsearch') return s;
+  if (s === 'linkedin_jobs' || s === 'jobs_api' || s === 'jsearch' || s === 'remote_jobs') return s;
   return vendorUiInferSourceFromUrl((job && (job.jobUrl || job.applyUrl)) || '');
 }
 function vendorUiPublicLabelFromProviderId(providerId, apiLabelFallback) {
@@ -2049,6 +2359,7 @@ function vendorUiPublicLabelFromProviderId(providerId, apiLabelFallback) {
   if (id === 'jobs_api') return 'LinkedIn';
   if (id === 'jsearch') return 'Google Jobs';
   if (id === 'linkedin_jobs') return 'LinkedIn';
+  if (id === 'remote_jobs') return 'Remote Jobs';
   return apiLabelFallback || id || '—';
 }
 /** Admin UI: append friendly vendor name next to backend id / label */
@@ -2056,6 +2367,7 @@ function vendorUiAdminParenSuffix(providerId) {
   const id = String(providerId || '');
   if (id === 'jobs_api' || id === 'linkedin_jobs') return ' (LinkedIn)';
   if (id === 'jsearch') return ' (Google Jobs)';
+  if (id === 'remote_jobs') return ' (Remote Jobs)';
   return '';
 }
 function vendorUiCapsAbbrevFromKey(capKey) {
@@ -2063,12 +2375,14 @@ function vendorUiCapsAbbrevFromKey(capKey) {
     .replace(/_max_api_calls_per_run/g, '')
     .replace(/linkedin_jobs/g, 'li')
     .replace(/jsearch/g, 'js')
-    .replace(/jobs_api/g, 'ja');
+    .replace(/jobs_api/g, 'ja')
+    .replace(/remote_jobs/g, 'rj');
 }
 function vendorUiAdminParenSuffixForCapsAbbrev(abbrev) {
   const a = String(abbrev || '');
   if (a === 'li' || a === 'ja') return ' (LinkedIn)';
   if (a === 'js') return ' (Google Jobs)';
+  if (a === 'rj') return ' (Remote Jobs)';
   return '';
 }
 function vendorUiPublicNameFromJob(job) {
@@ -2076,13 +2390,38 @@ function vendorUiPublicNameFromJob(job) {
   if (eff === 'jobs_api') return 'LinkedIn';
   if (eff === 'jsearch') return 'Google Jobs';
   if (eff === 'linkedin_jobs') return 'LinkedIn';
+  if (eff === 'remote_jobs') return 'Remote Jobs';
   const url = (job.jobUrl || job.applyUrl || '');
   return vendorLbl(url);
+}
+function remoteJobsLogoMetaFromKind(kind) {
+  const k = String(kind || '').toLowerCase();
+  const labels = {
+    ashby: 'Ashby',
+    lever: 'Lever',
+    workable: 'Workable',
+    greenhouse: 'Greenhouse',
+    teamtailor: 'Teamtailor',
+    smartrecruiters: 'SmartRecruiters',
+    recruitee: 'Recruitee',
+    breezy: 'Breezy',
+    personio: 'Personio',
+    jazzhr: 'JazzHR',
+    jobscore: 'JobScore',
+    rippling: 'Rippling',
+    manatal: 'Manatal',
+  };
+  if (!labels[k]) return null;
+  return { img: `/assets/remotejobs/${k}.png`, label: labels[k] };
 }
 function vendorUiLogoMeta(job) {
   const eff = vendorUiEffectiveJobSource(job);
   if (eff === 'linkedin_jobs' || eff === 'jobs_api') return { img: '/assets/linkedin.png' };
   if (eff === 'jsearch') return { img: '/assets/google.png' };
+  if (eff === 'remote_jobs') {
+    const meta = remoteJobsLogoMetaFromKind(job.logo);
+    if (meta) return meta;
+  }
   const url = job.jobUrl || job.applyUrl || '';
   const c = vendorClass(url);
   return { img: c === 'linkedin' ? '/assets/linkedin.png' : '/assets/google.png' };
@@ -2090,9 +2429,16 @@ function vendorUiLogoMeta(job) {
 function timeAgo(unix) {
   if (!unix) return '';
   const d = Math.floor((Date.now() - unix * 1000) / 86400000);
-  if (d === 0) return 'Today'; if (d === 1) return '1d ago';
+  if (d <= 0) return d === 0 ? 'Today' : new Date(unix * 1000).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+  if (d === 1) return '1d ago';
   if (d < 30) return d + 'd ago';
   return new Date(unix * 1000).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+}
+function jobDisplayDateUnix(job) {
+  const primary = Number(job.displayDateUnix);
+  if (Number.isFinite(primary) && primary > 0) return primary;
+  const fallback = Number(job.postedAtUnix || job.ingestedAtUnix);
+  return Number.isFinite(fallback) && fallback > 0 ? fallback : 0;
 }
 function initials(s) {
   if (!s) return '?';
@@ -2119,6 +2465,7 @@ async function loadJobs(reset = false) {
   S.loading = true;
   if (reset) {
     S.jobs = []; S.cursor = null; S.hasMore = true;
+    S.sel.clear();
     document.getElementById('jobs-list').innerHTML = skels(5);
     document.getElementById('jobs-sub').textContent = 'Loading…';
   }
@@ -2140,9 +2487,11 @@ async function loadJobs(reset = false) {
     const list = document.getElementById('jobs-list');
     if (S.jobs.length === 0) {
       renderJobListEmptyState();
+      syncSelectAllButton();
     } else {
       if (reset) list.innerHTML = S.jobs.map(renderRow).join('');
       else list.insertAdjacentHTML('beforeend', pageJobs.map(renderRow).join(''));
+      syncJobRowSelection();
     }
     const subSuffix = requestedTab === 'filtered' ? 'filtered by rules, dedupe, or AI' : 'sorted by relevance';
     document.getElementById('jobs-sub').textContent = `${S.total} job${S.total === 1 ? '' : 's'} · ${subSuffix}`;
@@ -2154,6 +2503,7 @@ async function loadJobs(reset = false) {
       syncJobListHeaderSubtitle();
     }
     setupScrollObs();
+    syncSelectAllButton();
   } catch (e) {
     if (requestSeq === S.listRequestSeq && requestedTab === S.listTab) {
       toast('Failed to load jobs: ' + e.message, 'error');
@@ -2186,7 +2536,7 @@ function renderRow(job) {
   const sc = scoreClass(job.fitScore);
   const logo = vendorUiLogoMeta(job);
   const vLbl = vendorUiPublicNameFromJob(job);
-  const date = timeAgo(job.ingestedAtUnix || job.postedAtUnix);
+  const date = timeAgo(jobDisplayDateUnix(job));
   const srcImg = logo.img;
   const metaParts = [
     job.countryName || null,
@@ -2195,9 +2545,14 @@ function renderRow(job) {
     date || null,
     (job.salaryEur && job.salaryEur !== 'N/A') ? job.salaryEur : null,
   ].filter(Boolean);
-  const metaHtml = metaParts.map(p => `<span>${esc(p)}</span>`).join('<span class="jdot">·</span>');
-  return `<div class="job-row" data-id="${esc(job.id)}" role="row" tabindex="0">
-    <input type="checkbox" class="jcheck" aria-label="Select ${esc(job.title)}"/>
+  const dateTip = job.dateHoverTitle ? ` title="${esc(job.dateHoverTitle)}"` : '';
+  const metaHtml = metaParts.map(p => {
+    if (p === date && date) return `<span class="kcard-mono"${dateTip}>${esc(p)}</span>`;
+    return `<span>${esc(p)}</span>`;
+  }).join('<span class="jdot">·</span>');
+  const selected = S.sel.has(job.id);
+  return `<div class="job-row${selected ? ' sel' : ''}" data-id="${esc(job.id)}" role="row" tabindex="0">
+    <input type="checkbox" class="jcheck" aria-label="Select ${esc(job.title)}"${selected ? ' checked' : ''}/>
     <div class="jlogo"><img src="${srcImg}" alt="${esc(vLbl)}" loading="lazy"/></div>
     <div class="jinfo">
       <div class="jtitle">${esc(job.title)}</div>
@@ -2246,7 +2601,8 @@ function renderToolbar() {
   const ctrActive = Object.values(prefs.countries).some(v => v === false);
   const reasonActive = S.listTab === 'filtered' && Object.values(prefs.filterReasons || {}).some(v => v === false);
   const dateActive = prefs.filterFetchAge !== 'off';
-  const sortActive = prefs.sortRel !== 'as-fetched' || prefs.sortSalary !== 'off' || prefs.sortDate !== 'off';
+  const sortActive = prefs.sortRel !== 'as-fetched' || prefs.sortSalary !== 'off'
+    || prefs.sortFetchDate !== 'off' || prefs.sortPostedDate !== 'off';
   const countryOpts = S.facets.countries.length > 0
     ? S.facets.countries.map(c=>`<label class="pop-item"><input type="checkbox" name="ctr-${esc(c)}" ${prefs.countries[c]!==false?'checked':''}/>${esc(c)}</label>`).join('')
     : `<div style="padding:6px 8px;font-size:12px;color:var(--ink-faint)">Loading…</div>`;
@@ -2265,11 +2621,13 @@ function renderToolbar() {
   let sortLbl = 'Sort';
   if (prefs.sortRel !== 'as-fetched') sortLbl = 'Sort: ' + (prefs.sortRel === 'high-first' ? 'high→low' : 'low→high');
   else if (prefs.sortSalary !== 'off') sortLbl = 'Sort: ' + (prefs.sortSalary === 'high-first' ? 'high→low' : 'low→high');
-  else if (prefs.sortDate !== 'off') sortLbl = 'Sort: ' + (prefs.sortDate === 'new-first' ? 'new→old' : 'old→new');
+  else if (prefs.sortFetchDate !== 'off') sortLbl = 'Sort: fetch ' + sortDateDirLabel(prefs.sortFetchDate);
+  else if (prefs.sortPostedDate !== 'off') sortLbl = 'Sort: posted ' + sortDateDirLabel(prefs.sortPostedDate);
 
-  const relSortGrpCls = (prefs.sortSalary !== 'off' || prefs.sortDate !== 'off') ? 'opacity:.45;' : '';
-  const salSortGrpCls = (prefs.sortRel !== 'as-fetched' || prefs.sortDate !== 'off') ? 'opacity:.45;' : '';
-  const dateSortGrpCls = (prefs.sortRel !== 'as-fetched' || prefs.sortSalary !== 'off') ? 'opacity:.45;' : '';
+  const relSortGrpCls = (prefs.sortSalary !== 'off' || prefs.sortFetchDate !== 'off' || prefs.sortPostedDate !== 'off') ? 'opacity:.45;' : '';
+  const salSortGrpCls = (prefs.sortRel !== 'as-fetched' || prefs.sortFetchDate !== 'off' || prefs.sortPostedDate !== 'off') ? 'opacity:.45;' : '';
+  const fetchDateSortGrpCls = (prefs.sortRel !== 'as-fetched' || prefs.sortSalary !== 'off' || prefs.sortPostedDate !== 'off') ? 'opacity:.45;' : '';
+  const postedDateSortGrpCls = (prefs.sortRel !== 'as-fetched' || prefs.sortSalary !== 'off' || prefs.sortFetchDate !== 'off') ? 'opacity:.45;' : '';
   const searchPlaceholder = S.debugMode ? 'Search title, company, or job ID…' : 'Search jobs…';
 
   tb.innerHTML = `
@@ -2317,18 +2675,27 @@ function renderToolbar() {
             ${[['high-first','Highest first'],['low-first','Lowest first'],['off','Off']].map(([v,l])=>`<label class="pop-item"><input type="radio" name="sSal" value="${v}" ${prefs.sortSalary===v?'checked':''}/>${l}</label>`).join('')}
           </div>
           <div class="pop-div"></div>
-          <div style="${dateSortGrpCls}">
-          <div class="pop-lbl">Sort by date</div>
-            ${[['new-first','Newest first'],['old-first','Oldest first'],['off','Off']].map(([v,l])=>`<label class="pop-item"><input type="radio" name="sDate" value="${v}" ${prefs.sortDate===v?'checked':''}/>${l}</label>`).join('')}
+          <div style="${fetchDateSortGrpCls}">
+          <div class="pop-lbl">Sort by fetch date</div>
+            ${[['new-first','Newest first'],['old-first','Oldest first'],['off','Off']].map(([v,l])=>`<label class="pop-item"><input type="radio" name="sFetchDate" value="${v}" ${prefs.sortFetchDate===v?'checked':''}/>${l}</label>`).join('')}
+          </div>
+          <div class="pop-div"></div>
+          <div style="${postedDateSortGrpCls}">
+          <div class="pop-lbl">Sort by posted date</div>
+            ${[['new-first','Newest first'],['old-first','Oldest first'],['off','Off']].map(([v,l])=>`<label class="pop-item"><input type="radio" name="sPostedDate" value="${v}" ${prefs.sortPostedDate===v?'checked':''}/>${l}</label>`).join('')}
           </div>
         </div>
       </div>
-    </div>`;
+    </div>
+    <span class="jobs-toolbar-spacer" aria-hidden="true"></span>
+    <button type="button" class="btn btn-secondary" id="jobs-select-all" disabled aria-pressed="false">Select all</button>`;
 
   document.getElementById('srch').addEventListener('input', debounce(e => {
     activeListPrefs().listSearch = e.target.value; loadJobs(true);
   }, 380));
   bindPopovers();
+  document.getElementById('jobs-select-all')?.addEventListener('click', toggleSelectAllVisible);
+  syncSelectAllButton();
 
   openPops.forEach(id => {
     const p = document.getElementById(id);
@@ -2364,17 +2731,13 @@ function bindPopovers() {
     el.addEventListener('change', e => {
       const prefs = activeListPrefs();
       if (e.target.name === 'sRel' && e.target.value !== 'as-fetched') {
-        prefs.sortSalary = 'off'; prefs.sortDate = 'off';
-        const selSal = document.querySelector('input[name="sSal"][value="off"]'); if (selSal) selSal.checked = true;
-        const selDate = document.querySelector('input[name="sDate"][value="off"]'); if (selDate) selDate.checked = true;
+        clearSortRadiosExcept('rel');
       } else if (e.target.name === 'sSal' && e.target.value !== 'off') {
-        prefs.sortRel = 'as-fetched'; prefs.sortDate = 'off';
-        const selRel = document.querySelector('input[name="sRel"][value="as-fetched"]'); if (selRel) selRel.checked = true;
-        const selDate = document.querySelector('input[name="sDate"][value="off"]'); if (selDate) selDate.checked = true;
-      } else if (e.target.name === 'sDate' && e.target.value !== 'off') {
-        prefs.sortRel = 'as-fetched'; prefs.sortSalary = 'off';
-        const selRel = document.querySelector('input[name="sRel"][value="as-fetched"]'); if (selRel) selRel.checked = true;
-        const selSal = document.querySelector('input[name="sSal"][value="off"]'); if (selSal) selSal.checked = true;
+        clearSortRadiosExcept('sal');
+      } else if (e.target.name === 'sFetchDate' && e.target.value !== 'off') {
+        clearSortRadiosExcept('fetch');
+      } else if (e.target.name === 'sPostedDate' && e.target.value !== 'off') {
+        clearSortRadiosExcept('posted');
       }
       collectAndReload();
     });
@@ -2419,7 +2782,8 @@ function collectAndReload() {
   }
   const sRel = document.querySelector('input[name="sRel"]:checked'); if (sRel) prefs.sortRel = sRel.value;
   const sSal = document.querySelector('input[name="sSal"]:checked'); if (sSal) prefs.sortSalary = sSal.value;
-  const sDate = document.querySelector('input[name="sDate"]:checked'); if (sDate) prefs.sortDate = sDate.value;
+  const sFetchDate = document.querySelector('input[name="sFetchDate"]:checked'); if (sFetchDate) prefs.sortFetchDate = sFetchDate.value;
+  const sPostedDate = document.querySelector('input[name="sPostedDate"]:checked'); if (sPostedDate) prefs.sortPostedDate = sPostedDate.value;
   const sAge = document.querySelector('input[name="sAge"]:checked'); if (sAge) prefs.filterFetchAge = sAge.value;
   renderActiveFilters();
   loadJobs(true);
@@ -2442,7 +2806,8 @@ function renderActiveFilters() {
     chips.push(`<span class="afc" data-clr="rel-sort">${txt} ×</span>`);
   }
   if (prefs.sortSalary !== 'off') chips.push(`<span class="afc" data-clr="sal">Salary sort ×</span>`);
-  if (prefs.sortDate !== 'off') chips.push(`<span class="afc" data-clr="date">Date sort ×</span>`);
+  if (prefs.sortFetchDate !== 'off') chips.push(`<span class="afc" data-clr="fetch-sort">Fetch date sort ×</span>`);
+  if (prefs.sortPostedDate !== 'off') chips.push(`<span class="afc" data-clr="posted-sort">Posted date sort ×</span>`);
   if (prefs.listSearch) chips.push(`<span class="afc" data-clr="srch">Search: "${esc(prefs.listSearch)}" ×</span>`);
   row.innerHTML = chips.join('');
   row.querySelectorAll('.afc').forEach(el => {
@@ -2454,7 +2819,8 @@ function renderActiveFilters() {
       if (k==='reason') prefs.filterReasons = {};
       if (k==='age') prefs.filterFetchAge='off';
       if (k==='sal') prefs.sortSalary='off';
-      if (k==='date') prefs.sortDate='off';
+      if (k==='fetch-sort') prefs.sortFetchDate='off';
+      if (k==='posted-sort') prefs.sortPostedDate='off';
       if (k==='srch') { prefs.listSearch=''; }
       if (k==='rel-sort') prefs.sortRel='as-fetched';
       renderActiveFilters();
@@ -2465,6 +2831,44 @@ function renderActiveFilters() {
 }
 
 /* ── MULTI-SELECT ────────────────────────────────────────────────────────── */
+function visibleJobIds() {
+  return S.jobs.map(j => j.id).filter(Boolean);
+}
+
+function allVisibleJobsSelected() {
+  const ids = visibleJobIds();
+  return ids.length > 0 && ids.every(id => S.sel.has(id));
+}
+
+function syncSelectAllButton() {
+  const btn = document.getElementById('jobs-select-all');
+  if (!btn) return;
+  const ids = visibleJobIds();
+  btn.disabled = ids.length === 0;
+  btn.textContent = allVisibleJobsSelected() ? 'Deselect all' : 'Select all';
+  btn.setAttribute('aria-pressed', allVisibleJobsSelected() ? 'true' : 'false');
+}
+
+function syncJobRowSelection() {
+  document.querySelectorAll('.job-row[data-id]').forEach(row => {
+    const id = row.dataset.id;
+    const on = S.sel.has(id);
+    row.classList.toggle('sel', on);
+    const cb = row.querySelector('.jcheck');
+    if (cb) cb.checked = on;
+  });
+}
+
+function toggleSelectAllVisible() {
+  if (allVisibleJobsSelected()) {
+    S.sel.clear();
+  } else {
+    for (const id of visibleJobIds()) S.sel.add(id);
+  }
+  syncJobRowSelection();
+  updateBulkBar();
+}
+
 function handleRowClick(e, id) {
   const job = S.jobs.find(j => j.id === id); if (!job) return;
   if (e.target.classList.contains('add-to-board') || e.target.closest('.add-to-board')) {
@@ -2677,6 +3081,7 @@ function updateBulkBar() {
   const n = S.sel.size;
   if (bar) bar.classList.toggle('visible', n > 0);
   const lbl = document.getElementById('bulk-label'); if (lbl) lbl.textContent = `${n} selected`;
+  syncSelectAllButton();
 }
 
 /* ── KANBAN ──────────────────────────────────────────────────────────────── */
@@ -2914,7 +3319,7 @@ function renderKCard(job, colId) {
   const sc = scoreClass(job.fitScore);
   const logo = vendorUiLogoMeta(job);
   const vLbl = vendorUiPublicNameFromJob(job);
-  const date = timeAgo(job.ingestedAtUnix || job.postedAtUnix);
+  const date = timeAgo(jobDisplayDateUnix(job));
   const srcImg = logo.img;
 
   // Footer left: document actions — generate / generating / cv+cover
@@ -3324,7 +3729,8 @@ function fillDrawer(job) {
   const meta = [
     ['Country', job.countryName], ['Employment', job.employmentType], ['Workplace', job.workplaceType],
     ['Salary', job.salaryEur !== 'N/A' ? job.salaryEur : null],
-    ['Fetched', job.ingestedAtUnix ? new Date(job.ingestedAtUnix*1000).toLocaleDateString('en-GB') : null],
+    ['Posted', job.listingPostedAtUnix ? new Date(job.listingPostedAtUnix * 1000).toLocaleDateString('en-GB') : null],
+    ['Fetched', job.ingestedAtUnix ? new Date(job.ingestedAtUnix * 1000).toLocaleDateString('en-GB') : null],
   ].filter(([,v])=>v);
   const factRows = rows => (rows||[]).map(f=>`<div class="pipe-fact"><span class="pipe-fact-k">${esc(f.label || f.key || '')}</span><span>${esc(String(f.value ?? ''))}</span></div>`).join('');
   const facts = factRows(job.ingestionFacts);
@@ -4298,7 +4704,67 @@ async function init() {
   document.getElementById('board-refresh-all')?.addEventListener('click', refreshAllBoard);
 
   document.getElementById('stats-refresh')?.addEventListener('click', () => loadStats());
-  document.getElementById('stats-days')?.addEventListener('change', () => loadStats());
+  document.getElementById('stats-days')?.addEventListener('change', () => {
+    statsRange.mode = 'preset';
+    statsRange.from = null;
+    statsRange.to = null;
+    statsRange.draftFrom = null;
+    statsRange.draftTo = null;
+    syncStatsCalendarButton();
+    loadStats();
+  });
+  document.getElementById('stats-date-btn')?.addEventListener('click', e => {
+    e.stopPropagation();
+    const pop = document.getElementById('stats-calendar-pop');
+    setStatsCalendarOpen(!pop?.classList.contains('open'));
+  });
+  document.getElementById('stats-calendar-pop')?.addEventListener('click', e => {
+    e.stopPropagation();
+    const dateBtn = e.target.closest('[data-stats-date]');
+    if (dateBtn) {
+      const ymd = dateBtn.dataset.statsDate;
+      if (!statsRange.draftFrom || (statsRange.draftFrom && statsRange.draftTo)) {
+        statsRange.draftFrom = ymd;
+        statsRange.draftTo = null;
+      } else {
+        const normalized = statsNormalizeRange(statsRange.draftFrom, ymd);
+        statsRange.draftFrom = normalized.from;
+        statsRange.draftTo = normalized.to;
+      }
+      renderStatsCalendar();
+      return;
+    }
+    if (e.target.closest('#stats-cal-prev')) {
+      statsEnsureVisibleMonth();
+      statsRange.visibleMonth = new Date(statsRange.visibleMonth.getFullYear(), statsRange.visibleMonth.getMonth() - 1, 1);
+      renderStatsCalendar();
+      return;
+    }
+    if (e.target.closest('#stats-cal-next')) {
+      statsEnsureVisibleMonth();
+      statsRange.visibleMonth = new Date(statsRange.visibleMonth.getFullYear(), statsRange.visibleMonth.getMonth() + 1, 1);
+      renderStatsCalendar();
+      return;
+    }
+    if (e.target.closest('#stats-cal-clear')) {
+      statsRange.mode = 'preset';
+      statsRange.from = null;
+      statsRange.to = null;
+      statsRange.draftFrom = null;
+      statsRange.draftTo = null;
+      const sel = document.getElementById('stats-days');
+      if (sel) sel.value = '30';
+      syncStatsCalendarButton();
+      setStatsCalendarOpen(false);
+      loadStats();
+      return;
+    }
+    if (e.target.closest('#stats-cal-apply')) applyStatsCustomRange();
+  });
+  document.addEventListener('click', e => {
+    if (!e.target.closest('#stats-calendar-wrap')) setStatsCalendarOpen(false);
+  });
+  syncStatsCalendarButton();
 
   // Operations
   document.getElementById('ops-refresh-btn')?.addEventListener('click', loadOps);

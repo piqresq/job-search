@@ -2,10 +2,11 @@ import { getEnabledJobSourceIdsFromDb } from "../db/appSettings";
 import { jobsApiProvider } from "./jobsApi";
 import { jsearchProvider } from "./jsearch";
 import { linkedinJobsProvider } from "./linkedinJobs";
+import { remoteJobsProvider } from "./remoteJobs";
 import type { JobSourceProvider } from "./types";
 import type { JobSourceId } from "../types/job";
 
-const registry: JobSourceProvider[] = [linkedinJobsProvider, jsearchProvider, jobsApiProvider];
+const registry: JobSourceProvider[] = [linkedinJobsProvider, jsearchProvider, jobsApiProvider, remoteJobsProvider];
 
 export function getRegisteredProviderIds(): JobSourceId[] {
   return registry.map((p) => p.id);
@@ -25,4 +26,4 @@ export function getProviderById(id: JobSourceId): JobSourceProvider | null {
   return registry.find((p) => p.id === id) ?? null;
 }
 
-export { jobsApiProvider, jsearchProvider, linkedinJobsProvider };
+export { jobsApiProvider, jsearchProvider, linkedinJobsProvider, remoteJobsProvider };

@@ -51,7 +51,12 @@ import { normalizeRejectionReason, type NormalizedJob, type ScoringResult } from
 import {
   checkListingActiveAtIngest,
   INGEST_EXPIRED_REASON,
+  type IngestListingPageResult,
 } from "./ingestActiveCheck";
+import {
+  checkWorkplaceOnPageAtIngest,
+  ingestWorkplacePageMismatchReason,
+} from "./ingestWorkplacePageCheck";
 
 /** Email + tokenized review flow is soft-disabled; use /dashboard instead. */
 
@@ -947,13 +952,17 @@ export async function processFetchedJobs(
       finalScoring.recommendation === "high_priority_review" ||
       finalScoring.recommendation === "review"
     ) {
-      let activeCheckResult: "expired" | "skip" = "skip";
+      let ingestPageResult: IngestListingPageResult = {
+        active: "skip",
+        pageHtml: null,
+        pageVerifiedForWorkplaceCheck: false,
+      };
       try {
-        activeCheckResult = await checkListingActiveAtIngest(env, mergedJob);
+        ingestPageResult = await checkListingActiveAtIngest(env, mergedJob);
       } catch {
         // Non-fatal: any unexpected error in the check lets the job through.
       }
-      if (activeCheckResult === "expired") {
+      if (ingestPageResult.active === "expired") {
         try {
           await retryPipelineStateWrite(env, {
             jobId: id,
@@ -979,6 +988,15 @@ export async function processFetchedJobs(
               statusKind: "degraded",
             },
           );
+          await markVisibleProcessingFailure(
+            env,
+            userId,
+            id,
+            job.source,
+            `${INGEST_EXPIRED_REASON}. Pipeline failed while saving the filtered result: ${msg.slice(0, 500)}`,
+            now,
+            errors,
+          );
           continue;
         }
         await log.info(
@@ -991,6 +1009,74 @@ export async function processFetchedJobs(
             recommendation: finalScoring.recommendation,
             company: jobWithFetchMeta.company,
             title: jobWithFetchMeta.title,
+          },
+        );
+        statisticsDeltas.push({
+          userId,
+          providerId: job.source,
+          atUnix: jobWithFetchMeta.apiFetchedAtUnix ?? now,
+          jobsProcessed: 1,
+          jobsFiltered: 1,
+          jobsHardRejected: 1,
+          variant: statisticsVariantFromJob(jobWithFetchMeta),
+        });
+        processed++;
+        continue;
+      }
+
+      const workplacePageHtml = ingestPageResult.pageVerifiedForWorkplaceCheck
+        ? ingestPageResult.pageHtml
+        : null;
+      const workplacePageResult = checkWorkplaceOnPageAtIngest(mergedJob, workplacePageHtml);
+      if (workplacePageResult === "reject" && mergedJob.workplaceType) {
+        const wpReason = ingestWorkplacePageMismatchReason(mergedJob.workplaceType);
+        try {
+          await retryPipelineStateWrite(env, {
+            jobId: id,
+            providerId: job.source,
+            phase: "ingest_workplace_page_check",
+            action: "markHardRejected",
+            run: () => markHardRejected(env.DB, userId, id, [wpReason], now),
+          });
+        } catch (e) {
+          const msg = e instanceof Error ? e.message : String(e);
+          errors.push(`ingest_workplace_page_check_reject ${id}: ${msg}`);
+          await log.moderate(
+            env,
+            "pipeline",
+            "Persist ingest workplace page check reject failed",
+            { jobId: id, providerId: job.source, error: msg.slice(0, 500) },
+            {
+              category: "storage",
+              eventType: "ingest_workplace_page_check_reject_failed",
+              providerId: job.source,
+              jobId: id,
+              phase: "ingest_workplace_page_check",
+              statusKind: "degraded",
+            },
+          );
+          await markVisibleProcessingFailure(
+            env,
+            userId,
+            id,
+            job.source,
+            `${wpReason}. Pipeline failed while saving the filtered result: ${msg.slice(0, 500)}`,
+            now,
+            errors,
+          );
+          continue;
+        }
+        await log.info(
+          env,
+          "pipeline",
+          `Workplace not confirmed on listing page at ingest: ${jobWithFetchMeta.title} at ${jobWithFetchMeta.company}`,
+          {
+            jobId: id,
+            providerId: job.source,
+            recommendation: finalScoring.recommendation,
+            company: jobWithFetchMeta.company,
+            title: jobWithFetchMeta.title,
+            workplaceType: mergedJob.workplaceType,
           },
         );
         statisticsDeltas.push({

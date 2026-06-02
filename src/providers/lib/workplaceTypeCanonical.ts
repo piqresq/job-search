@@ -112,6 +112,45 @@ export function canonicalizeWorkplaceFromText(raw: string | undefined | null): C
   return null;
 }
 
+function bucketForCanonicalWorkplaceType(t: CanonicalWorkplaceType): WpBucket {
+  if (t === "Remote") return "remote";
+  if (t === "Hybrid") return "hybrid";
+  return "office";
+}
+
+function remoteBareTokenInText(key: string): boolean {
+  if (!/\bremote\b/.test(key)) return false;
+  if (/\bnot\s+remote\b/.test(key)) return false;
+  if (/\bno\s+remote\b/.test(key)) return false;
+  if (/\bnon[\s-]*remote\b/.test(key)) return false;
+  return true;
+}
+
+/**
+ * True when a blob of page HTML/text contains signals for the expected workplace type.
+ * Uses the same PHRASES table as {@link canonicalizeWorkplaceFromText}, plus bare
+ * "remote" / "telecommute" for LinkedIn listing JSON (with negation guard for remote).
+ */
+export function textConfirmsWorkplaceType(
+  text: string,
+  expected: CanonicalWorkplaceType,
+): boolean {
+  const key = normalizeEmploymentMatchKey(text);
+  if (!key) return false;
+  const bucket = bucketForCanonicalWorkplaceType(expected);
+  for (const { bucket: b, needles } of PHRASES) {
+    if (b !== bucket) continue;
+    for (const n of needles) {
+      if (key.includes(normalizeEmploymentMatchKey(n))) return true;
+    }
+  }
+  if (expected === "Remote") {
+    if (key.includes("telecommute")) return true;
+    if (remoteBareTokenInText(key)) return true;
+  }
+  return false;
+}
+
 /** Normalize text for lightweight title / parenthetical workplace tokens (not full PHRASES scan). */
 function compactWpKey(s: string): string {
   return normalizeEmploymentMatchKey(s)

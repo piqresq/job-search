@@ -22,6 +22,7 @@ const VENDOR_LABELS: Record<JobSourceId, string> = {
   linkedin_jobs: "LinkedIn (Fantastic Jobs)",
   jsearch: "JSearch",
   jobs_api: "Jobs API (Pat92)",
+  remote_jobs: "Remote Jobs",
 };
 
 type StatisticsOverview = {

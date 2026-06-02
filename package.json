@@ -22,9 +22,11 @@
     "test:openai-transient-errors": "tsx scripts/test-openai-transient-errors.ts",
     "test:rapidapi-quota": "tsx scripts/test-rapidapi-quota-classification.ts",
     "test:jobs-api-merge": "tsx scripts/test-jobs-api-merge.ts",
+    "test:ingest-workplace-page-check": "tsx scripts/test-ingest-workplace-page-check.ts",
     "test:employment-type-canonical": "tsx scripts/test-employment-type-canonical.ts",
     "test:content-dedupe-hash": "tsx scripts/test-content-dedupe-hash.ts",
-    "test:title-query-health": "tsx scripts/test-title-query-health.ts"
+    "test:title-query-health": "tsx scripts/test-title-query-health.ts",
+    "test:dashboard-display-date": "tsx scripts/test-dashboard-display-date.ts"
   },
   "dependencies": {
     "docx": "^9.6.1",

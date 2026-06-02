@@ -129,6 +129,18 @@ interface Env {
   JOBS_API_MAX_API_CALLS_PER_RUN?: string;
   /** Max search rows to fetch details for per chunk (default 15, max 25). */
   JOBS_API_MAX_JOBS_PER_CHUNK?: string;
+  /** Remote Jobs API path on `remote-jobs1.p.rapidapi.com` (default `/jobs`). */
+  REMOTE_JOBS_API_PATH?: string;
+  /** Manual tester default only; pipeline role search comes from dashboard settings. */
+  REMOTE_JOBS_QUERY?: string;
+  /** Per-sweep/day budget for Remote Jobs calls; default 250 so two sweeps fit 500/month. */
+  REMOTE_JOBS_MAX_API_CALLS_PER_RUN?: string;
+  /** Monthly safety budget for Remote Jobs calls; default 500. */
+  REMOTE_JOBS_MAX_API_CALLS_PER_MONTH?: string;
+  /** Rolling cooldown after a completed Remote Jobs sweep; default 15 days. */
+  REMOTE_JOBS_MIN_DAYS_BETWEEN_RUNS?: string;
+  /** Remote Jobs rows per API page/chunk, 1–100; default 100. */
+  REMOTE_JOBS_MAX_JOBS_PER_CHUNK?: string;
   /**
    * When `"true"`, `/api/operational-signals` appends one synthetic low incident (message: "It's a dummy") for testing the pipeline header flip and ops UI.
    */

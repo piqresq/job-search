@@ -38,7 +38,7 @@ function createPipelineStateMock(initial: Record<string, string>): {
           return {
             async first<T extends Record<string, unknown>>(): Promise<T | null> {
               if (sql.includes("SELECT v FROM pipeline_state")) {
-                const k = String(args[0]);
+                const k = String(args[1] ?? args[0]);
                 const v = store.get(k);
                 return v != null ? ({ v } as unknown as T) : null;
               }
@@ -46,7 +46,7 @@ function createPipelineStateMock(initial: Record<string, string>): {
                 return null;
               }
               if (sql.includes("INSERT INTO pipeline_state") && sql.includes("RETURNING v")) {
-                const k = String(args[0]);
+                const k = String(args[1] ?? args[0]);
                 const current = parseInt(store.get(k) ?? "0", 10);
                 const next = Number.isFinite(current) ? current + 1 : 1;
                 store.set(k, String(next));
@@ -56,13 +56,13 @@ function createPipelineStateMock(initial: Record<string, string>): {
             },
             async run() {
               if (sql.includes("INSERT INTO pipeline_state") && !sql.includes("RETURNING")) {
-                const k = String(args[0]);
+                const k = String(args[1] ?? args[0]);
                 const current = parseInt(store.get(k) ?? "0", 10);
                 if (sql.includes("DO UPDATE SET")) {
                   const next = Number.isFinite(current) ? current + 1 : 1;
                   store.set(k, String(next));
                 } else {
-                  const v = String(args[1]);
+                  const v = String(args[2] ?? args[1]);
                   store.set(k, v);
                 }
               }
@@ -155,13 +155,29 @@ async function testRapidApiFetchStopsAtProviderDailyCap() {
   try {
     const url = "https://linkedin-job-search-api.p.rapidapi.com/active-jb-24h?limit=10&offset=0";
     const ymd = utcYmdFromUnix(Math.floor(Date.now() / 1000));
-    const res = await rapidApiFetch(db, env, url, "linkedin-job-search-api.p.rapidapi.com", "linkedin_jobs", "cycle-1");
+    const res = await rapidApiFetch(
+      db,
+      env,
+      "test-user",
+      url,
+      "linkedin-job-search-api.p.rapidapi.com",
+      "linkedin_jobs",
+      "cycle-1",
+    );
     assert.equal(res.ok, true);
     assert.equal(calls, 1);
     assert.equal(get()[`provider_utc_day_request_count:linkedin_jobs:${ymd}`], "1");
 
     await assert.rejects(
-      rapidApiFetch(db, env, url, "linkedin-job-search-api.p.rapidapi.com", "linkedin_jobs", "cycle-1"),
+      rapidApiFetch(
+        db,
+        env,
+        "test-user",
+        url,
+        "linkedin-job-search-api.p.rapidapi.com",
+        "linkedin_jobs",
+        "cycle-1",
+      ),
       (error: unknown) => {
         assert.ok(error instanceof PlannedSearchDoneForCycleError);
         assert.equal((error as PlannedSearchDoneForCycleError).meta.requestCap, 1);
@@ -252,8 +268,28 @@ async function testRapidApiJsonRequestKeepsTransientLimitAsBackoff() {
   }
 }
 
+function testRemoteJobsProviderPauseKind() {
+  assert.equal(
+    deriveProviderPauseKind({ reason: "remote_jobs_cadence_wait" }, true),
+    "schedule_wait",
+  );
+  assert.equal(
+    deriveProviderPauseKind({ reason: "remote_jobs_sweep_request_cap" }, true),
+    "request_cap",
+  );
+  assert.equal(
+    deriveProviderPauseKind({ reason: "remote_jobs_monthly_request_cap" }, true),
+    "vendor_quota",
+  );
+  assert.equal(
+    deriveProviderPauseKind({ reason: "provider_monthly_request_cap" }, true),
+    "vendor_quota",
+  );
+}
+
 async function main() {
   testCycleCadence();
+  testRemoteJobsProviderPauseKind();
   await testRapidApiFetchUsesFirstKeyOnlyNoPhantom();
   await testRapidApiFetchStopsAtProviderDailyCap();
   await testRapidApiJsonRequestTreatsPersistentQuotaAsDoneForCycle();

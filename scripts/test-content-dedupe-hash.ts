@@ -137,4 +137,54 @@ assert.equal(
   "duplicate-listing filtered rows must not anchor dedupe",
 );
 
+const gtmLeeds = job({
+  title: "Go-to-Market Engineer - Leeds, United Kingdom",
+  company: "Speechify",
+  country: "United Kingdom",
+  workplaceType: "Hybrid",
+  isRemote: false,
+});
+const gtmCambridge = job({
+  title: "Go-to-Market Engineer - Cambridge, United Kingdom",
+  company: "Speechify",
+  country: "United Kingdom",
+  workplaceType: "Hybrid",
+  isRemote: false,
+});
+const gtmPlain = job({
+  title: "Go-to-Market Engineer",
+  company: "Speechify",
+  country: "United Kingdom",
+  workplaceType: "Hybrid",
+  isRemote: false,
+});
+const gtmEmDash = job({
+  title: "Go-to-Market Engineer — Leeds, United Kingdom",
+  company: "Speechify",
+  country: "United Kingdom",
+  workplaceType: "Hybrid",
+  isRemote: false,
+});
+
+assert.equal(
+  buildContentDedupeFingerprint(gtmLeeds),
+  buildContentDedupeFingerprint(gtmCambridge),
+  "location suffix after spaced hyphen should not change dedupe fingerprint",
+);
+assert.equal(
+  buildContentDedupeFingerprint(gtmLeeds),
+  buildContentDedupeFingerprint(gtmPlain),
+  "plain role title should match location-suffixed title",
+);
+assert.equal(
+  buildContentDedupeFingerprint(gtmLeeds),
+  buildContentDedupeFingerprint(gtmEmDash),
+  "em dash location suffix should strip like spaced hyphen",
+);
+assert.equal(
+  await computeContentDedupeHash(gtmLeeds),
+  await computeContentDedupeHash(gtmCambridge),
+  "location-suffixed titles should share content dedupe hash",
+);
+
 console.log("test-content-dedupe-hash: ok");

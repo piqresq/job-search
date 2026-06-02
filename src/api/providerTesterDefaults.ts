@@ -108,6 +108,15 @@ export async function getProviderTesterDefaults(env: Env): Promise<{
     workplace_types: string;
     employment_types: string;
   };
+  remote_jobs: {
+    api_path: string;
+    title_search: string;
+    country: string;
+    employment_type: string;
+    limit: number;
+    include_company: boolean;
+    include_total_count: boolean;
+  };
   publicBaseUrl: string;
 }> {
   const descRaw = env.LINKEDIN_JOBS_DESCRIPTION_TYPE?.trim().toLowerCase();
@@ -157,6 +166,15 @@ export async function getProviderTesterDefaults(env: Env): Promise<{
       date_posted: jobsApiDatePostedForPolicy(searchPolicy),
       workplace_types: jobsApiWorkplaceTypesForPolicy(searchPolicy),
       employment_types: jobsApiEmploymentTypesForPolicy(searchPolicy),
+    },
+    remote_jobs: {
+      api_path: env.REMOTE_JOBS_API_PATH?.trim() || "/jobs",
+      title_search: env.REMOTE_JOBS_QUERY?.trim() || queryCache.quotedOr.tier1 || "Customer Success",
+      country: primaryCountry.iso2,
+      employment_type: jobsApiEmploymentTypesForPolicy(searchPolicy),
+      limit: Math.max(1, Math.min(100, parseInt(env.REMOTE_JOBS_MAX_JOBS_PER_CHUNK?.trim() || "100", 10) || 100)),
+      include_company: true,
+      include_total_count: false,
     },
     publicBaseUrl: env.PUBLIC_BASE_URL?.trim() ?? "",
   };
