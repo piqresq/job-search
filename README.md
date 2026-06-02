@@ -1,163 +1,170 @@
 # job-search
 
-A personal, self-hosted job search automation system running on Cloudflare. It fetches job listings from multiple providers, filters and scores them with OpenAI against your CV, and presents them in a dashboard with an inbox for triage and a Kanban board for tracking active applications.
+A self-hosted job search automation system on Cloudflare Workers. It fetches listings from RapidAPI job providers, deduplicates and hard-filters them, scores survivors with OpenAI against **your uploaded CV**, and surfaces everything in a multi-user dashboard with an inbox, a Filtered reject bucket, and a Kanban application board.
 
-## What It Does
+Production UI: **`/dashboard-v2`** (canonical). **`/dashboard`** still serves the legacy single-file UI for rollback only.
 
-### Automated Pipeline
+---
 
-A scheduled pipeline (daily at 00:00 UTC by default) fetches listings from enabled job providers, deduplicates them, runs hard filters, and scores each listing with OpenAI. Ingestion is orchestrated by a **Durable Object + Queue** so it can run across many small steps without hitting Worker time limits.
+## What it does
 
-Supported providers:
+### Automated pipeline
 
-- **LinkedIn** (Fantastic Jobs RapidAPI, `/active-jb-24h` — jobs indexed in the last 24 hours, full-time remote)
-- **JSearch** (RapidAPI, optional)
-- **Jobs API** (Pat92 RapidAPI, optional)
+A **Durable Object + Queue** orchestrator runs ingestion in small chunks so work can continue across Worker limits. The daily cron (default **00:00 UTC**) pokes the pipeline; turning **API extraction** on in Settings starts it immediately.
 
-Each provider is controlled by a daily request-cap budget, a per-country rotation, and a logical cycle so each run picks up where the last left off. Turning on **API extraction** from the dashboard starts the pipeline immediately; the daily cron restarts it automatically.
+Per enabled vendor, the coordinator applies:
 
-### AI Scoring
+- A **daily RapidAPI request budget** (dashboard override or `wrangler.toml` defaults)
+- **Operational hours** (UTC window; outside it, new chunks pause)
+- Provider-specific rotation (LinkedIn per-country offsets, JSearch geo, Jobs API geo, Remote Jobs sweep cadence)
 
-Every job that passes hard filters is scored by OpenAI:
+Flow per chunk: **claim → fetch → cycle dedupe → `processFetchedJobs`** (content-hash dedupe, hard filters, optional ingest page checks, OpenAI score, persist).
 
-- **Fit score** (0–100) with score bands: HIGH ≥ 85 · MEDIUM 75–84 · LOW 60–74 · FAILED < 60.
-- **Position summary** — three sentences: one on the employer (what they do, size/stage if stated), two on the role.
-- **Reasons to apply**, **risks**, and **recommendation**.
-- **Title ↔ query health score** — measures how well the listing title matches the search query that found it; aggregated as a per-vendor quality signal in the Statistics tab.
+**Job providers** (enable in **Settings → Vendors**; IDs in `src/providers/`):
 
-### Dashboard
+| Provider | RapidAPI host | Notes |
+|----------|---------------|--------|
+| **LinkedIn** (`linkedin_jobs`) | Fantastic Jobs `linkedin-job-search-api` | Default `/active-jb-24h`, remote full-time; per-country rotation |
+| **JSearch** (`jsearch`) | `jsearch.p.rapidapi.com` | Optional; EU/US rotation |
+| **Jobs API** (`jobs_api`) | Pat92 `jobs-api14` | Optional; remote workplace filter at fetch |
+| **Remote Jobs** (`remote_jobs`) | `remote-jobs1` | Optional; sweep + monthly caps; 15-day cooldown between full sweeps |
 
-A single-page dashboard (`/dashboard`) covers the full workflow:
+Vendor endpoints, params, and credits: **`docs/rapidapi-job-providers.md`**.
 
-**Inbox tab** — lists all scored jobs with sort, filter, score badges, salary, employment type, country, and workplace type. Multi-select rows with Ctrl/Cmd and Shift for bulk actions: mark Applied, Reject, Restore, or Delete. Infinite scroll. Expanded row shows scoring details, position summary, AI-generated reasons/risks, ingestion request params, and links.
+### Ingest-time listing checks
 
-**Board tab** — Kanban board for tracking active applications across six columns: **New → Applying → Applied → Interview → Rejected → Expired**. Drag to reorder within a column; click column headers to move cards. Each card can open a cover-letter / CV generation drawer.
+For **high** and **review** recommendations only (not low-priority or AI-rejected rows):
 
-**Statistics tab** — intake and outcome KPIs, daily bar chart, per-vendor outcome bars, role-variant cards, and a title ↔ query health summary line per vendor.
+1. **Active listing** — one public fetch of the apply URL; confident “expired” copy → hard reject before the job appears in the inbox (`Listing no longer active at ingest`). No Bright Data spend on ingest.
+2. **Workplace page** (Jobs API + LinkedIn HTML when available) — if the live page clearly contradicts the normalized workplace type (e.g. vendor said Remote but the page is on-site), hard reject with a filtered reason.
 
-**Operations tab** — live pipeline status (running / paused / sleeping), incident buckets (critical / moderate / low-priority anomalies), and a full Textbot log viewer (info/warn/error on the left; debug on the right). Clear logs with one click.
+**Content-hash dedupe** — duplicate listings (same fingerprint within a **7-day** window) hard-reject against the earliest **anchor** row (active inbox or non-duplicate filtered rejects). Duplicate-listing filtered rows do not anchor later dupes.
 
-**Settings tab** — full configuration surface:
-- API extraction toggle (on/off, with immediate pipeline start on enable)
-- Enabled vendors and per-vendor daily request-cap overrides
-- Job roles (Tier 1 / Tier 2, versioned with revision history)
-- Search countries (select/deselect all, then save)
-- Runtime search policy (remote-only, employment type, recency)
-- OpenAI scoring and draft instructions (with revision history and reset to defaults)
-- Scoring policy (salary floor, additional hard constraints)
-- CV upload (`.docx`) — cached in D1, used by scoring and draft generation
-- Verbose logging toggle
-- Admin: multi-user management (create / suspend / delete users, role assignment, per-user provider caps)
+### AI scoring
 
-### CV and Cover Letter Generation
+OpenAI scores jobs that pass hard filters:
 
-Upload a `.docx` CV from Settings. When reviewing a job on the board, generate a tailored CV and cover letter with one click (GPT-5.5 high-reasoning). Generated `.docx` files are stored in R2 and downloadable from the board card.
+- **Fit score** (0–100): HIGH ≥ 85 · MEDIUM 75–84 · LOW 60–74 · FAILED below 60
+- **Position summary** — 3 sentences (1 employer, 2 role)
+- **Reasons**, **risks**, **recommendation**
+- **Title ↔ query health** (0–10) — per-vendor quality signal in Statistics
 
-### Daily Listing Expiration Scan _(in development)_
+CV text for scoring comes from **Settings → CV upload** (D1 cache). There is **no** bundled CV in the repository.
 
-A nightly automated check that visits each job URL on your Kanban board (columns: New, Applying, Applied) and detects whether the listing is still live.
+### Dashboard (`/dashboard-v2`)
 
-**How it works:**
+| Area | Purpose |
+|------|---------|
+| **Job List** | Scored inbox: sort, filters, bulk Applied / Reject / Restore / Delete, infinite scroll, expanded row (scoring, ingestion HTTP params, links) |
+| **Board** | Kanban: **New → Applying → Applied → Interview → Rejected → Expired**; drag reorder; per-card CV/cover generation; manual “Refresh all” expiration check |
+| **Filtered** | Hard/AI rejects with reason filters |
+| **Statistics** | Intake/outcome KPIs, charts, vendor bars, title↔query health summary |
+| **Operations** | Pipeline notice, vendor usage bars, expandable **search path exhaustion** tree (country or role grouping) |
+| **Settings** | Extraction toggle, vendors & caps, roles & countries, runtime policy, scoring/draft instructions, scoring policy, **CV (.docx) upload**, board auto-expiration toggle, setup wizard re-run |
+| **Admin** (admin role) | Users, per-user debug mode, verbose logging, refresh daily limits / resume after exhaustion, **Textbot** logs, incident buckets, **LinkedIn session** (`li_at`), pipeline status detail |
 
-- **LinkedIn listings** — fetches via a Bright Data ISP-proxy zone (static Polish residential IP) using stored LinkedIn session cookies. If the session cookie has expired (auth-wall redirect detected), it automatically falls back to a Bright Data Browser session (full Chromium with cookie injection) for the rest of that day's scan. If the Browser session also fails, the session is invalidated and the user sees a "re-login required" banner in the dashboard.
-- **JSearch / other listings** — fetches publicly with a company-name probe (stage 1) followed by a country-hinted expiration phrase scan (stage 2, supports phrase lists for DE, ES, PT, FR, NL, IT and more).
-- Any listing confidently detected as expired is moved automatically to the **Expired** Kanban column. Items in the Expired column are hard-deleted after 3 days.
-- The scan respects a per-user toggle (`Settings → Board auto-expiration check`). Failures are surfaced in the Operations tab.
+Multi-user auth: session cookie after `POST /api/auth/login`; jobs and settings are scoped per user.
 
-**LinkedIn session management** — a separate flow handles the LinkedIn cookie lifecycle. Login is performed via the Bright Data Browser API (Puppeteer/CDP against a real Chromium instance): the Worker navigates to `linkedin.com/login`, fills credentials, handles checkpoint detection, and stores the resulting cookie jar in D1. This session is used by both the expiration scan and the fallback scrape path.
+### CV and tailored documents
 
-### Setup Wizard
+1. Upload a **`.docx`** in Settings (mammoth → D1 `cv_source_*`; optional R2 `cv/latest.docx`).
+2. On the board, generate tailored **CV** and **cover letter** (default draft model **gpt-5.5**, high reasoning).
+3. Download generated **`.docx`** from R2 per job.
 
-First-run wizard that recommends countries, role tiers, and initial settings based on your CV and job preferences.
+Local dev can refresh extract files with `npm run cv:extract` if you keep `Oleg_Velikanov_CV.docx` at the repo root — those outputs are **gitignored** and never required for deploy.
+
+### Daily board expiration scan
+
+Runs on the **daily cron** for board columns **New**, **Applying**, and **Applied** (when **Settings → Board auto-expiration check** is on):
+
+- **LinkedIn URLs** — Bright Data ISP proxy + stored session cookies; auth-wall → Browser session for the rest of the day; persistent failure → invalidate session and show a re-login notice.
+- **Other URLs** — public fetch + company probe + country-aware expired phrases (DE, ES, PT, FR, NL, IT, …).
+- Confident expired → **Expired** column; **Expired** rows auto-delete after **3 days**.
+
+LinkedIn login: Bright Data Browser (Puppeteer/CDP) or optional **Browserbase** (`BROWSERBASE_*` secrets) for “Connect LinkedIn” in Admin; manual `li_at` paste also supported.
+
+### Setup wizard
+
+First-run flow: upload CV, suggest countries/roles/tiers, seed settings from CV analysis (OpenAI).
 
 ---
 
 ## Stack
 
 | Layer | Technology |
-|---|---|
-| Compute | Cloudflare Worker (TypeScript) |
-| Orchestration | Cloudflare Durable Objects + Queues |
-| Database | Cloudflare D1 (`job-search-db`) |
-| Static assets | Cloudflare Worker Assets (`public/`) |
-| Document storage | Cloudflare R2 (`job-search-docs`) |
-| AI scoring & drafts | OpenAI API |
-| LinkedIn login | Bright Data Browser API (Puppeteer/CDP) |
-| LinkedIn expiration scan | Bright Data ISP Proxy (residential IP via `cloudflare:sockets`) |
-| Job providers | RapidAPI (Fantastic Jobs LinkedIn, JSearch, Jobs API Pat92) |
+|-------|------------|
+| Compute | Cloudflare Worker (TypeScript, `nodejs_compat`) |
+| Orchestration | Durable Objects (`PipelineCoordinator`, `PipelineDispatcher`) + Queue |
+| Database | D1 (`job-search-db`) |
+| UI | Worker Assets — `public/dashboard-v2.html` |
+| Documents | R2 (`job-search-docs`) |
+| AI | OpenAI API |
+| LinkedIn session / expiration | Bright Data Browser + ISP proxy; optional Browserbase |
+| Listings | RapidAPI (see table above) |
 
 ---
 
-## Clone On A New Machine
+## Clone and run locally
 
-Requirements:
-
-- Node.js 20+
-- npm
-- Git
-- Cloudflare Wrangler auth (`npx wrangler login`)
+**Requirements:** Node.js 20+, npm, Git, `npx wrangler login`
 
 ```bash
-git clone https://gitlab.com/piqresq/job-search.git
+git clone https://github.com/piqresq/job-search.git
 cd job-search
 npm install
 npm run verify:local
-```
-
-`npm run verify:local` typechecks the repo, creates `.dev.vars` from `.dev.vars.example` if missing, warns about empty secrets, and applies local D1 migrations. Start local dev with:
-
-```bash
 npm run dev
 ```
+
+`verify:local` typechecks, bootstraps `.dev.vars` from `.dev.vars.example` when missing, and applies **local** D1 migrations.
+
+Open **`http://127.0.0.1:8787/dashboard-v2`** (or your `PUBLIC_BASE_URL`).
 
 ---
 
 ## Secrets
 
-Local secrets live in `.dev.vars` (gitignored). Fill these for the full feature set:
+**Local:** `.dev.vars` (gitignored). Minimum to run scoring and dashboard login:
 
 ```dotenv
 OPENAI_API_KEY=
 REVIEW_TOKEN_SECRET=
 DASHBOARD_PASSWORD=
 RAPIDAPI_KEY=
+```
+
+**Full feature set** (add as needed):
+
+```dotenv
 LINKEDIN_EMAIL=
 LINKEDIN_PASSWORD=
 BRIGHTDATA_API_KEY=
 BRIGHTDATA_BROWSER_WS_ENDPOINT=
 BRIGHTDATA_ISP_PROXY_USERNAME=
 BRIGHTDATA_ISP_PROXY_PASSWORD=
+BROWSERBASE_API_KEY=
+BROWSERBASE_PROJECT_ID=
+ADMIN_RUN_KEY=
+RESEND_API_KEY=
 ```
 
-Set production secrets with:
+**Production:** `npx wrangler secret put <NAME>` — Cloudflare does not return secret values; keep your own backup.
 
-```bash
-npx wrangler secret put OPENAI_API_KEY
-npx wrangler secret put REVIEW_TOKEN_SECRET
-npx wrangler secret put DASHBOARD_PASSWORD
-npx wrangler secret put RAPIDAPI_KEY
-npx wrangler secret put LINKEDIN_EMAIL
-npx wrangler secret put LINKEDIN_PASSWORD
-npx wrangler secret put BRIGHTDATA_API_KEY
-npx wrangler secret put BRIGHTDATA_BROWSER_WS_ENDPOINT
-npx wrangler secret put BRIGHTDATA_ISP_PROXY_USERNAME
-npx wrangler secret put BRIGHTDATA_ISP_PROXY_PASSWORD
-```
-
-Cloudflare secret values cannot be pulled back from Cloudflare — keep your own secure copy.
+`wrangler.toml` `[secrets].required` lists keys Wrangler expects for deploy; LinkedIn/Bright Data are only needed when you use expiration scan or automated LinkedIn login.
 
 ---
 
-## Database and Deploy
+## Database and deploy
 
-Apply new D1 migrations before deploying when `migrations/*.sql` changes:
+When `migrations/*.sql` changes:
 
 ```bash
 npx wrangler d1 migrations apply job-search-db --remote
+npm run typecheck
 npm run deploy
 ```
 
-For routine code or dashboard changes:
+Routine Worker or dashboard changes:
 
 ```bash
 npm run typecheck
@@ -166,64 +173,62 @@ npm run deploy
 
 ---
 
-## Useful Commands
+## Useful commands
 
 ```bash
-npm run typecheck                 # TypeScript type check
-npm run verify:local              # Typecheck + local D1 migrate + .dev.vars bootstrap
-npm run dev                       # Local dev server (wrangler dev)
-npm run dev:remote                # Local dev server against remote D1
-npm run d1:migrate:local          # Apply migrations to local D1 only
-npm run deploy                    # Build and deploy to Cloudflare
+npm run typecheck
+npm run verify:local
+npm run dev
+npm run dev:remote          # wrangler dev against remote D1
+npm run d1:migrate:local
+npm run deploy
+npm run cv:extract          # optional: local .docx → gitignored cv-extracted*.gen.ts
 
-npm run test:hard-filters         # Run JSearch hard-filter smoke test
-npm run test:jobs-api-merge       # Run Jobs API merge + acceptingApplications filter test
-npm run test:title-query-health   # Run title ↔ query health scorer tests
+npm run test:hard-filters
+npm run test:jobs-api-merge
+npm run test:content-dedupe-hash
+npm run test:title-query-health
+npm run test:ingest-workplace-page-check
+npm run test:provider-regression
 ```
+
+Desktop API tester (tabs built from Worker catalog): `python scripts/linkedin_api_tester.py` (or `scripts/api_tester.py`).
 
 ---
 
-## Project Layout
+## Project layout
 
 ```
 src/
-  index.ts                   Worker entry point (fetch, scheduled, queue handlers)
-  orchestration/             Durable Object coordinator + queue consumer
-  pipeline/                  processFetchedJobs, scoring, hard filters, deduplication
-  providers/                 LinkedIn, JSearch, Jobs API fetch + normalization
-  dashboard/                 Dashboard API routes, statistics, salary, ingestion facts
-  db/                        D1 helpers (jobs, board, settings, logs, stats, users)
-  lib/                       LinkedIn auth, expiration scan, Bright Data integrations
-  config/                    Countries, roles, search policy defaults
-  metrics/                   Title ↔ query health scorer
-  logging/                   Structured app logger (app_logs D1 table)
-  notify/                    Email (review flow, soft-disabled)
-  profile/                   CV extraction and scoring sanitization
-  review/                    Review token generation and HTML
-  setup/                     First-run setup wizard helpers
-  types/                     Shared TypeScript types
+  index.ts                 fetch, scheduled (pipeline + expiration scan), queue
+  orchestration/           Coordinator, dispatcher, queue consumer
+  pipeline/                processFetchedJobs, scoring, filters, dedupe, ingest checks
+  providers/               linkedinJobs, jsearch, jobsApi, remoteJobs
+  api/                     Provider tester catalog + URL builder (for Python GUI)
+  dashboard/               Session auth, REST API, statistics, docx export
+  db/                      jobs, board, settings, logs, users, pipeline state
+  lib/                     LinkedIn session, expiration scan, Bright Data
+  profile/                 CV source resolution (D1 only at runtime)
+  metrics/                 title ↔ query health
+  logging/                 app_logs → dashboard Textbot
 
 public/
-  dashboard.html             Single-file dashboard (HTML/CSS/JS)
-  assets/                    Static assets (icons, fonts)
+  dashboard-v2.html        canonical operator UI
+  dashboard.html           legacy (deprecated for new work)
+  assets/                  icons, fonts, vendor logos
 
-migrations/
-  0001_init.sql … 0028_*.sql D1 schema migrations (apply in order)
-
-scripts/
-  linkedin_api_tester.py     Desktop GUI tester for all provider APIs
-  *.ts                       Various local test / maintenance scripts
-
-docs/
-  rapidapi-job-providers.md  Vendor endpoints, params, credits reference
-  backlog.md                 Future work items
+migrations/                numbered D1 SQL (apply in order)
+docs/                      rapidapi-job-providers.md, backlog.md
+scripts/                   tests, cv:extract, API testers
 ```
 
 ---
 
-## Notes
+## Privacy and repo hygiene
 
-- Do not commit `.dev.vars`, API keys, tokens, generated local outputs, or local CV files.
-- `wrangler.toml` contains non-secret production configuration and all binding names.
-- Detailed architecture, orchestration flow, and operating notes are in `AGENTS.md`.
-- Cursor-specific rules and skills live in `.cursor/`.
+- **Never commit** `.dev.vars`, API keys, tokens, or personal CV files (`Oleg_Velikanov_CV.*`, generated `src/profile/cv-extracted*.gen.ts`).
+- Production CV lives in **D1** (and optionally R2) after dashboard upload only.
+- `wrangler.toml` holds non-secret bindings and default caps — not secret values.
+- Architecture and operator detail: **`AGENTS.md`**. Cursor rules/skills: **`.cursor/`**.
+
+**Note:** Removing CV files from the latest commit does not erase them from old git history on a public fork; use [git filter-repo](https://github.com/newren/git-filter-repo) or GitHub secret scanning if you need history rewritten.
